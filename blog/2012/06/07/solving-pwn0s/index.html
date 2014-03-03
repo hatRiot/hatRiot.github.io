@@ -1,0 +1,270 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>solving pwn0s - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment. I thought this one was pretty fun, so I&rsquo;ve decided to do a &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/about">About</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Solving Pwn0s</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-06-07T01:15:10-06:00" pubdate data-updated="true">Jun 7<span>th</span>, 2012</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment.  I thought this one was pretty fun, so I&rsquo;ve decided to do a little write up in the various ways it can be attacked.  The VM for it can be found on forums.hackingdojo.com; you need an account to access the forums, but it&rsquo;s worth it.</p>
+
+<p>The VM comes packaged as a split vmdk, so just loading up the vmx sets everything up.  Booting it up and flipping over to BackTrack, a quick nmap scan gives us a few immediate vectors of attack:</p>
+
+<p><img src="/images/posts/2012/scan.jpg" title="image" alt="images"></p>
+
+<p>So there&rsquo;s a few notable things here; the OpenSSH version, specifically that Debian build, is known to generate weak, predictable SSH keys.  This vulnerability is due to a side-effect of removing a bit of code that effected the initial seeding for the PRNG; instead of seeding it with true, random data, it instead only used a process ID. There are a total of 32,768 process ID&rsquo;s available, meaning, only 32,768 potential seeds to the PRNG.  We can attack this by generating a 2048 bit key (that&rsquo;s the bit size of the RSA key, according to nmap) 32,768 times with the number as a seed.  We&rsquo;ll set this aside, for now, and come back to it.</p>
+
+<p>There&rsquo;s an HTTP server up with some plaintext HTML on it, but nothing worthy of any web-side exploits.  That version of Apache has some DoS vulnerabilities, but that doesn&rsquo;t do much for us.</p>
+
+<p>The next interesting port is actually on 10000; MiniServ is a fairly obscure, hyperminimal web server written in C.  It&rsquo;s barely supported and has a very low exposure level.  On the frontend runs WebMin, a PHP interface for HTTP servers.  As it happens to turn out, there&rsquo;s a vulnerability allowing an attacker to retrieve unauthorized remote files.  This will work harmoniously with our OpenSSH vulnerability above!  I pulled some perl code from <a href="http://www.exploit-db.com/exploits/2017/">here</a> and dumped a few things:</p>
+
+<p><img src="/images/posts/2012/webmin.jpg" title="image" alt="images"></p>
+
+<p>Oh boy users!  Lets back up for a minute and take a look at this exploit.  If we pop open the perl code, we see a little bit of this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> $temp="/..%01" x 40;
+</span><span class='line'>
+</span><span class='line'>        if ($tar == '0')
+</span><span class='line'>           { my $url= "http://". $target. ":" . $port ."/unauthenticated/".$temp . $filename;
+</span><span class='line'>            $content=get $url;
+</span><span class='line'>
+</span><span class='line'>            print("\n FILE CONTENT STARTED");
+</span><span class='line'>            print("\n -----------------------------------\n");
+</span><span class='line'>
+</span><span class='line'>            print("$content");
+</span><span class='line'>            print("\n -------------------------------------\n");
+</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s about as easy as it gets when it comes to exploits; we&rsquo;re filling up the url with /..%01.  It does this 40 times until the buffer is full, then appends the filename onto the end.    I dug into the Webmin source code to see exactly what was going on; diffing 1.28 and 1.29, I found this:</p>
+
+<p><img src="/images/posts/2012/diff.jpg" title="image" alt="images"></p>
+
+<p>Essentially it was checking for a directory traversal in the path, but only checking &ldquo;..&rdquo;.  In our exploit, we&rsquo;re appending a %01, which is the ASCII Start of Header.  This final, encoded ASCII code can be any control code; that&rsquo;s %00 &ndash; %1F (<a href="http://www.w3schools.com/tags/ref_urlencode.asp">codes</a>).  This works because these codes have no purpose in the URL and do not decode to anything useful; they merely throw off the $b eq &ldquo;..&rdquo; check by doing nothing.  The remainder of the code is left as an exercise for the reader.</p>
+
+<p>Now that we&rsquo;ve got a few names, we can run through RSA keys and see if we get a match.  HD Moore of Metasploit has already generated and distributed the keys, and can be retrieved <a href="http://metasploit.com/users/hdm/tools/debian-openssl/">here</a>.  Got &lsquo;em?  Cool; now we can test keys against the usernames in the file.  I used <a href="http://www.exploit-db.com/exploits/5632/">this</a> to iterate through them, but it shouldn&rsquo;t be too hard to code it up yourself.  Essentially we just want to connect to the server with one of the usernames with the generated keys; when we pop a shell, we know we&rsquo;re in:</p>
+
+<p><img src="/images/posts/2012/brute.jpg" title="image" alt="images"></p>
+
+<p>So now we&rsquo;ve got ourselves a private RSA key for account &lsquo;obama&rsquo;.  Testing it out, and&hellip;</p>
+
+<p><img src="/images/posts/2012/ssh.jpg" title="image" alt="images"></p>
+
+<p>Success!  So now we&rsquo;ve got a valid account on the box.  We see it&rsquo;s an x86 Ubuntu machine on the 2.6.22 kernel.  What can we do?  Well, immediately I recognize a major vulnerability in the kernel version.  A bit of googling will turn up the vmsplice exploit.  The exploit itself is in fact a chaining of three separate, now patched, vulnerabilities in the fs/splice.c module.  I will let the fantastic article at <a href="https://lwn.net/Articles/268783/">lwn</a> describe the vulnerability in more detail, and instead put it to some use here:</p>
+
+<p><img src="/images/posts/2012/vmsplice_root.jpg" title="image" alt="iamges"></p>
+
+<p>And just like that we&rsquo;ve got root on the box.</p>
+
+<p>Other avenues of attack could be sticking Medusa/Hydra on the SSH port and letting it brute force the accounts, exploiting remote uploads to MiniServ, or the local ftruncate root exploit.  Though fairly easy and straightforward (I didn&rsquo;t have to write a line of code), this VM was fun to toy around with.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-06-07T01:15:10-06:00" pubdate data-updated="true">Jun 7<span>th</span>, 2012</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/vulnhub/'>vulnhub</a>, <a class='category' href='/blog/categories/walkthrough/'>walkthrough</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s/" data-via="" data-counturl="http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/03/02/introduction/" title="Next Post: introduction">introduction &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2012/06/07/solving-pwn0s/">solving pwn0s</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
