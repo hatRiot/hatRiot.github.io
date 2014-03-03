@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-03T01:22:26-07:00</updated>
+  <updated>2014-03-03T01:29:09-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -21,6 +21,127 @@
     <content type="html"><![CDATA[<p>This isn&rsquo;t a real introduction post, just a note that I&rsquo;m migrating from Google Blogger to Github Pages with Octopress.  So far it&rsquo;s great.  I&rsquo;m going to be slowly migrating all posts over from Blogger into here, though I may skip a few early posts that aren&rsquo;t as interesting.</p>
 
 <p>Hopefully it provides me with the functionality that I&rsquo;ve been looking for.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Fetching JBoss MBean method hashes]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/"/>
+    <updated>2014-01-26T01:24:19-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes</id>
+    <content type="html"><![CDATA[<p>Matasano published <a href="http://www.matasano.com/research/OWASP3011_Luca.pdf">one</a> of <a href="https://www.redteam-pentesting.de/en/publications/jboss/-bridging-the-gap-between-the-enterprise-and-you-or-whos-the-jboss-now">two</a> canonical papers on JBoss exploitation.  While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans.  This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.</p>
+
+<p>In this paper, Matasano provides the hash for JBoss 4.0.3SP1, but does not list any others, nor show how it derived this.  After perusing the code, however, I found it to be quite simple, and have developed a simple method for fetching hashes of not only the Invoker MBean, but any listed in the JBoss registry.</p>
+
+<p>To extract these values, we simply deploy a WAR file that dumps the entirety of the Registry, which is used for hash lookups when routing requests.  This can can be seen below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;%@ page import="org.jboss.system.Registry"%&gt;
+</span><span class='line'>&lt;%@ page import="java.io.*"%&gt;
+</span><span class='line'>&lt;%@ page import="java.util.Map"%&gt;
+</span><span class='line'>&lt;%@ page import="java.util.Iterator"%&gt;
+</span><span class='line'>&lt;%
+</span><span class='line'>    Iterator it = Registry.entries.entrySet().iterator();
+</span><span class='line'>    while (it.hasNext()){
+</span><span class='line'>        Map.Entry pairs = (Map.Entry)it.next();
+</span><span class='line'>        out.println(pairs.getKey() + " = " + pairs.getValue() + "&lt;br/&gt;");
+</span><span class='line'>        it.remove();
+</span><span class='line'>    }
+</span><span class='line'>%&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When deployed and executed on my local 4.0.5.GA JBoss server, we get:</p>
+
+<p><img class="center" src="http://hatRiot.github.io/images/posts/2014/jb_hash.jpg"></p>
+
+<p>With this, we&rsquo;ve fetched the hash for the Invoker MBean as well as every other invokable MBean in the registry.  This value appears to be common across all 3.x and 4.x JBoss instances.  However, when run against JBoss 5.x/6.x instances, the following is returned:</p>
+
+<p><img class="center" src="http://hatRiot.github.io/images/posts/2014/jb_hash_6x.jpg"></p>
+
+<p>This change is due to the way look-ups are performed in 5.x; instead of the key being an Integer (hash), the key is now an Object, as shown below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static Map&lt;Object, Object&gt; entries = new ConcurrentHashMap&lt;Object, Object&gt;();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>To further enumerate this, we can iterate over the class methods and pull all of their hashes and hash codes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;%@ page import="java.io.*"%&gt;
+</span><span class='line'>&lt;%@ page import="java.util.Map"%&gt;
+</span><span class='line'>&lt;%@ page import="java.util.Iterator"%&gt;
+</span><span class='line'>&lt;%@ page import="java.lang.reflect.Method"%&gt;
+</span><span class='line'>&lt;%@ page import="org.jboss.system.Registry"%&gt;
+</span><span class='line'>&lt;%@ page import="javax.management.ObjectName"%&gt;
+</span><span class='line'>&lt;%@ page import="org.jboss.invocation.MarshalledInvocation"%&gt;
+</span><span class='line'>&lt;%
+</span><span class='line'>    Iterator it = Registry.entries.entrySet().iterator();
+</span><span class='line'>    while (it.hasNext()){
+</span><span class='line'>        Map.Entry pairs = (Map.Entry)it.next();
+</span><span class='line'>        out.println(pairs.getKey() + " = " + pairs.getValue() + "&lt;br/&gt;");
+</span><span class='line'>
+</span><span class='line'>        // check for ObjectName
+</span><span class='line'>        if (pairs.getKey() instanceof ObjectName){
+</span><span class='line'>            Long hash;
+</span><span class='line'>            Method[] methods = pairs.getValue().getClass().getMethods();
+</span><span class='line'>            for (int m = 0; m &lt; methods.length; ++m){
+</span><span class='line'>                Method method = methods[m];
+</span><span class='line'>                hash = new Long(MarshalledInvocation.calculateHash(method));
+</span><span class='line'>                out.println("Method: " + method + "  Hash: " + hash + " (" + method.hashCode() + ")" + "&lt;br/&gt;");
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        out.println("Key class: " + pairs.getKey().getClass() + "&lt;br/&gt;");
+</span><span class='line'>        it.remove();
+</span><span class='line'>    }
+</span><span class='line'>%&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which gives us:</p>
+
+<p><img class="center" src="http://hatRiot.github.io/images/posts/2014/jb_6x_methods.jpg"></p>
+
+<p>Judging by this information, it doesn&rsquo;t appear that we can remotely invoke the same way we did with 3.x/4.x.  This is the fundamental issue with several of the available open source JBoss tools (Metasploit); none of them take into account the changes between different versions of JBoss.</p>
+
+<p>Although I have yet to discover a way to map requests to the invoker (I&rsquo;m not entirely sure its possible) in these later versions, I have a suspicion that we may be able to map these requests by serializing objects out.  More on this, and my exploitation tool, soon.</p>
 ]]></content>
   </entry>
   
