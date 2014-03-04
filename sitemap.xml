@@ -9,8 +9,58 @@
         <lastmod>2014-03-03T01:22:21-07:00</lastmod>
     </url>
     <url>
+        <loc>http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/</loc>
+        <lastmod>2014-03-03T23:16:27-07:00</lastmod>
+    </url>
+    <url>
+        <loc>
+            http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/
+        </loc>
+        <lastmod>2014-03-03T23:09:28-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/05/21/kimai-v0.9.2-sqli/</loc>
+        <lastmod>2014-03-03T23:05:37-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/</loc>
+        <lastmod>2014-03-03T23:00:56-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/</loc>
+        <lastmod>2014-03-03T22:54:21-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/</loc>
+        <lastmod>2014-03-03T22:44:10-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/</loc>
+        <lastmod>2014-03-03T22:39:58-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/</loc>
+        <lastmod>2014-03-03T22:36:09-07:00</lastmod>
+    </url>
+    <url>
+        <loc>
+            http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/
+        </loc>
+        <lastmod>2014-03-03T22:30:57-07:00</lastmod>
+    </url>
+    <url>
+        <loc>
+            http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/
+        </loc>
+        <lastmod>2014-03-03T22:31:13-07:00</lastmod>
+    </url>
+    <url>
         <loc>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/</loc>
         <lastmod>2014-03-03T01:28:24-07:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/</loc>
+        <lastmod>2014-03-03T22:12:08-07:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/03/02/introduction/</loc>
@@ -18,7 +68,7 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/</loc>
-        <lastmod>2014-03-03T01:28:24-07:00</lastmod>
+        <lastmod>2014-03-03T23:16:27-07:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/code/</loc>
@@ -34,6 +84,6 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/archives/</loc>
-        <lastmod>2014-03-03T01:28:24-07:00</lastmod>
+        <lastmod>2014-03-03T23:16:27-07:00</lastmod>
     </url>
 </urlset>

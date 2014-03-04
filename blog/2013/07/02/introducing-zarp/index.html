@@ -1,0 +1,494 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>introducing zarp - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="I&rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&rsquo;s approaching a state I deem &lsquo;presentable& &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Introducing Zarp</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-07-02T23:37:15-06:00" pubdate data-updated="true">Jul 2<span>nd</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>I&rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&rsquo;s approaching a state I deem &lsquo;presentable&rsquo;.  Bugs are still being ironed out, and tons of features are still planned, but I&rsquo;ve gotten some great feedback over the past few months and decided it was time for an official introductory post.  This post serves as an introduction into the current capabilities of the framework, as well as a timeline for future development and goals.</p>
+
+<p><a href="https://github.com/hatRiot/zarp">zarp</a> is a local network attack toolkit that emphasizes absolute control over local networks.  It&rsquo;s end goal is to provide a very clean, modular, well-defined interface into a network, handing absolute control over to the user.  Over the course of several months, I discovered myself having to harness one too many tools to perform very basic, and what should be, simple network exploitation.  Mind you, zarp is not about exploiting hosts.  It is merely about the manipulation of any and all traffic present on the local network, and allowing the user the ability to view it, manipulate it, and save it in any manner they desire.  I would align zarp more with Ettercap than Metasploit.</p>
+
+<p>zarp is written in Python and makes an attempt to be as modular as possible while maintaining a high level of independence.  As of now, three things are required to run zarp: Python 2.7.x, Linux, and Scapy.  Because of Scapy&rsquo;s age, I&rsquo;ve had to modify the source code explicitly for zarp, and thus Scapy comes packaged with zarp.  I&rsquo;m currently working to replace Scapy entirely and move to Python 3, but this won&rsquo;t be for awhile.  Zarp modules are dynamically loaded at runtime, and a very basic, but useable, interface has been defined.  It is incredibly easy to write a zarp module and get them loaded up into the framework.</p>
+
+<p>zarp&rsquo;s predominant interface is a CLI-driven GUI, as shown:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py 
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>    [1] Poisoners        [5] Parameter
+</span><span class='line'>    [2] DoS Attacks      [6] Services 
+</span><span class='line'>    [3] Sniffers         [7] Sessions 
+</span><span class='line'>    [4] Scanners   
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Each module is loaded into one of six buckets.  These buckets define the traits of the module and its intended use.  Sessions [7] are how sessions are managed.  Zarp allows a user to poison, sniff, and scan as many hosts as your system allows.  This means that all of your network poisoning and sniffing can be performed all in one spot.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; 0 7
+</span><span class='line'>    [Running sessions]
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>    [0] 192.168.1.219
+</span><span class='line'>    [1] 192.168.1.49
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>    [0] 192.168.1.49
+</span><span class='line'>    |--&gt; Logging to  /tmp/passwords_49.txt
+</span><span class='line'>[3] HTTP Server
+</span><span class='line'>    [0] HTTP Server
+</span><span class='line'>[4] DNS Spoof
+</span><span class='line'>    [0] 192.168.1.219
+</span><span class='line'>    |-&gt; [0] facebook.* -&gt; 192.168.1.42
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    [1] Stop session
+</span><span class='line'>    [2] View session
+</span><span class='line'>    [3] Start session logger
+</span><span class='line'>    [4] Stop session logger
+</span><span class='line'>
+</span><span class='line'>0) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>As shown, many sessions can be managed from this interface at once.  Each module defines how output is displayed when the user is &lsquo;viewing&rsquo; the session; it could be network traffic, passwords, HTTP requests, and more.  Various sniffers built in allow easy parsing and logging.</p>
+
+<p>Below are some of the built-in modules.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] Poisoners        [5] Parameter
+</span><span class='line'>[2] DoS Attacks      [6] Services 
+</span><span class='line'>[3] Sniffers         [7] Sessions 
+</span><span class='line'>[4] Scanners   
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 1
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>[2] DNS Spoof
+</span><span class='line'>[3] DHCP Spoof
+</span><span class='line'>[4] NBNS Poison
+</span><span class='line'>[5] LLMNR Spoofer
+</span><span class='line'>[6] ICMP Redirection
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 0 2
+</span><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] DHCP Starvation
+</span><span class='line'>[2] LAND DoS
+</span><span class='line'>[3] IPv6 Neighbor Discovery Protocol RA DoS
+</span><span class='line'>[4] Nestea DoS
+</span><span class='line'>[5] SMB2 DoS
+</span><span class='line'>[6] TCP SYN
+</span><span class='line'>[7] IPv6 Neighbor Unreachability Detection DoS
+</span><span class='line'>[8] Linux 2.6.36 - 3.2.1 IGMP DoS
+</span><span class='line'>[9] MS13-018 Win7/8 DoS
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 0 3
+</span><span class='line'> ____   __   ____  ____
+</span><span class='line'>(__  ) / _\ (  _ \(  _ '
+</span><span class='line'> / _/ /    \ )   / ) __/
+</span><span class='line'>(____)\_/\_/(__\_)(__)
+</span><span class='line'>    [Version 0.1.3]            
+</span><span class='line'>[1] HTTP Sniffer
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>[3] Traffic Sniffer
+</span><span class='line'>[4] Database Sniffer
+</span><span class='line'>[5] Packet Modifier
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Also included are various router exploits, switch flooding, ARP shells, access point cracking, and more.  Zarp also allows modules to set CLI options, which can be used like any regular CLI application:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py --help
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>usage: zarp.py [-h] [-q FILTER] [--update] [--wap] [--ftp] [--http] [--smb]
+</span><span class='line'>               [--ssh] [--telnet] [-w] [-s] [--service-scan]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help      show this help message and exit
+</span><span class='line'>  -q FILTER       Generic network sniff
+</span><span class='line'>  --update        Update Zarp
+</span><span class='line'>
+</span><span class='line'>Services:
+</span><span class='line'>  --wap           Wireless access point
+</span><span class='line'>  --ftp           FTP server
+</span><span class='line'>  --http          HTTP Server
+</span><span class='line'>  --smb           SMB Service
+</span><span class='line'>  --ssh           SSH Server
+</span><span class='line'>  --telnet        Telnet server
+</span><span class='line'>
+</span><span class='line'>Scanners:
+</span><span class='line'>  -w              Wireless AP Scan
+</span><span class='line'>  -s              Network scanner
+</span><span class='line'>  --service-scan  Service scanner
+</span><span class='line'>bryan@devbox:~/zarp$ sudo ./zarp.py --ssh
+</span><span class='line'>[!] Loaded 35 modules.
+</span><span class='line'>     ____   __   ____  ____
+</span><span class='line'>    (__  ) / _\ (  _ \(  _ '
+</span><span class='line'>     / _/ /    \ )   / ) __/
+</span><span class='line'>    (____)\_/\_/(__\_)(__)
+</span><span class='line'>        [Version 0.1.3]            
+</span><span class='line'>[!] Starting SSH Server...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The idea behind services is this: honeypots are scary effective at what they do because they exploit a certain trust a user has in a system, or address.  But, if I&rsquo;m able to DoS a web server, ARPP/DNS spoof the host into redirecting it to me, I can fetch credentials off them just by presenting a login.  These can be leveraged in any number of ways, including spoofing, social engineering, etc.</p>
+
+<p>I realize that many of these attacks are not bleeding-edge; that&rsquo;s okay, for now.  I needed a solid foundation full of tried-and-true attacks that I can then expand upon; for this reason, I&rsquo;ve gone for breadth over depth, initially.  Modules are still being actively developed and features piled on.  zarp is currently lacking a few key features, such as packet modification and ssl stripping, but these are currently in development.  Moxie&rsquo;s sslstrip is fantastic, but I would prefer a native implementation without relying on twisted.</p>
+
+<p>Now comes the future; what&rsquo;s the end-goal for zarp.  I see zarp as a master control system for a local network.  Plug it in and watch it grow.  Recently I&rsquo;ve added a database logging tool that formats certain key bits, username/passwords, hosts, logs, etc., and inserts them into a local sqlite3 database.  This will be expanded to eventually allow connections to postgresql/mysql servers for remote work and collaboration.  The idea behind this is to allow a web application the ability to aggregate everything zarp spits out and organize, analyze, and display this in a very powerful way.  This web application presents network topologies, host relationships, active connections, man-in-the-middle attacks, and more.  The television to zarp&rsquo;s remote control.</p>
+
+<p>Though ambitious, I feel this could be an incredibly powerful tool that provides pentesters an invaluable service.  I&rsquo;m hoping this post garners a few users who can provide solid usage feedback and help iron out bugs or develop features; if you like what you&rsquo;ve seen, please check out the wiki or send me an email (drone AT ballastsecurity DOT net) or tweet (@dronesec).  Any and all feedback, including suggestions/bugs/questions, are welcome.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-07-02T23:37:15-06:00" pubdate data-updated="true">Jul 2<span>nd</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/projects/'>projects</a>, <a class='category' href='/blog/categories/zarp/'>zarp</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/06/21/collabtive-1.0-sqli/" title="Previous Post: Collabtive 1.0 - SQLi">&laquo; Collabtive 1.0 - SQLi</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/07/10/solving-ra1nxing-bots/" title="Next Post: solving RA1NXing Bots">solving RA1NXing Bots &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/">OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

