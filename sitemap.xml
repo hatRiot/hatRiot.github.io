@@ -80,7 +80,7 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/</loc>
-        <lastmod>2014-03-03T01:28:24-07:00</lastmod>
+        <lastmod>2014-06-24T22:12:55-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/</loc>
@@ -113,8 +113,12 @@
         <lastmod>2014-05-13T23:33:47-06:00</lastmod>
     </url>
     <url>
+        <loc>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/</loc>
+        <lastmod>2014-06-25T23:59:40-06:00</lastmod>
+    </url>
+    <url>
         <loc>http://hatRiot.github.io/</loc>
-        <lastmod>2014-06-24T21:44:29-06:00</lastmod>
+        <lastmod>2014-06-25T23:59:40-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/code/</loc>
@@ -130,6 +134,6 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/archives/</loc>
-        <lastmod>2014-06-24T21:44:29-06:00</lastmod>
+        <lastmod>2014-06-25T23:59:40-06:00</lastmod>
     </url>
 </urlset>
