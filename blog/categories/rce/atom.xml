@@ -4,7 +4,7 @@
   <title><![CDATA[Category: rce | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/rce/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-06-29T21:11:56-06:00</updated>
+  <updated>2014-07-24T18:53:48-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -24,7 +24,7 @@
 Oops! sh: 1: Syntax error: EOF in backquote substitution
 </code></p>
 
-<p>I commented on its exploitability at the time, and though the hole appears to be closed, the issue still remains.  I returned to this during an install of Gitlist and decided to see if there were any other bugs in the application and, as it turns out, there are a few.  I discovered a handful of bugs during my short hunt that I&rsquo;ll document here, including one anonymous remote code execution vulnerability that&rsquo;s quite trivial to pop.  These bugs were reported to the developers and CVE-2014-4511 was assigned.</p>
+<p>I commented on its exploitability at the time, and though the hole appears to be closed, the issue still remains.  I returned to this during an install of Gitlist and decided to see if there were any other bugs in the application and, as it turns out, there are a few.  I discovered a handful of bugs during my short hunt that I&rsquo;ll document here, including one anonymous remote code execution vulnerability that&rsquo;s quite trivial to pop.  These bugs were reported to the developers and CVE-2014-4511 was assigned.  These issues were fixed in version 0.5.0.</p>
 
 <p>The first bug is actually more of a vulnerability in a library Gitlist uses, Gitter (same developers).  Gitter allows developers to interact with Git repositories using Object-Oriented Programming (OOP).  During a quick once-over of the code, I noticed the library shelled out quite a few times, and one in particular stood out to me:</p>
 
