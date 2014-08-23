@@ -11,8 +11,8 @@
   
   <meta name="description" content="Part one &ndash; intro
 Part two &ndash; post-authentication rce
-Part three
-Part four Railo is an open-source alternative to the popular Coldfusion &hellip;">
+Part three &ndash; pre-authentication lfi
+Part four Railo is an open-source &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -95,7 +95,7 @@ Part four Railo is an open-source alternative to the popular Coldfusion &hellip;
 
 <div class="entry-content"><p><em>Part one &ndash; intro</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
-<em>Part three</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
 <em>Part four</em></p>
 
 <p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
@@ -419,6 +419,10 @@ Part four Railo is an open-source alternative to the popular Coldfusion &hellip;
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2014/08/23/railo-security-part-three/">railo security - part three - pre-authentication LFI</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2014/07/24/railo-security-part-two/">railo security - part two - post-authentication rce</a>
       </li>
     
@@ -432,10 +436,6 @@ Part four Railo is an open-source alternative to the popular Coldfusion &hellip;
     
       <li class="post">
         <a href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/">rce in browser exploitation framework (BeEF)</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/">LFI to shell in Coldfusion 6-10</a>
       </li>
     
   </ul>

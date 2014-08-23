@@ -11,8 +11,8 @@
   
   <meta name="description" content="Part one &ndash; intro
 Part two &ndash; post-authentication rce
-Part three
-Part four This post continues our dive into Railo security, this time &hellip;">
+Part three &ndash; pre-authentication lfi
+Part four This post continues our dive into &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -95,7 +95,7 @@ Part four This post continues our dive into Railo security, this time &hellip;">
 
 <div class="entry-content"><p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em>Part two &ndash; post-authentication rce</em><br/>
-<em>Part three</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
 <em>Part four</em></p>
 
 <p>This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform.  As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files.  Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.  For example, in the event of stringent firewall rules, or irregular file permissions, or you&rsquo;d just prefer not to make remote connections, the techniques explored in this post will aid you in this manner.</p>
@@ -545,6 +545,8 @@ Part four This post continues our dive into Railo security, this time &hellip;">
         <a class="basic-alignment left" href="/blog/2014/06/29/gitlist-rce/" title="Previous Post: gitlist - commit to rce">&laquo; gitlist - commit to rce</a>
       
       
+        <a class="basic-alignment right" href="/blog/2014/08/23/railo-security-part-three/" title="Next Post: railo security - part three - pre-authentication LFI">railo security - part three - pre-authentication LFI &raquo;</a>
+      
     </p>
   </footer>
 </article>
@@ -557,6 +559,10 @@ Part four This post continues our dive into Railo security, this time &hellip;">
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/08/23/railo-security-part-three/">railo security - part three - pre-authentication LFI</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2014/07/24/railo-security-part-two/">railo security - part two - post-authentication rce</a>
@@ -572,10 +578,6 @@ Part four This post continues our dive into Railo security, this time &hellip;">
     
       <li class="post">
         <a href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/">rce in browser exploitation framework (BeEF)</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/">LFI to shell in Coldfusion 6-10</a>
       </li>
     
   </ul>
