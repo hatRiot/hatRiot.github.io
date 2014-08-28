@@ -114,7 +114,7 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/</loc>
-        <lastmod>2014-08-23T12:53:43-06:00</lastmod>
+        <lastmod>2014-08-27T22:23:21-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/06/29/gitlist-rce/</loc>
@@ -122,19 +122,23 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two/</loc>
-        <lastmod>2014-08-23T12:53:22-06:00</lastmod>
+        <lastmod>2014-08-27T22:20:44-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/</loc>
-        <lastmod>2014-08-23T13:10:46-06:00</lastmod>
+        <lastmod>2014-08-27T22:21:26-06:00</lastmod>
+    </url>
+    <url>
+        <loc>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/</loc>
+        <lastmod>2014-08-27T23:28:28-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/</loc>
-        <lastmod>2014-08-23T13:10:46-06:00</lastmod>
+        <lastmod>2014-08-27T23:28:28-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/code/</loc>
-        <lastmod>2014-03-03T01:14:20-07:00</lastmod>
+        <lastmod>2014-08-25T09:24:44-06:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/about/</loc>
@@ -146,6 +150,6 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/archives/</loc>
-        <lastmod>2014-08-23T13:10:46-06:00</lastmod>
+        <lastmod>2014-08-27T23:28:28-06:00</lastmod>
     </url>
 </urlset>

