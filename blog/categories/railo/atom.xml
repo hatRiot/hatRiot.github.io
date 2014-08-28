@@ -4,7 +4,7 @@
   <title><![CDATA[Category: railo | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/railo/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-08-27T23:29:44-06:00</updated>
+  <updated>2014-08-27T23:40:39-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -131,7 +131,7 @@ $ ./clusterd.py -i 192.168.1.219 -a railo -v4.1 &mdash;deploy ./src/lib/resource
 
 <p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
 
-<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still proves elusive.</p>
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still prove elusive.</p>
 
 <p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
 
@@ -184,7 +184,7 @@ Content-Type: text/plain</p>
 &mdash;AaB03x&mdash;
 ```</p>
 
-<p>The tricky bit is where it&rsquo;s written too; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+<p>The tricky bit is where it&rsquo;s written to; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
 
 <p><code>
 [ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress

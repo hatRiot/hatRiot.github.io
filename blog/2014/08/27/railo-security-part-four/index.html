@@ -240,7 +240,7 @@ Part four &ndash; pre-auth remote code execution &hellip;">
 
 <p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
 
-<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still proves elusive.</p>
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still prove elusive.</p>
 
 <p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
 
@@ -322,7 +322,7 @@ Part four &ndash; pre-auth remote code execution &hellip;">
 </span><span class='line'>--AaB03x--</span></code></pre></td></tr></table></div></figure>
 
 
-<p>The tricky bit is where it&rsquo;s written too; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+<p>The tricky bit is where it&rsquo;s written to; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress</span></code></pre></td></tr></table></div></figure>
