@@ -4,7 +4,7 @@
   <title><![CDATA[Category: metasploit | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/metasploit/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-08-27T23:40:39-06:00</updated>
+  <updated>2014-09-06T11:57:32-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -324,6 +324,11 @@ framework.jobs.stop_job(mh.job_id)
 <p>  end
 end
 ```</p>
+
+<h3>Update 09/06/2014</h3>
+
+
+<p>Tom Sellers submitted a PR on 05/29 that implements the above <a href="https://github.com/rapid7/metasploit-framework/pull/3401">nicely</a>.  It appears to support a large swath of platforms, but only a couple support no-disk-write methods, namely the Powershell method.</p>
 ]]></content>
   </entry>
   
