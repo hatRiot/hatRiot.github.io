@@ -4,7 +4,7 @@
   <title><![CDATA[Category: protostar | forelsec]]></title>
   <link href="http://hatRiot.github.io/blog/categories/protostar/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-09-21T15:58:40-06:00</updated>
+  <updated>2014-11-23T16:39:11-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,358 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Protostar solutions - Network]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
+    <updated>2014-11-23T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
+    <content type="html"><![CDATA[<p>Previous posts:</p>
+
+<p><a href="http://hatriot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/">Protostar &ndash; Stack</a><br/>
+<a href="http://hatriot.github.io/blog/2014/09/16/protostar-format-strings/">Protostar &ndash; Format String</a><br/>
+<a href="http://hatriot.github.io/blog/2014/09/21/protostar-heap-exploits/">Protostar &ndash; Heap</a></p>
+
+<p>The network stages were pretty simple and emphasized more on data representation, rather than remote exploitation.</p>
+
+<h2>Network 00</h2>
+
+<p>The network levels all have binaries running on the system on various ports.  The first level runs on port 2999.  We can attach to the process with gdb and send over some junk data:</p>
+
+<p>```</p>
+
+<h1>echo &ldquo;xxxx&rdquo; | nc 192.168.1.106 2999</h1>
+
+<p>Please send &lsquo;652467094&rsquo; as a little endian 32bit int
+I&rsquo;m sorry, you sent 2021161080 instead
+```</p>
+
+<p>Looking at the <a href="https://exploit-exercises.com/protostar/net0/">source code</a>, we want to send a string that, when cast to an unsigned integer, equals some random value.  To do this, we simply open up a socket to the listener, read in the number, transform it to little endian, and send it back.  Using a bit of Python-fu we quickly arrive at a solution:</p>
+
+<p>```
+import socket
+import struct
+import sys
+from re import findall</p>
+
+<p>try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect(('192.168.1.106', 2999))
+
+data = sock.recv(256)
+
+m = findall("Please send '(.*?)' as", data)
+if len(m) &gt; 0:
+    m = int(m[0])
+else:
+    print 'No data received?'
+    sys.exit(1)
+
+print 'Swapping %s to little endian 32bit int' % m
+swapped = struct.pack('&lt;Q', m)
+
+print 'Swapped to %s' % repr(swapped)
+sock.sendall(str(swapped))
+
+data = sock.recv(512)
+print data
+</code></pre>
+
+<p>except Exception, e:</p>
+
+<pre><code>print e
+</code></pre>
+
+<p>finally:</p>
+
+<pre><code>sock.close()
+</code></pre>
+
+<p>```</p>
+
+<p>And when ran:</p>
+
+<p>```</p>
+
+<h1>python protostar_net0.py</h1>
+
+<p>Swapping 1295208340 to little endian 32bit int
+Swapped to &lsquo;\x94O3M\x00\x00\x00\x00&rsquo;
+Thank you sir/madam
+```</p>
+
+<h2>Network 01</h2>
+
+<p>This stage simply requires us to unpack an unsigned integer:</p>
+
+<p>```
+ unsigned int wanted;</p>
+
+<p>  wanted = random();</p>
+
+<p>  sprintf(fub, &ldquo;%d&rdquo;, wanted);</p>
+
+<p>  if(write(0, &amp;wanted, sizeof(wanted)) != sizeof(wanted)) {</p>
+
+<pre><code>  errx(1, ":(\n");
+</code></pre>
+
+<p>  }
+```</p>
+
+<p>Trivially accomplished with some struct packing:</p>
+
+<p>```
+import socket
+import struct</p>
+
+<p>try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect(('192.168.1.106', 2998))
+
+data = sock.recv(256)
+
+swapped = str(struct.unpack('&lt;I', data)[0])
+print swapped
+sock.sendall(swapped + '\r\n')
+print sock.recv(256)
+</code></pre>
+
+<p>except Exception, e:</p>
+
+<pre><code>print e
+</code></pre>
+
+<p>finally:</p>
+
+<pre><code>sock.close()
+</code></pre>
+
+<p>```</p>
+
+<p>Which gives us:</p>
+
+<p>```</p>
+
+<h1>python protostar_net1.py</h1>
+
+<p>1413209085
+you correctly sent the data
+```</p>
+
+<h2>Network 02</h2>
+
+<p>The third network level tasks us with reading in 4 unsigned integers, adding them together, and sending back the result.  The &ldquo;trick&rdquo; in this stage, if you will, is that uint32 arithmetic needs to take into account wrapping.  To accomplish this, we want our result to never be negative, which requires us to define the result modulo 2<sup>n</sup>, where n = bit length.</p>
+
+<p>This makes for a pretty simple stage:</p>
+
+<p>```
+import struct
+import socket</p>
+
+<p>try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect(('192.168.1.106', 2997))
+
+# read in our four numbers
+total = 0
+for i in xrange(4):
+    n = sock.recv(4)
+    n = struct.unpack('&lt;I', n)[0]
+    print 'Read digit %d' % n
+    total += n
+
+total = total &amp; 0xffffffffL
+total = struct.pack('&lt;I', total)
+sock.sendall(total)
+print sock.recv(256)
+</code></pre>
+
+<p>except Exception, e:</p>
+
+<pre><code>print e
+</code></pre>
+
+<p>finally:</p>
+
+<pre><code>sock.close()
+</code></pre>
+
+<p>```</p>
+
+<p>Note that we AND the final result by 2<sup>n</sup>, ensuring we have a positive 32 bit value.</p>
+
+<p>When run:</p>
+
+<p>```</p>
+
+<h1>python protostar_net2.py</h1>
+
+<p>Read digit 1533721612
+Read digit 363484815
+Read digit 1200915436
+Read digit 1572177737
+you added them correctly</p>
+
+<p>```</p>
+
+<h2>Network 03</h2>
+
+<p>The most enjoyable of the four levels, this stage requires us to reverse a dead simple login routine and perform the login.  We&rsquo;ll start by checking out the code and figuring out what it&rsquo;s doing:</p>
+
+<p>```
+while(1) {</p>
+
+<pre><code>  // from the connection, read in the total length of the packet, then
+  // parse with ntohs and allocate the buffer with malloc
+  nread(fd, &amp;len, sizeof(len));
+  len = ntohs(len);
+  buffer = malloc(len);
+
+  if(! buffer) errx(1, "malloc failure for %d bytes", len);
+
+  // read in LEN bytes into BUFFER
+  nread(fd, buffer, len);
+</code></pre>
+
+<p>```</p>
+
+<p>I&rsquo;ve commented the code inline to ease understanding.  Essentially, the first byte of our packet must be the total length of the packet.</p>
+
+<p>```
+  // switch on the first byte of the buffer
+  switch(buffer[0]) {</p>
+
+<pre><code>      // if the first byte is \x17, initiate login routine
+      case 23:
+          // invoke login() with buffer + 1 (skip length byte) and total len - 1 of the packet
+          loggedin = login(buffer + 1, len - 1);
+          send_string(fd, 33, loggedin ? "successful" : "failed");
+          break;
+
+      default:
+          send_string(fd, 58, "what you talkin about willis?");
+          break;
+  }
+</code></pre>
+
+<p>```</p>
+
+<p>If the first byte of the buffer (second in the packet) is \x17, it initiates login.</p>
+
+<p>```
+  deduct = get_string(&amp;resource, buffer, len);
+  deduct += get_string(&amp;username, buffer+deduct, len-deduct);
+  deduct += get_string(&amp;password, buffer+deduct, len-deduct);</p>
+
+<p>  success = 0;
+  success |= strcmp(resource, &ldquo;net3&rdquo;);
+  success |= strcmp(username, &ldquo;awesomesauce&rdquo;);
+  success |= strcmp(password, &ldquo;password&rdquo;);
+```</p>
+
+<p>Here&rsquo;s the real meat of the login routine; we need three, null-terminated strings that match &ldquo;net3&rdquo;, &ldquo;awesomesauce&rdquo;, and &ldquo;password&rdquo;, respectively, to successfully authenticate to the application.  The <code>get_string</code> fuction pulls these strings out one by one:</p>
+
+<p>```
+  unsigned char byte;</p>
+
+<p>  byte = *buffer;</p>
+
+<p>  // if it&rsquo;s malformed, i.e. not null term&rsquo;d
+  if(byte > len) errx(1, &ldquo;badly formed packet&rdquo;);</p>
+
+<p>  // malloc size of byte, which is the first byte at the start of the buffer
+  *result = malloc(byte);</p>
+
+<p>  // strcpy buffer + 1 into the result pointer location
+  strcpy(*result, buffer + 1);</p>
+
+<p>  // return number of bytes read
+  return byte + 1;
+```</p>
+
+<p>The caveat here is that we need to prepend the string length to each entry, then null terminate it.  This was quite simple to hack up, once it&rsquo;d been reversed:</p>
+
+<p>```
+import struct
+import socket</p>
+
+<p>IP = &lsquo;192.168.1.106&rsquo;
+PORT = 2996</p>
+
+<p>try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect((IP, PORT))
+
+resource = "net3\x00"
+username = "awesomesauce\x00"
+password = "password\x00"
+
+# build login packet 
+packet = struct.pack('B', 23)
+packet += struct.pack('B', len(resource)) + resource
+packet += struct.pack('B', len(username)) + username
+packet += struct.pack('B', len(password)) + password
+packet_len = struct.pack('&gt;H', len(packet))
+
+print '[!] Sending packet (%d)' % (len(packet) + len(packet_len))
+
+sock.sendall(packet_len + packet)
+
+print sock.recv(128)
+</code></pre>
+
+<p>except Exception, e:</p>
+
+<pre><code>print e
+</code></pre>
+
+<p>finally:</p>
+
+<pre><code>sock.close()
+</code></pre>
+
+<p>```</p>
+
+<p>Note that we&rsquo;re sending the packet length big endian due to the <code>ntohs</code> call returning a little endian value.  And once run:</p>
+
+<p>```</p>
+
+<h1>python protostar_net3.py</h1>
+
+<p>[!] Sending packet (33)</p>
+
+<p>!successful
+```</p>
+
+<h2>Network 04</h2>
+
+<p>Although net04 is not listed anywhere on the site, I noticed that it was both running and available in the <code>/opt/protostar/bin</code> directory.  Disassembling it reveals the answer:</p>
+
+<p><code>
+ 80497a8:   e8 ff f3 ff ff          call   8048bac &lt;srandom@plt&gt;
+ 80497ad:   8b 44 24 18             mov    eax,DWORD PTR [esp+0x18]
+ 80497b1:   89 04 24                mov    DWORD PTR [esp],eax
+ 80497b4:   e8 a1 ff ff ff          call   804975a &lt;run&gt;
+</code></p>
+
+<p><main> does exactly what the rest of the stages have done: backgrounding the process as the current user, serving the socket up indefinitely, changing STDIO, and invoking run().  However, stage fours run is a big nop:</p>
+
+<p><code>
+0804975a &lt;run&gt;:
+ 804975a:   55                      push   ebp
+ 804975b:   89 e5                   mov    ebp,esp
+ 804975d:   5d                      pop    ebp
+ 804975e:   c3                      ret  
+</code></p>
+
+<p>Not so much of a stage!  On to the final stages.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>

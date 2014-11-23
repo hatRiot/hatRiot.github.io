@@ -4,7 +4,7 @@
   <title><![CDATA[forelsec]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2014-09-21T15:58:40-06:00</updated>
+  <updated>2014-11-23T16:39:11-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,476 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Protostar solutions - Network]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
+    <updated>2014-11-23T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
+    <content type="html"><![CDATA[<p>Previous posts:</p>
+
+<p><a href="http://hatriot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/">Protostar &ndash; Stack</a><br/>
+<a href="http://hatriot.github.io/blog/2014/09/16/protostar-format-strings/">Protostar &ndash; Format String</a><br/>
+<a href="http://hatriot.github.io/blog/2014/09/21/protostar-heap-exploits/">Protostar &ndash; Heap</a></p>
+
+<p>The network stages were pretty simple and emphasized more on data representation, rather than remote exploitation.</p>
+
+<h2>Network 00</h2>
+
+<p>The network levels all have binaries running on the system on various ports.  The first level runs on port 2999.  We can attach to the process with gdb and send over some junk data:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># echo "xxxx" | nc 192.168.1.106 2999
+</span><span class='line'>Please send '652467094' as a little endian 32bit int
+</span><span class='line'>I'm sorry, you sent 2021161080 instead</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Looking at the <a href="https://exploit-exercises.com/protostar/net0/">source code</a>, we want to send a string that, when cast to an unsigned integer, equals some random value.  To do this, we simply open up a socket to the listener, read in the number, transform it to little endian, and send it back.  Using a bit of Python-fu we quickly arrive at a solution:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>import struct
+</span><span class='line'>import sys
+</span><span class='line'>from re import findall
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect(('192.168.1.106', 2999))
+</span><span class='line'>
+</span><span class='line'>    data = sock.recv(256)
+</span><span class='line'>
+</span><span class='line'>    m = findall("Please send '(.*?)' as", data)
+</span><span class='line'>    if len(m) &gt; 0:
+</span><span class='line'>        m = int(m[0])
+</span><span class='line'>    else:
+</span><span class='line'>        print 'No data received?'
+</span><span class='line'>        sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>    print 'Swapping %s to little endian 32bit int' % m
+</span><span class='line'>    swapped = struct.pack('&lt;Q', m)
+</span><span class='line'>
+</span><span class='line'>    print 'Swapped to %s' % repr(swapped)
+</span><span class='line'>    sock.sendall(str(swapped))
+</span><span class='line'>
+</span><span class='line'>    data = sock.recv(512)
+</span><span class='line'>    print data
+</span><span class='line'>except Exception, e:
+</span><span class='line'>    print e
+</span><span class='line'>finally:
+</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And when ran:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net0.py 
+</span><span class='line'>Swapping 1295208340 to little endian 32bit int
+</span><span class='line'>Swapped to '\x94O3M\x00\x00\x00\x00'
+</span><span class='line'>Thank you sir/madam</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Network 01</h2>
+
+<p>This stage simply requires us to unpack an unsigned integer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> unsigned int wanted;
+</span><span class='line'>
+</span><span class='line'>  wanted = random();
+</span><span class='line'>
+</span><span class='line'>  sprintf(fub, "%d", wanted);
+</span><span class='line'>
+</span><span class='line'>  if(write(0, &wanted, sizeof(wanted)) != sizeof(wanted)) {
+</span><span class='line'>      errx(1, ":(\n");
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Trivially accomplished with some struct packing:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
+</span><span class='line'>import struct
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect(('192.168.1.106', 2998))
+</span><span class='line'>
+</span><span class='line'>    data = sock.recv(256)
+</span><span class='line'>
+</span><span class='line'>    swapped = str(struct.unpack('&lt;I', data)[0])
+</span><span class='line'>    print swapped
+</span><span class='line'>    sock.sendall(swapped + '\r\n')
+</span><span class='line'>    print sock.recv(256)
+</span><span class='line'>except Exception, e:
+</span><span class='line'>    print e
+</span><span class='line'>finally:
+</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which gives us:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net1.py 
+</span><span class='line'>1413209085
+</span><span class='line'>you correctly sent the data</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Network 02</h2>
+
+<p>The third network level tasks us with reading in 4 unsigned integers, adding them together, and sending back the result.  The &ldquo;trick&rdquo; in this stage, if you will, is that uint32 arithmetic needs to take into account wrapping.  To accomplish this, we want our result to never be negative, which requires us to define the result modulo 2<sup>n</sup>, where n = bit length.</p>
+
+<p>This makes for a pretty simple stage:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import struct
+</span><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect(('192.168.1.106', 2997))
+</span><span class='line'>
+</span><span class='line'>    # read in our four numbers
+</span><span class='line'>    total = 0
+</span><span class='line'>    for i in xrange(4):
+</span><span class='line'>        n = sock.recv(4)
+</span><span class='line'>        n = struct.unpack('&lt;I', n)[0]
+</span><span class='line'>        print 'Read digit %d' % n
+</span><span class='line'>        total += n
+</span><span class='line'>
+</span><span class='line'>    total = total & 0xffffffffL
+</span><span class='line'>    total = struct.pack('&lt;I', total)
+</span><span class='line'>    sock.sendall(total)
+</span><span class='line'>    print sock.recv(256)
+</span><span class='line'>except Exception, e:
+</span><span class='line'>    print e
+</span><span class='line'>finally:
+</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Note that we AND the final result by 2<sup>n</sup>, ensuring we have a positive 32 bit value.</p>
+
+<p>When run:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net2.py 
+</span><span class='line'>Read digit 1533721612
+</span><span class='line'>Read digit 363484815
+</span><span class='line'>Read digit 1200915436
+</span><span class='line'>Read digit 1572177737
+</span><span class='line'>you added them correctly
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Network 03</h2>
+
+<p>The most enjoyable of the four levels, this stage requires us to reverse a dead simple login routine and perform the login.  We&rsquo;ll start by checking out the code and figuring out what it&rsquo;s doing:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>while(1) {
+</span><span class='line'>
+</span><span class='line'>      // from the connection, read in the total length of the packet, then
+</span><span class='line'>      // parse with ntohs and allocate the buffer with malloc
+</span><span class='line'>      nread(fd, &len, sizeof(len));
+</span><span class='line'>      len = ntohs(len);
+</span><span class='line'>      buffer = malloc(len);
+</span><span class='line'>
+</span><span class='line'>      if(! buffer) errx(1, "malloc failure for %d bytes", len);
+</span><span class='line'>
+</span><span class='line'>      // read in LEN bytes into BUFFER
+</span><span class='line'>      nread(fd, buffer, len);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I&rsquo;ve commented the code inline to ease understanding.  Essentially, the first byte of our packet must be the total length of the packet.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  // switch on the first byte of the buffer
+</span><span class='line'>  switch(buffer[0]) {
+</span><span class='line'>          // if the first byte is \x17, initiate login routine
+</span><span class='line'>          case 23:
+</span><span class='line'>              // invoke login() with buffer + 1 (skip length byte) and total len - 1 of the packet
+</span><span class='line'>              loggedin = login(buffer + 1, len - 1);
+</span><span class='line'>              send_string(fd, 33, loggedin ? "successful" : "failed");
+</span><span class='line'>              break;
+</span><span class='line'>          
+</span><span class='line'>          default:
+</span><span class='line'>              send_string(fd, 58, "what you talkin about willis?");
+</span><span class='line'>              break;
+</span><span class='line'>      }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If the first byte of the buffer (second in the packet) is \x17, it initiates login.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  deduct = get_string(&resource, buffer, len);
+</span><span class='line'>  deduct += get_string(&username, buffer+deduct, len-deduct);
+</span><span class='line'>  deduct += get_string(&password, buffer+deduct, len-deduct);
+</span><span class='line'>
+</span><span class='line'>  success = 0;
+</span><span class='line'>  success |= strcmp(resource, "net3");
+</span><span class='line'>  success |= strcmp(username, "awesomesauce");
+</span><span class='line'>  success |= strcmp(password, "password");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here&rsquo;s the real meat of the login routine; we need three, null-terminated strings that match &ldquo;net3&rdquo;, &ldquo;awesomesauce&rdquo;, and &ldquo;password&rdquo;, respectively, to successfully authenticate to the application.  The <code>get_string</code> fuction pulls these strings out one by one:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  unsigned char byte;
+</span><span class='line'>
+</span><span class='line'>  byte = *buffer;
+</span><span class='line'>
+</span><span class='line'>  // if it's malformed, i.e. not null term'd
+</span><span class='line'>  if(byte &gt; len) errx(1, "badly formed packet");
+</span><span class='line'>
+</span><span class='line'>  // malloc size of byte, which is the first byte at the start of the buffer
+</span><span class='line'>  *result = malloc(byte);
+</span><span class='line'>
+</span><span class='line'>  // strcpy buffer + 1 into the result pointer location
+</span><span class='line'>  strcpy(*result, buffer + 1);
+</span><span class='line'>
+</span><span class='line'>  // return number of bytes read
+</span><span class='line'>  return byte + 1;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The caveat here is that we need to prepend the string length to each entry, then null terminate it.  This was quite simple to hack up, once it&rsquo;d been reversed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import struct
+</span><span class='line'>import socket
+</span><span class='line'>
+</span><span class='line'>IP = '192.168.1.106'
+</span><span class='line'>PORT = 2996
+</span><span class='line'>
+</span><span class='line'>try:
+</span><span class='line'>    sock = socket.socket()
+</span><span class='line'>    sock.connect((IP, PORT))
+</span><span class='line'>
+</span><span class='line'>    resource = "net3\x00"
+</span><span class='line'>    username = "awesomesauce\x00"
+</span><span class='line'>    password = "password\x00"
+</span><span class='line'>
+</span><span class='line'>    # build login packet 
+</span><span class='line'>    packet = struct.pack('B', 23)
+</span><span class='line'>    packet += struct.pack('B', len(resource)) + resource
+</span><span class='line'>    packet += struct.pack('B', len(username)) + username
+</span><span class='line'>    packet += struct.pack('B', len(password)) + password
+</span><span class='line'>    packet_len = struct.pack('&gt;H', len(packet))
+</span><span class='line'>
+</span><span class='line'>    print '[!] Sending packet (%d)' % (len(packet) + len(packet_len))
+</span><span class='line'>
+</span><span class='line'>    sock.sendall(packet_len + packet)
+</span><span class='line'>
+</span><span class='line'>    print sock.recv(128)
+</span><span class='line'>
+</span><span class='line'>except Exception, e:
+</span><span class='line'>    print e
+</span><span class='line'>finally:
+</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Note that we&rsquo;re sending the packet length big endian due to the <code>ntohs</code> call returning a little endian value.  And once run:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net3.py 
+</span><span class='line'>[!] Sending packet (33)
+</span><span class='line'>
+</span><span class='line'>!successful</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>Network 04</h2>
+
+<p>Although net04 is not listed anywhere on the site, I noticed that it was both running and available in the <code>/opt/protostar/bin</code> directory.  Disassembling it reveals the answer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> 80497a8:   e8 ff f3 ff ff          call   8048bac &lt;srandom@plt&gt;
+</span><span class='line'> 80497ad:   8b 44 24 18             mov    eax,DWORD PTR [esp+0x18]
+</span><span class='line'> 80497b1:   89 04 24                mov    DWORD PTR [esp],eax
+</span><span class='line'> 80497b4:   e8 a1 ff ff ff          call   804975a &lt;run&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p><main> does exactly what the rest of the stages have done: backgrounding the process as the current user, serving the socket up indefinitely, changing STDIO, and invoking run().  However, stage fours run is a big nop:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0804975a &lt;run&gt;:
+</span><span class='line'> 804975a:   55                      push   ebp
+</span><span class='line'> 804975b:   89 e5                   mov    ebp,esp
+</span><span class='line'> 804975d:   5d                      pop    ebp
+</span><span class='line'> 804975e:   c3                      ret  </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Not so much of a stage!  On to the final stages.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
@@ -5224,267 +5694,6 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
 <p><img class="center" src="http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg"></p>
 
 <p><a href="http://www.exploit-db.com/exploits/26410/">Exploit</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Asus RT56U Remote Command Injection]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/"/>
-    <updated>2013-06-05T23:45:20-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection</id>
-    <content type="html"><![CDATA[<p>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.</p>
-
-<p>I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both.  I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp.  This page hosts a slew of diagnostic tools, including the ability to ping network systems.  See where this is going?</p>
-
-<p><img class="center" src="http://4.bp.blogspot.com/-4C_1Ig7iJos/UZwIsAqjHqI/AAAAAAAAAeo/hC3nnlBbyb8/s640/command_injection.jpg"></p>
-
-<p>And the related source code to this:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>document.form.SystemCmd.value = "ping -c " + document.form.pingCNT.value + " " + document.form.destIP.value;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Pretty trivial, and each command, ping, nslookup, and traceroute, is vulnerable.  The system is running an HTTP web server that serves up ASP pages, so we could wget and deploy a reverse ASP shell or set up a netcat listener.</p>
-
-<p>I then took a look at the latest firmware, which touts the following changes:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>ASUS RT-N56U Firmware Version 3.0.0.4.360
-</span><span class='line'>1. AiCloud
-</span><span class='line'>For iOS user, please upgrade app to 1.02.78 or above
-</span><span class='line'>(for more information, please refer to http://event.asus.com/2012/nw/aicloud/index.htm)
-</span><span class='line'>2. Network tools in Advanced setting
-</span><span class='line'>3. WOL user interface
-</span><span class='line'>4. H.323 and SIP passthrough can be disabled in Advanced Settings --&gt; WAN --&gt;NAT Passthrough
-</span><span class='line'>5. Click the device name and lookup the manufacturer information
-</span><span class='line'>6. Change the DHCP query frequency in Advanced settings--&gt;WAN--&gt;Internet connection to resolve the ISP compatibility issue.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>So it looks like the tools were added in the .342 (or earlier) firmware, but not actually linked until the .360 release.  I then flashed over the firmware to take a look at any changes.  It appeared they added a Network Tools section which, of course, allows us to:</p>
-
-<p><img class="center" src="http://3.bp.blogspot.com/-ZFhW0bRKM3o/UZwoiPOXXyI/AAAAAAAAAe4/WyTtjhpQEho/s640/asus_exec_360.jpg"></p>
-
-<p>It&rsquo;s kind of ridiculous that we can hit /etc/shadow with this.</p>
-
-<p>As an aside, I thought about what sort of files might be accessible without authenticating to the web server.  Seeing as I had access to enumerate the file system, I constructed a listing of every file in the web server&rsquo;s root.  The code can be seen below:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import urllib, urllib2
-</span><span class='line'>
-</span><span class='line'>def get_files():
-</span><span class='line'>    files = []
-</span><span class='line'>    with open('files_rt.txt', 'r') as f:
-</span><span class='line'>        files = [x.strip() for x in f.readlines()]
-</span><span class='line'>    print '[!] Built %d files to test...'%len(files)
-</span><span class='line'>    return files
-</span><span class='line'>
-</span><span class='line'>def run():
-</span><span class='line'>    files        = get_files()
-</span><span class='line'>    open_files   = []
-</span><span class='line'>
-</span><span class='line'>    for f in files:
-</span><span class='line'>        url = 'http://192.168.1.1/'+f
-</span><span class='line'>        try:
-</span><span class='line'>            data = urllib2.urlopen(url).read()
-</span><span class='line'>        except urllib2.HTTPError as e:
-</span><span class='line'>            continue
-</span><span class='line'>
-</span><span class='line'>        open_files.append(url)
-</span><span class='line'>
-</span><span class='line'>    print '[!] %d exposed files'%len(open_files)
-</span><span class='line'>    for f in open_files: print '\t[!] %s'%f
-</span><span class='line'>
-</span><span class='line'>def parse_args():
-</span><span class='line'>    pass
-</span><span class='line'>
-</span><span class='line'>if __name__ == "__main__":
-</span><span class='line'>    run()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>When run, 42 files were exposed:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~$ python rt56u_iter.py 
-</span><span class='line'>[!] Built 277 files to test...
-</span><span class='line'>[!] 42 exposed files
-</span><span class='line'>    [!] http://192.168.1.1/NM_style.css
-</span><span class='line'>    [!] http://192.168.1.1/Nologin.asp
-</span><span class='line'>    [!] http://192.168.1.1/PIE.htc
-</span><span class='line'>    [!] http://192.168.1.1/ParentalControl.css
-</span><span class='line'>    [!] http://192.168.1.1/WAN_info.asp
-</span><span class='line'>    [!] http://192.168.1.1/app_installation.css
-</span><span class='line'>    [!] http://192.168.1.1/detect_firmware.asp
-</span><span class='line'>    [!] http://192.168.1.1/error_page.htm
-</span><span class='line'>    [!] http://192.168.1.1/fan.svg
-</span><span class='line'>    [!] http://192.168.1.1/form_style.css
-</span><span class='line'>    [!] http://192.168.1.1/get_webdavInfo.asp
-</span><span class='line'>    [!] http://192.168.1.1/gotoHomePage.htm
-</span><span class='line'>    [!] http://192.168.1.1/httpd_check.htm
-</span><span class='line'>    [!] http://192.168.1.1/index_style.css
-</span><span class='line'>    [!] http://192.168.1.1/jquery.js
-</span><span class='line'>    [!] http://192.168.1.1/menu_style.css
-</span><span class='line'>    [!] http://192.168.1.1/other.css
-</span><span class='line'>    [!] http://192.168.1.1/pwdmeter.css
-</span><span class='line'>    [!] http://192.168.1.1/remote.asp
-</span><span class='line'>    [!] http://192.168.1.1/tm.svg
-</span><span class='line'>    [!] http://192.168.1.1/tmmenu.css
-</span><span class='line'>    [!] http://192.168.1.1/update_applist.asp
-</span><span class='line'>    [!] http://192.168.1.1/update_appstate.asp
-</span><span class='line'>    [!] http://192.168.1.1/update_cloudstatus.asp
-</span><span class='line'>    [!] http://192.168.1.1/ure_success.htm
-</span><span class='line'>    [!] http://192.168.1.1/ureip.asp
-</span><span class='line'>    [!] http://192.168.1.1/usp_style.css
-</span><span class='line'>    [!] http://192.168.1.1/aidisk/AiDisk_style.css
-</span><span class='line'>    [!] http://192.168.1.1/aidisk/aidisk.css
-</span><span class='line'>    [!] http://192.168.1.1/device-map/device-map.css
-</span><span class='line'>    [!] http://192.168.1.1/iui/Button_low.jpg
-</span><span class='line'>    [!] http://192.168.1.1/iui/check.png
-</span><span class='line'>    [!] http://192.168.1.1/iui/default-theme.css
-</span><span class='line'>    [!] http://192.168.1.1/iui/iui.css
-</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow.png
-</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow_setting.png
-</span><span class='line'>    [!] http://192.168.1.1/iui/toolButton.png
-</span><span class='line'>    [!] http://192.168.1.1/calendar/fullcalendar.css
-</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.htc
-</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.swf
-</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style.css
-</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style_m.css</span></code></pre></td></tr></table></div></figure>
-
-
-<p>A majority of the files are pretty useless/uninteresting, such as the css/jpg/png files, but a couple of the ASP files have some interesting information.  <code>Nologin.asp</code> lets us know every address the DHCP server has leased out, as well as the IP of the currently logged in administrator.  <code>get_webdavInfo.asp</code> gives us a bunch of great info, including the firmware version, DDNS information, mode of operation, and more.</p>
-
-<p>The only really interesting page to me is <code>Nologin.asp</code>.  This gives us the currently logged in administrator; so, if we&rsquo;re on the local network, we can generate a short script that periodically pings the router and alerts us when an admin logs in.  We can then ARPP the administrator and hijack the password; this works because the router&rsquo;s web server doesn&rsquo;t do any session management, it simply uses basic HTTP auth to send the base64&rsquo;d password.</p>
-
-<p>Observe:</p>
-
-<p><img class="center" src="http://1.bp.blogspot.com/-uPMtGiHrr8c/Ua_L3lVLl9I/AAAAAAAAAf4/QIhMSOdOfvM/s640/no_login.jpg"></p>
-
-<p>Now we know where the administrator is logged in.  We can now ARPP the host and hijack the password.  It is unnecessary for the administrator to actually be doing anything, because conveniently the client&rsquo;s browser sends out an ajax request to <code>/ajax_status.asp</code> quite often, complete with authentication credentials.  Using zarp, a network attack tool designed by yours truly, we can ARPP the admin and set up a password sniffer:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[Running sessions]
-</span><span class='line'>[1] ARP Spoof
-</span><span class='line'>[0] 192.168.1.219
-</span><span class='line'>[2] Password Sniffer
-</span><span class='line'>[0] 192.168.1.219
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>[1] Stop session
-</span><span class='line'>[2] View session
-</span><span class='line'>[3] Start session logger
-</span><span class='line'>[4] Stop session logger
-</span><span class='line'>
-</span><span class='line'>0) Back
-</span><span class='line'>&gt; 2
-</span><span class='line'>[module] [number]&gt; 2 0
-</span><span class='line'>[!] [enter] when finished
-</span><span class='line'>[!] Dumping output from 'Password Sniffer'...
-</span><span class='line'>[!] Host: 192.168.1.1
-</span><span class='line'>[!] User: admin:*********</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Immediately we catch a heartbeat and grab the password (edited out).</p>
-
-<p>Lastly, this is full disclosure.  Check out <a href="http://seclists.org/fulldisclosure/2013/Mar/126">this</a> listing for how Asus treats security researchers.</p>
 ]]></content>
   </entry>
   
