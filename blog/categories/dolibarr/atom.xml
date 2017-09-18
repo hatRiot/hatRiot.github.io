@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: dolibarr | forelsec]]></title>
+  <title><![CDATA[Category: dolibarr | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/dolibarr/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Dolibarr 3.4.0 - Multiple Vulnerabilities]]></title>
     <link href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/"/>
-    <updated>2013-10-14T23:13:15-06:00</updated>
+    <updated>2013-10-14T22:13:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities</id>
     <content type="html"><![CDATA[<p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
 

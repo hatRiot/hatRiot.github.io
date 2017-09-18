@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: nebula | forelsec]]></title>
+  <title><![CDATA[Category: nebula | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/nebula/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Nebula Solutions - All Levels]]></title>
     <link href="http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels/"/>
-    <updated>2013-03-30T23:46:33-06:00</updated>
+    <updated>2013-03-30T22:46:33-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels</id>
     <content type="html"><![CDATA[<p>Nebula is the first of three exploit discs provided by <a href="http://exploit-exercises.com/">exploit exercises</a>.  I&rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&rsquo;ve cleaned my notes up a bit and am posting them here.  I will also post my notes for the other two systems sometime after.  This post includes a walkthrough of all 20 levels.</p>
 

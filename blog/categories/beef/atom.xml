@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: beef | forelsec]]></title>
+  <title><![CDATA[Category: beef | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/beef/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[rce in browser exploitation framework (BeEF)]]></title>
     <link href="http://hatRiot.github.io/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/"/>
-    <updated>2014-05-13T20:57:53-06:00</updated>
+    <updated>2014-05-13T19:57:53-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/05/13/rce-in-browser-exploitation-framework-beef</id>
     <content type="html"><![CDATA[<p>Let me preface this post by saying that this vulnerability is <em>already fixed</em>, and was caught pretty early during the development process.  The vulnerability was originally introduced during a merge for the new DNS extension, and was promptly <a href="https://github.com/beefproject/beef/commit/39e672f4207aa46c4c0c11e0ce21cbaa3ab45d71">patched</a> by antisnatchor on 03022014.  Although this vulnerability was caught fairly quickly, it still made it into the master branch.  I post this only because I&rsquo;ve seen too many penetration testers leaving their tools externally exposed, often with default credentials.</p>
 

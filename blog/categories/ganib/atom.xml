@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: ganib | forelsec]]></title>
+  <title><![CDATA[Category: ganib | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/ganib/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[ganib project management 2.3 SQLi]]></title>
     <link href="http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/"/>
-    <updated>2014-02-24T22:03:07-07:00</updated>
+    <updated>2014-02-24T21:03:07-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli</id>
     <content type="html"><![CDATA[<p><a href="http://www.ganib.com/">Ganib</a> is a project management tool supporting all the glorious project management utilities.  The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.</p>
 

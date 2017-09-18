@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: buffer overflow | forelsec]]></title>
+  <title><![CDATA[Category: buffer overflow | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/buffer-overflow/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[FastSpy 2.1.1 Buffer Overflow]]></title>
     <link href="http://hatRiot.github.io/blog/2012/10/03/fastspy-buffer-overflow/"/>
-    <updated>2012-10-03T01:15:10-06:00</updated>
+    <updated>2012-10-03T00:15:10-07:00</updated>
     <id>http://hatRiot.github.io/blog/2012/10/03/fastspy-buffer-overflow</id>
     <content type="html"><![CDATA[<p><a href="http://sourceforge.net/projects/fastspy/">FastSpy</a> is an oooooooooooooooooooold multithreaded network scanner, circa 1999, that doesn&rsquo;t really see any use nowadays.  I started using <a href="http://koders.com/">Koders</a> to dig around projects and find potential exploits, and ran across this one.  It&rsquo;s drop-dead simple in practice (deceptively so), and there were a few interesting parts to it so I figured I&rsquo;d throw this up.  At the time of writing, I don&rsquo;t think the original developer is even around, and I haven&rsquo;t seen this posted anywhere else.</p>
 

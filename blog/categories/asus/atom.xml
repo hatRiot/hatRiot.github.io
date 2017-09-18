@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: asus | forelsec]]></title>
+  <title><![CDATA[Category: asus | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/asus/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Asus RT56U Remote Command Injection]]></title>
     <link href="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/"/>
-    <updated>2013-06-05T23:45:20-06:00</updated>
+    <updated>2013-06-05T22:45:20-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection</id>
     <content type="html"><![CDATA[<p>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.</p>
 

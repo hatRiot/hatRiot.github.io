@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: metasploit | forelsec]]></title>
+  <title><![CDATA[Category: metasploit | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/metasploit/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[meterpreter shell upgrades using powershell]]></title>
     <link href="http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/"/>
-    <updated>2014-03-10T22:31:47-06:00</updated>
+    <updated>2014-03-10T21:31:47-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell</id>
     <content type="html"><![CDATA[<p>One of my primary goals during development of <a href="https://github.com/hatRiot/clusterd">clusterd</a> was ensuring reliability and covertness during remote deploys.  It&rsquo;s no secret that antivirus routinely eats vanilla meterpreter shells.  For this, the <code>--gen-payload</code> flag generates a war file with <code>java/jsp_shell_reverse_tcp</code> tucked inside.  This is used due to it being largely undetected by AV, and our environments are perfectly suited for it.  However, Meterpreter is a fantastic piece of software, and it&rsquo;d be nice to be able to elevate from this simple JSP shell into it.</p>
 

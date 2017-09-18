@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: protostar | forelsec]]></title>
+  <title><![CDATA[Category: protostar | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/protostar/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Network]]></title>
     <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
-    <updated>2014-11-23T14:10:04-07:00</updated>
+    <updated>2014-11-23T13:10:04-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
     <content type="html"><![CDATA[<p>Previous posts:</p>
 
@@ -368,7 +368,7 @@ print sock.recv(128)
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
     <link href="http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits/"/>
-    <updated>2014-09-21T15:10:04-06:00</updated>
+    <updated>2014-09-21T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits</id>
     <content type="html"><![CDATA[<p>And we&rsquo;re back with Protostar, this time working on the heap section.</p>
 
@@ -762,7 +762,7 @@ user@protostar:/opt/protostar/bin$
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
     <link href="http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings/"/>
-    <updated>2014-09-16T15:10:04-06:00</updated>
+    <updated>2014-09-16T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings</id>
     <content type="html"><![CDATA[<p>Wow it&rsquo;s been awhile since I&rsquo;ve taken a look at this box.  The last time I was here, I was working on the format string levels.  These levels have been done and documented to death, but hey, they&rsquo;re fun.  So, without further delay, lets begin.</p>
 
@@ -1030,9 +1030,9 @@ code execution redirected! you win
   
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Stack Levels]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/"/>
-    <updated>2013-03-31T00:21:16-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/03/31/protostar-solutions-stack-levels</id>
+    <link href="http://hatRiot.github.io/blog/2013/03/30/protostar-solutions-stack-levels/"/>
+    <updated>2013-03-30T23:21:16-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/03/30/protostar-solutions-stack-levels</id>
     <content type="html"><![CDATA[<p>Part two of the three <a href="http://exploit-exercises.com/">exploit exercises</a> available.  This set of challenges focused purely on memory corruption via stack overflows; the challenges here weren&rsquo;t too difficult, but I wanted to work through them anyway.  A post with the remaining levels will follow.</p>
 
 <h3>Stack Level 00</h3>

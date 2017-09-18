@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: sqli | forelsec]]></title>
+  <title><![CDATA[Category: sqli | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/sqli/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[ganib project management 2.3 SQLi]]></title>
     <link href="http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/"/>
-    <updated>2014-02-24T22:03:07-07:00</updated>
+    <updated>2014-02-24T21:03:07-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli</id>
     <content type="html"><![CDATA[<p><a href="http://www.ganib.com/">Ganib</a> is a project management tool supporting all the glorious project management utilities.  The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.</p>
 
@@ -328,7 +328,7 @@ return options
   <entry>
     <title type="html"><![CDATA[Dolibarr 3.4.0 - Multiple Vulnerabilities]]></title>
     <link href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/"/>
-    <updated>2013-10-14T23:13:15-06:00</updated>
+    <updated>2013-10-14T22:13:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities</id>
     <content type="html"><![CDATA[<p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
 
@@ -662,7 +662,7 @@ root@jali:~/exploits#
   <entry>
     <title type="html"><![CDATA[OpenEMM-2013 SOAP SQLi/Stored XSS]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/"/>
-    <updated>2013-07-28T23:24:15-06:00</updated>
+    <updated>2013-07-28T22:24:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss</id>
     <content type="html"><![CDATA[<p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
 
@@ -750,8 +750,8 @@ usage: openemm_wsdl.py [-h] -i HOST [-s] [-m MLIST] [&mdash;dm] [&mdash;ds]</p>
   &mdash;dm        delete all mailing lists
   &mdash;ds        delete all subscribers
 root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -s
-&lt;SOAPpy.Types.structType multiRef at 30449464>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Last&rsquo;, &lsquo;First&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#109;&#x61;&#x69;&#x6c;&#116;&#x6f;&#x3a;&#102;&#105;&#x72;&#115;&#x74;&#x2e;&#x6c;&#97;&#x73;&#116;&#64;&#x64;&#111;&#109;&#x61;&#105;&#x6e;&#46;&#111;&#x72;&#103;">&#x66;&#x69;&#114;&#x73;&#x74;&#x2e;&#x6c;&#x61;&#x73;&#116;&#x40;&#x64;&#x6f;&#x6d;&#x61;&#105;&#110;&#x2e;&#x6f;&#114;&#x67;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;1&rsquo;]}
-&lt;SOAPpy.Types.structType multiRef at 30446728>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Name&rsquo;, &lsquo;No&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#109;&#97;&#105;&#x6c;&#x74;&#x6f;&#x3a;&#x6e;&#111;&#x2e;&#x6e;&#97;&#x6d;&#101;&#x40;&#x79;&#x6f;&#117;&#114;&#x64;&#x6f;&#x6d;&#97;&#105;&#110;&#46;&#99;&#x6f;&#x6d;">&#x6e;&#x6f;&#46;&#x6e;&#x61;&#x6d;&#101;&#64;&#x79;&#111;&#117;&#114;&#x64;&#111;&#109;&#x61;&#x69;&#x6e;&#x2e;&#x63;&#x6f;&#109;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2&rsquo;]}
+&lt;SOAPpy.Types.structType multiRef at 30449464>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Last&rsquo;, &lsquo;First&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#109;&#x61;&#x69;&#x6c;&#116;&#111;&#x3a;&#102;&#x69;&#x72;&#x73;&#x74;&#x2e;&#x6c;&#x61;&#115;&#x74;&#64;&#100;&#111;&#109;&#97;&#x69;&#110;&#x2e;&#111;&#x72;&#103;">&#x66;&#x69;&#114;&#115;&#116;&#x2e;&#x6c;&#97;&#x73;&#x74;&#64;&#x64;&#111;&#109;&#97;&#x69;&#x6e;&#x2e;&#x6f;&#114;&#103;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;1&rsquo;]}
+&lt;SOAPpy.Types.structType multiRef at 30446728>: {&lsquo;x&rsquo;: [&lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;Name&rsquo;, &lsquo;No&rsquo;, &lsquo;2&rsquo;, &lsquo;29&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2013&rsquo;, &lsquo;2013-06-29 17:54:02&rsquo;, &lsquo;&rsquo;, &lsquo;1&rsquo;, &lsquo;54&rsquo;, &lsquo;6&rsquo;, &lsquo;<a href="&#x6d;&#97;&#105;&#x6c;&#116;&#111;&#58;&#110;&#x6f;&#x2e;&#x6e;&#97;&#x6d;&#x65;&#64;&#121;&#x6f;&#x75;&#x72;&#100;&#x6f;&#109;&#97;&#x69;&#110;&#x2e;&#x63;&#111;&#109;">&#x6e;&#111;&#x2e;&#110;&#97;&#x6d;&#101;&#64;&#x79;&#111;&#x75;&#114;&#x64;&#x6f;&#x6d;&#x61;&#x69;&#x6e;&#46;&#99;&#x6f;&#109;</a>&rsquo;, &lsquo;2&rsquo;, &lsquo;6&rsquo;, &lsquo;29&rsquo;, &lsquo;54&rsquo;, &lsquo;0&rsquo;, &lsquo;17&rsquo;, &lsquo;2&rsquo;]}
 [!] Discovered 2 subscribers
 root@jali:~/exploits#
 ```</p>
@@ -824,7 +824,7 @@ root@jali:~/exploits#
   <entry>
     <title type="html"><![CDATA[Collabtive 1.0 - SQLi]]></title>
     <link href="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/"/>
-    <updated>2013-06-21T23:40:53-06:00</updated>
+    <updated>2013-06-21T22:40:53-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli</id>
     <content type="html"><![CDATA[<p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
 
@@ -917,7 +917,7 @@ root@jali:~/exploits# python collabtive_10_sqli.py -i 192.168.1.83 -P vlh4soc9k2
   <entry>
     <title type="html"><![CDATA[PHD Help Desk 2.12 - SQLi/XSS]]></title>
     <link href="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/"/>
-    <updated>2013-06-02T23:55:27-06:00</updated>
+    <updated>2013-06-02T22:55:27-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss</id>
     <content type="html"><![CDATA[<p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
 

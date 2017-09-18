@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: modem | forelsec]]></title>
+  <title><![CDATA[Category: modem | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/modem/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -15,9 +15,9 @@
   
   <entry>
     <title type="html"><![CDATA[Motorola Surfboard - Multiple Vulnerabilities]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities/"/>
-    <updated>2013-04-21T00:06:45-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/04/21/motorola-surfboard-multiple-vulnerabilities</id>
+    <link href="http://hatRiot.github.io/blog/2013/04/20/motorola-surfboard-multiple-vulnerabilities/"/>
+    <updated>2013-04-20T23:06:45-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/20/motorola-surfboard-multiple-vulnerabilities</id>
     <content type="html"><![CDATA[<p>It would appear that these vulnerabilities were disclosed a few years ago (<a href="http://www.cvedetails.com/cve/CVE-2008-2002/">CVE-2008-2002</a> and <a href="http://www.cvedetails.com/cve/CVE-2006-5196/">CVE-2006-5196</a>), but my relatively new (1-2 years) Motorola Surfboard SB5101U (verified against both the 101 and 101U), loaded with SB5101NU-2.1.7.0-GA-00-388-NOSH, appears to be vulnerable to the same CSRF&rsquo;s exposed prior.  With no authentication system in place at all, it would appear that a local DoS is not much of a concern to them.  It&rsquo;s interesting that, despite the sudden flood of discovered vulnerabilities in routers, nobody is really taking a look at the other piece of hardware between you and the ISP.  As I poked about this modem, I discovered a few other interesting things.</p>
 
 <p>First, here&rsquo;s the POST to reset the modem to factory defaults:</p>

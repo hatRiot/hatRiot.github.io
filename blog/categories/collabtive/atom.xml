@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: collabtive | forelsec]]></title>
+  <title><![CDATA[Category: collabtive | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/collabtive/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Collabtive 1.0 - SQLi]]></title>
     <link href="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/"/>
-    <updated>2013-06-21T23:40:53-06:00</updated>
+    <updated>2013-06-21T22:40:53-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli</id>
     <content type="html"><![CDATA[<p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
 

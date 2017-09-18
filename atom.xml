@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[forelsec]]></title>
+  <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[ntpdc local buffer overflow]]></title>
     <link href="http://hatRiot.github.io/blog/2015/01/06/ntpdc-exploit/"/>
-    <updated>2015-01-06T14:10:04-07:00</updated>
+    <updated>2015-01-06T13:10:04-08:00</updated>
     <id>http://hatRiot.github.io/blog/2015/01/06/ntpdc-exploit</id>
     <content type="html"><![CDATA[<p>Alejandro Hdez (@nitr0usmx) recently <a href="https://twitter.com/nitr0usmx/status/550372148448333825">tweeted</a> about a trivial buffer overflow in ntpdc, a deprecated NTP query tool still available and packaged with any NTP install.  He posted a screenshot of the crash as the result of a large buffer passed into a vulnerable <code>gets</code> call.  After digging into it a bit, I decided it&rsquo;d be a fun exploit to write, and it was.  There are a few quarks to it that make it of particular interest, of which I&rsquo;ve detailed below.</p>
 
@@ -739,7 +739,7 @@
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Network]]></title>
     <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
-    <updated>2014-11-23T14:10:04-07:00</updated>
+    <updated>2014-11-23T13:10:04-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
     <content type="html"><![CDATA[<p>Previous posts:</p>
 
@@ -1209,7 +1209,7 @@
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
     <link href="http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits/"/>
-    <updated>2014-09-21T15:10:04-06:00</updated>
+    <updated>2014-09-21T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits</id>
     <content type="html"><![CDATA[<p>And we&rsquo;re back with Protostar, this time working on the heap section.</p>
 
@@ -1768,7 +1768,7 @@
   <entry>
     <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
     <link href="http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings/"/>
-    <updated>2014-09-16T15:10:04-06:00</updated>
+    <updated>2014-09-16T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings</id>
     <content type="html"><![CDATA[<p>Wow it&rsquo;s been awhile since I&rsquo;ve taken a look at this box.  The last time I was here, I was working on the format string levels.  These levels have been done and documented to death, but hey, they&rsquo;re fun.  So, without further delay, lets begin.</p>
 
@@ -2117,7 +2117,7 @@
   <entry>
     <title type="html"><![CDATA[railo security - part four - pre-auth remote code execution]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/"/>
-    <updated>2014-08-27T15:00:00-06:00</updated>
+    <updated>2014-08-27T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-auth rce</a></em><br/>
@@ -2517,7 +2517,7 @@
   <entry>
     <title type="html"><![CDATA[railo security - part three - pre-authentication LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/"/>
-    <updated>2014-08-23T15:00:00-06:00</updated>
+    <updated>2014-08-23T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
@@ -2723,7 +2723,7 @@
   <entry>
     <title type="html"><![CDATA[railo security - part two - post-authentication rce]]></title>
     <link href="http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two/"/>
-    <updated>2014-07-24T15:10:04-06:00</updated>
+    <updated>2014-07-24T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em>Part two &ndash; post-authentication rce</em><br/>
@@ -3135,7 +3135,7 @@
   <entry>
     <title type="html"><![CDATA[gitlist - commit to rce]]></title>
     <link href="http://hatRiot.github.io/blog/2014/06/29/gitlist-rce/"/>
-    <updated>2014-06-29T16:00:00-06:00</updated>
+    <updated>2014-06-29T15:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/06/29/gitlist-rce</id>
     <content type="html"><![CDATA[<p><a href="http://gitlist.org/">Gitlist</a> is a fantastic repository viewer for Git; it&rsquo;s essentially your own private Github without all the social networking and glitzy features of it.  I&rsquo;ve got a private Gitlist that I run locally, as well as a professional instance for hosting internal projects.  Last year I noticed a bug listed on their Github page that looked a lot like an exploitable <a href="https://github.com/klaussilveira/gitlist/issues/395">hole</a>:</p>
 
@@ -3359,7 +3359,7 @@
   <entry>
     <title type="html"><![CDATA[railo security - part one - intro]]></title>
     <link href="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/"/>
-    <updated>2014-06-25T15:00:00-06:00</updated>
+    <updated>2014-06-25T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one</id>
     <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
@@ -3629,7 +3629,7 @@
   <entry>
     <title type="html"><![CDATA[rce in browser exploitation framework (BeEF)]]></title>
     <link href="http://hatRiot.github.io/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/"/>
-    <updated>2014-05-13T20:57:53-06:00</updated>
+    <updated>2014-05-13T19:57:53-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/05/13/rce-in-browser-exploitation-framework-beef</id>
     <content type="html"><![CDATA[<p>Let me preface this post by saying that this vulnerability is <em>already fixed</em>, and was caught pretty early during the development process.  The vulnerability was originally introduced during a merge for the new DNS extension, and was promptly <a href="https://github.com/beefproject/beef/commit/39e672f4207aa46c4c0c11e0ce21cbaa3ab45d71">patched</a> by antisnatchor on 03022014.  Although this vulnerability was caught fairly quickly, it still made it into the master branch.  I post this only because I&rsquo;ve seen too many penetration testers leaving their tools externally exposed, often with default credentials.</p>
 
@@ -3789,7 +3789,7 @@
   <entry>
     <title type="html"><![CDATA[LFI to shell in Coldfusion 6-10]]></title>
     <link href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/"/>
-    <updated>2014-04-02T15:10:04-06:00</updated>
+    <updated>2014-04-02T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion</id>
     <content type="html"><![CDATA[<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
 
@@ -3871,7 +3871,7 @@
   <entry>
     <title type="html"><![CDATA[IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/"/>
-    <updated>2014-03-26T23:51:11-06:00</updated>
+    <updated>2014-03-26T22:51:11-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi</id>
     <content type="html"><![CDATA[<p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
 Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>
@@ -3995,7 +3995,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[meterpreter shell upgrades using powershell]]></title>
     <link href="http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell/"/>
-    <updated>2014-03-10T22:31:47-06:00</updated>
+    <updated>2014-03-10T21:31:47-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/03/10/meterpreter-shell-upgrades-using-powershell</id>
     <content type="html"><![CDATA[<p>One of my primary goals during development of <a href="https://github.com/hatRiot/clusterd">clusterd</a> was ensuring reliability and covertness during remote deploys.  It&rsquo;s no secret that antivirus routinely eats vanilla meterpreter shells.  For this, the <code>--gen-payload</code> flag generates a war file with <code>java/jsp_shell_reverse_tcp</code> tucked inside.  This is used due to it being largely undetected by AV, and our environments are perfectly suited for it.  However, Meterpreter is a fantastic piece of software, and it&rsquo;d be nice to be able to elevate from this simple JSP shell into it.</p>
 
@@ -4495,7 +4495,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[introduction]]></title>
     <link href="http://hatRiot.github.io/blog/2014/03/02/introduction/"/>
-    <updated>2014-03-02T22:51:11-07:00</updated>
+    <updated>2014-03-02T21:51:11-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/03/02/introduction</id>
     <content type="html"><![CDATA[<p>This isn&rsquo;t a real introduction post, just a note that I&rsquo;m migrating from Google Blogger to Github Pages with Octopress.  So far it&rsquo;s great.  I&rsquo;m going to be slowly migrating all posts over from Blogger into here, though I may skip a few early posts that aren&rsquo;t as interesting.</p>
 
@@ -4506,7 +4506,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[ganib project management 2.3 SQLi]]></title>
     <link href="http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/"/>
-    <updated>2014-02-24T22:03:07-07:00</updated>
+    <updated>2014-02-24T21:03:07-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli</id>
     <content type="html"><![CDATA[<p><a href="http://www.ganib.com/">Ganib</a> is a project management tool supporting all the glorious project management utilities.  The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.</p>
 
@@ -4935,7 +4935,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[Fetching JBoss MBean method hashes]]></title>
     <link href="http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/"/>
-    <updated>2014-01-26T01:24:19-07:00</updated>
+    <updated>2014-01-26T00:24:19-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes</id>
     <content type="html"><![CDATA[<p>Matasano published <a href="http://www.matasano.com/research/OWASP3011_Luca.pdf">one</a> of <a href="https://www.redteam-pentesting.de/en/publications/jboss/-bridging-the-gap-between-the-enterprise-and-you-or-whos-the-jboss-now">two</a> canonical papers on JBoss exploitation.  While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans.  This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.</p>
 
@@ -5056,7 +5056,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[Dolibarr 3.4.0 - Multiple Vulnerabilities]]></title>
     <link href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/"/>
-    <updated>2013-10-14T23:13:15-06:00</updated>
+    <updated>2013-10-14T22:13:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities</id>
     <content type="html"><![CDATA[<p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
 
@@ -5560,7 +5560,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[OpenEMM-2013 SOAP SQLi/Stored XSS]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/"/>
-    <updated>2013-07-28T23:24:15-06:00</updated>
+    <updated>2013-07-28T22:24:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss</id>
     <content type="html"><![CDATA[<p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
 
@@ -5795,7 +5795,7 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
   <entry>
     <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/"/>
-    <updated>2013-07-10T23:31:29-06:00</updated>
+    <updated>2013-07-10T22:31:29-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots</id>
     <content type="html"><![CDATA[<p><a href="http://vulnhub.com/entry/ra1nxing-bots_1,52/">RA1NXing Bots</a> is a vulnerable image intended to jump start security researches&#8217; interest in botnets and their exploitability.  This vulnerable image was brought to us by Brian Wallace (<a href="https://twitter.com/botnet_hunter">@botnet_hunter</a>), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder).  This was a pretty interesting  vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.</p>
 
@@ -6007,7 +6007,7 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
   <entry>
     <title type="html"><![CDATA[introducing zarp]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/"/>
-    <updated>2013-07-02T23:37:15-06:00</updated>
+    <updated>2013-07-02T22:37:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/02/introducing-zarp</id>
     <content type="html"><![CDATA[<p>I&rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&rsquo;s approaching a state I deem &lsquo;presentable&rsquo;.  Bugs are still being ironed out, and tons of features are still planned, but I&rsquo;ve gotten some great feedback over the past few months and decided it was time for an official introductory post.  This post serves as an introduction into the current capabilities of the framework, as well as a timeline for future development and goals.</p>
 

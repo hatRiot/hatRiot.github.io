@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: walkthrough | forelsec]]></title>
+  <title><![CDATA[Category: walkthrough | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/walkthrough/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/"/>
-    <updated>2013-07-10T23:31:29-06:00</updated>
+    <updated>2013-07-10T22:31:29-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots</id>
     <content type="html"><![CDATA[<p><a href="http://vulnhub.com/entry/ra1nxing-bots_1,52/">RA1NXing Bots</a> is a vulnerable image intended to jump start security researches' interest in botnets and their exploitability.  This vulnerable image was brought to us by Brian Wallace (<a href="https://twitter.com/botnet_hunter">@botnet_hunter</a>), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder).  This was a pretty interesting  vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.</p>
 
@@ -160,9 +160,9 @@ It&rsquo;s also of interest that none of this code verifies the authenticity of 
   
   <entry>
     <title type="html"><![CDATA[solving brainpan]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/04/03/solving-brainpan/"/>
-    <updated>2013-04-03T00:09:43-06:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/04/03/solving-brainpan</id>
+    <link href="http://hatRiot.github.io/blog/2013/04/02/solving-brainpan/"/>
+    <updated>2013-04-02T23:09:43-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/04/02/solving-brainpan</id>
     <content type="html"><![CDATA[<p>Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating)  twists and turns.  This boot2root is more focused on exploitation of 0days in custom written software, with no metasploit modules or google hunting necessary.  With that, the nmap:</p>
 
 <p>```
@@ -485,7 +485,7 @@ root
   <entry>
     <title type="html"><![CDATA[Nebula Solutions - All Levels]]></title>
     <link href="http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels/"/>
-    <updated>2013-03-30T23:46:33-06:00</updated>
+    <updated>2013-03-30T22:46:33-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels</id>
     <content type="html"><![CDATA[<p>Nebula is the first of three exploit discs provided by <a href="http://exploit-exercises.com/">exploit exercises</a>.  I&rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&rsquo;ve cleaned my notes up a bit and am posting them here.  I will also post my notes for the other two systems sometime after.  This post includes a walkthrough of all 20 levels.</p>
 
@@ -1205,7 +1205,7 @@ switch( pid = fork() ){
   <entry>
     <title type="html"><![CDATA[Solving Hackademic-RTB2]]></title>
     <link href="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/"/>
-    <updated>2012-11-18T01:24:24-07:00</updated>
+    <updated>2012-11-18T00:24:24-08:00</updated>
     <id>http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2</id>
     <content type="html"><![CDATA[<p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
 
@@ -1680,7 +1680,7 @@ tcpflags    = syn
   <entry>
     <title type="html"><![CDATA[Solving Hackademic-RTB1]]></title>
     <link href="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/"/>
-    <updated>2012-11-13T01:24:24-07:00</updated>
+    <updated>2012-11-13T00:24:24-08:00</updated>
     <id>http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1</id>
     <content type="html"><![CDATA[<p>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..).  With that, lets start:</p>
 

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: lfi | forelsec]]></title>
+  <title><![CDATA[Category: lfi | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/lfi/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[LFI to shell in Coldfusion 6-10]]></title>
     <link href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/"/>
-    <updated>2014-04-02T15:10:04-06:00</updated>
+    <updated>2014-04-02T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion</id>
     <content type="html"><![CDATA[<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
 
@@ -83,7 +83,7 @@ $ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 &mdash;deployer lfi_st
   <entry>
     <title type="html"><![CDATA[IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/"/>
-    <updated>2014-03-26T23:51:11-06:00</updated>
+    <updated>2014-03-26T22:51:11-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi</id>
     <content type="html"><![CDATA[<p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
 Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>

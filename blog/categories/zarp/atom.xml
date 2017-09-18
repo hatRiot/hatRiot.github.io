@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: zarp | forelsec]]></title>
+  <title><![CDATA[Category: zarp | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/zarp/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[introducing zarp]]></title>
     <link href="http://hatRiot.github.io/blog/2013/07/02/introducing-zarp/"/>
-    <updated>2013-07-02T23:37:15-06:00</updated>
+    <updated>2013-07-02T22:37:15-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/07/02/introducing-zarp</id>
     <content type="html"><![CDATA[<p>I&rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&rsquo;s approaching a state I deem &lsquo;presentable&rsquo;.  Bugs are still being ironed out, and tons of features are still planned, but I&rsquo;ve gotten some great feedback over the past few months and decided it was time for an official introductory post.  This post serves as an introduction into the current capabilities of the framework, as well as a timeline for future development and goals.</p>
 

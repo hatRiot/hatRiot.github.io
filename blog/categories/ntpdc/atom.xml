@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: ntpdc | forelsec]]></title>
+  <title><![CDATA[Category: ntpdc | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/ntpdc/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[ntpdc local buffer overflow]]></title>
     <link href="http://hatRiot.github.io/blog/2015/01/06/ntpdc-exploit/"/>
-    <updated>2015-01-06T14:10:04-07:00</updated>
+    <updated>2015-01-06T13:10:04-08:00</updated>
     <id>http://hatRiot.github.io/blog/2015/01/06/ntpdc-exploit</id>
     <content type="html"><![CDATA[<p>Alejandro Hdez (@nitr0usmx) recently <a href="https://twitter.com/nitr0usmx/status/550372148448333825">tweeted</a> about a trivial buffer overflow in ntpdc, a deprecated NTP query tool still available and packaged with any NTP install.  He posted a screenshot of the crash as the result of a large buffer passed into a vulnerable <code>gets</code> call.  After digging into it a bit, I decided it&rsquo;d be a fun exploit to write, and it was.  There are a few quarks to it that make it of particular interest, of which I&rsquo;ve detailed below.</p>
 

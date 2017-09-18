@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: railo | forelsec]]></title>
+  <title><![CDATA[Category: railo | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/railo/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[railo security - part four - pre-auth remote code execution]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/"/>
-    <updated>2014-08-27T15:00:00-06:00</updated>
+    <updated>2014-08-27T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-auth rce</a></em><br/>
@@ -306,7 +306,7 @@ Version 4.2:</p>
   <entry>
     <title type="html"><![CDATA[railo security - part three - pre-authentication LFI]]></title>
     <link href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/"/>
-    <updated>2014-08-23T15:00:00-06:00</updated>
+    <updated>2014-08-23T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
@@ -458,7 +458,7 @@ The error occurred in zip://C:\Documents and Settings\bryan\My Documents\Downloa
   <entry>
     <title type="html"><![CDATA[railo security - part two - post-authentication rce]]></title>
     <link href="http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two/"/>
-    <updated>2014-07-24T15:10:04-06:00</updated>
+    <updated>2014-07-24T14:10:04-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two</id>
     <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
 <em>Part two &ndash; post-authentication rce</em><br/>
@@ -795,7 +795,7 @@ a898c2525c001da402234da94f336d55  -
   <entry>
     <title type="html"><![CDATA[railo security - part one - intro]]></title>
     <link href="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/"/>
-    <updated>2014-06-25T15:00:00-06:00</updated>
+    <updated>2014-06-25T14:00:00-07:00</updated>
     <id>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one</id>
     <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
 <em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>

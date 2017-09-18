@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: phd | forelsec]]></title>
+  <title><![CDATA[Category: phd | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/phd/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[PHD Help Desk 2.12 - SQLi/XSS]]></title>
     <link href="http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/"/>
-    <updated>2013-06-02T23:55:27-06:00</updated>
+    <updated>2013-06-02T22:55:27-07:00</updated>
     <id>http://hatRiot.github.io/blog/2013/06/02/phd-help-desk-2.12-sqli-xss</id>
     <content type="html"><![CDATA[<p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
 

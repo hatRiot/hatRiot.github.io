@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: hackademic | forelsec]]></title>
+  <title><![CDATA[Category: hackademic | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/hackademic/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Solving Hackademic-RTB2]]></title>
     <link href="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/"/>
-    <updated>2012-11-18T01:24:24-07:00</updated>
+    <updated>2012-11-18T00:24:24-08:00</updated>
     <id>http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2</id>
     <content type="html"><![CDATA[<p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
 
@@ -491,7 +491,7 @@ tcpflags    = syn
   <entry>
     <title type="html"><![CDATA[Solving Hackademic-RTB1]]></title>
     <link href="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/"/>
-    <updated>2012-11-13T01:24:24-07:00</updated>
+    <updated>2012-11-13T00:24:24-08:00</updated>
     <id>http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1</id>
     <content type="html"><![CDATA[<p>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..).  With that, lets start:</p>
 

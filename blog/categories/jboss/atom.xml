@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
 
-  <title><![CDATA[Category: jboss | forelsec]]></title>
+  <title><![CDATA[Category: jboss | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/jboss/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2015-09-01T00:23:59-06:00</updated>
+  <updated>2017-09-17T17:05:53-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -16,7 +16,7 @@
   <entry>
     <title type="html"><![CDATA[Fetching JBoss MBean method hashes]]></title>
     <link href="http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes/"/>
-    <updated>2014-01-26T01:24:19-07:00</updated>
+    <updated>2014-01-26T00:24:19-08:00</updated>
     <id>http://hatRiot.github.io/blog/2014/01/26/fetching-jboss-mbean-method-hashes</id>
     <content type="html"><![CDATA[<p>Matasano published <a href="http://www.matasano.com/research/OWASP3011_Luca.pdf">one</a> of <a href="https://www.redteam-pentesting.de/en/publications/jboss/-bridging-the-gap-between-the-enterprise-and-you-or-whos-the-jboss-now">two</a> canonical papers on JBoss exploitation.  While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans.  This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.</p>
 
