@@ -4,7 +4,7 @@
   <title><![CDATA[Category: kernel | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/kernel/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2018-05-17T23:03:31-07:00</updated>
+  <updated>2018-05-18T09:39:16-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -87,7 +87,7 @@ available, allowing me to extract the following:</p>
 
 <p>Immediately the MemDriver class jumps out. After some reversing, it appeared
 that these functions do exactly as expected: allow userland services to both
-read and write arbitrary physical addresses. There are a few quarks, however.</p>
+read and write arbitrary physical addresses. There are a few quirks, however.</p>
 
 <p>To start, the driver must first be &ldquo;unlocked&rdquo; in order for it to begin
 processing control codes. It&rsquo;s unclear to me if this is some sort of hacky
