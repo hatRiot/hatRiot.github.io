@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2019-08-22T08:38:01-07:00</updated>
+  <updated>2019-08-22T10:23:15-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -1038,16 +1038,14 @@ fields (via <code>SetTokenInformation</code>), but this doesn&rsquo;t grant us m
 <p>I was a little disappointed in how uneventful thread rights seemed to be.
 Almost half of them proved to be unexploitable on their own, and even in
 combination did not turn much up. As per above, having one of the following
-four privileges is necessary to turn a leaked thread handle into something
+three privileges is necessary to turn a leaked thread handle into something
 exploitable:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-<span class='line-number'>4</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>THREAD_ALL_ACCESS
 </span><span class='line'>THREAD_DIRECT_IMPERSONATION
-</span><span class='line'>THREAD_IMPERSONATE
 </span><span class='line'>THREAD_SET_CONTEXT</span></code></pre></td></tr></table></div></figure>
 
 
