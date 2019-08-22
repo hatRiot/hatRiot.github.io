@@ -4,7 +4,7 @@
   <title><![CDATA[Category: code injection | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/code-injection/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2019-08-12T22:15:08-07:00</updated>
+  <updated>2019-08-22T08:38:01-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -255,10 +255,10 @@ Pretty useful in the end; more on this soon&hellip;</p>
 
 <h2>References</h2>
 
-<p>[0] <a href="http://www.hexacorn.com/%0A">http://www.hexacorn.com/
-</a>[1] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/fibers%0A">https://docs.microsoft.com/en-us/windows/win32/procthread/fibers
-</a>[2] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage%0A">https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage
-</a>[3] <a href="https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function\">https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function\</a></p>
+<p>[0] <a href="http://www.hexacorn.com">http://www.hexacorn.com</a> <br/>
+[1] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/fibers">https://docs.microsoft.com/en-us/windows/win32/procthread/fibers</a> <br/>
+[2] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage">https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage</a> <br/>
+[3] <a href="https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function">https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function</a></p>
 ]]></content>
   </entry>
   

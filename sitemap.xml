@@ -138,7 +138,7 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2017/09/01/abusing-token-privileges-for-eop/</loc>
-        <lastmod>2019-08-12T21:55:48-07:00</lastmod>
+        <lastmod>2019-08-21T22:54:20-07:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/2017/09/19/abusing-delay-load-dll/</loc>
@@ -158,11 +158,17 @@
         <loc>
             http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage/
         </loc>
-        <lastmod>2019-08-12T22:06:59-07:00</lastmod>
+        <lastmod>2019-08-21T22:54:01-07:00</lastmod>
+    </url>
+    <url>
+        <loc>
+            http://hatRiot.github.io/blog/2019/08/22/exploiting-leaked-process-and-thread-handles/
+        </loc>
+        <lastmod>2019-08-21T22:53:45-07:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/</loc>
-        <lastmod>2019-08-12T22:06:59-07:00</lastmod>
+        <lastmod>2019-08-21T22:54:20-07:00</lastmod>
     </url>
     <url>
         <loc>http://hatRiot.github.io/about/</loc>
@@ -178,6 +184,6 @@
     </url>
     <url>
         <loc>http://hatRiot.github.io/blog/archives/</loc>
-        <lastmod>2019-08-12T22:06:59-07:00</lastmod>
+        <lastmod>2019-08-21T22:54:20-07:00</lastmod>
     </url>
 </urlset>
