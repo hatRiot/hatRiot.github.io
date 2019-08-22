@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2019-08-22T10:23:15-07:00</updated>
+  <updated>2019-08-22T10:30:15-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -2594,7 +2594,7 @@ recommend checking out the blogpost he posted on Foxglove here[1].</p>
 
 <h2></h2>
 
-<p>[0] <a href="https://github.com/hatRiot/token-priv">https://github.com/hatRiot/token-priv</a> <br/>
+<p>[0] <a href="https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt">https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt</a> <br/>
 [1] <a href="https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/">https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</a></p>
 ]]></content>
   </entry>
