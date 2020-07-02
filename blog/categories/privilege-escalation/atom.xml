@@ -4,7 +4,7 @@
   <title><![CDATA[Category: privilege escalation | ]]></title>
   <link href="http://hatRiot.github.io/blog/categories/privilege-escalation/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2018-05-18T09:39:16-07:00</updated>
+  <updated>2019-08-22T10:30:15-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -237,13 +237,29 @@ lazy to work out), but is very stable.</p>
 
 <p>[0]
 <a href="http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist%0A">http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist
-</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630%0A">http://blog.rewolf.pl/blog/?p=1630
-</a>[2] <a href="https://www.exploit-db.com/exploits/39785/%0A">https://www.exploit-db.com/exploits/39785/
-</a>[3] <a href="http://www.pc-doctor.com/%0A">http://www.pc-doctor.com/
-</a>[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit%0A">https://github.com/rwfpl/rewolf-msi-exploit
-</a>[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
+</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630">http://blog.rewolf.pl/blog/?p=1630</a>
+[2] <a href="https://www.exploit-db.com/exploits/39785/">https://www.exploit-db.com/exploits/39785/</a>
+[3] <a href="http://www.pc-doctor.com/">http://www.pc-doctor.com/</a>
+[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit">https://github.com/rwfpl/rewolf-msi-exploit</a>
+[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
 </a>[6]
 <a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Abusing Token Privileges for EoP]]></title>
+    <link href="http://hatRiot.github.io/blog/2017/09/01/abusing-token-privileges-for-eop/"/>
+    <updated>2017-09-01T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2017/09/01/abusing-token-privileges-for-eop</id>
+    <content type="html"><![CDATA[<p>This is just a placeholder post to link off to Stephen Breen and I&rsquo;s paper on
+abusing token privileges. You can read the entire paper here[0]. I also
+recommend checking out the blogpost he posted on Foxglove here[1].</p>
+
+<h2></h2>
+
+<p>[0] <a href="https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt">https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt</a> <br/>
+[1] <a href="https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/">https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</a></p>
 ]]></content>
   </entry>
   

