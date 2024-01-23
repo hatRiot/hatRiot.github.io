@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Categories on dronesec</title>
+    <link>https://dronesec.pw/categories/</link>
+    <description>Recent content in Categories on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 12 May 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>code injection</title>
+      <link>https://dronesec.pw/categories/code-injection/</link>
+      <pubDate>Wed, 12 May 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/code-injection/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>red team</title>
+      <link>https://dronesec.pw/categories/red-team/</link>
+      <pubDate>Wed, 12 May 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/red-team/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>windows</title>
+      <link>https://dronesec.pw/categories/windows/</link>
+      <pubDate>Wed, 12 May 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/windows/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>exploitation</title>
+      <link>https://dronesec.pw/categories/exploitation/</link>
+      <pubDate>Wed, 10 Mar 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/exploitation/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>privilege escalation</title>
+      <link>https://dronesec.pw/categories/privilege-escalation/</link>
+      <pubDate>Wed, 10 Mar 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/privilege-escalation/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>adobe reader</title>
+      <link>https://dronesec.pw/categories/adobe-reader/</link>
+      <pubDate>Sat, 08 Aug 2020 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/adobe-reader/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>fuzzing</title>
+      <link>https://dronesec.pw/categories/fuzzing/</link>
+      <pubDate>Sat, 08 Aug 2020 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/fuzzing/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>reversing</title>
+      <link>https://dronesec.pw/categories/reversing/</link>
+      <pubDate>Sat, 08 Aug 2020 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/reversing/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>exploit</title>
+      <link>https://dronesec.pw/categories/exploit/</link>
+      <pubDate>Thu, 22 Aug 2019 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/exploit/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>elevation of privilege</title>
+      <link>https://dronesec.pw/categories/elevation-of-privilege/</link>
+      <pubDate>Wed, 22 Aug 2018 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/elevation-of-privilege/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>kernel</title>
+      <link>https://dronesec.pw/categories/kernel/</link>
+      <pubDate>Tue, 01 May 2018 22:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/kernel/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>tokens</title>
+      <link>https://dronesec.pw/categories/tokens/</link>
+      <pubDate>Fri, 01 Sep 2017 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/tokens/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>ntpdc</title>
+      <link>https://dronesec.pw/categories/ntpdc/</link>
+      <pubDate>Tue, 06 Jan 2015 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/ntpdc/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>clusterd</title>
+      <link>https://dronesec.pw/categories/clusterd/</link>
+      <pubDate>Wed, 27 Aug 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/clusterd/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>railo</title>
+      <link>https://dronesec.pw/categories/railo/</link>
+      <pubDate>Wed, 27 Aug 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/railo/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>gitlist</title>
+      <link>https://dronesec.pw/categories/gitlist/</link>
+      <pubDate>Sun, 29 Jun 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/gitlist/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>rce</title>
+      <link>https://dronesec.pw/categories/rce/</link>
+      <pubDate>Sun, 29 Jun 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/rce/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>beef</title>
+      <link>https://dronesec.pw/categories/beef/</link>
+      <pubDate>Tue, 13 May 2014 20:57:53 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/beef/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>vulnerability</title>
+      <link>https://dronesec.pw/categories/vulnerability/</link>
+      <pubDate>Tue, 13 May 2014 20:57:53 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/vulnerability/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>coldfusion</title>
+      <link>https://dronesec.pw/categories/coldfusion/</link>
+      <pubDate>Wed, 02 Apr 2014 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/coldfusion/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>lfi</title>
+      <link>https://dronesec.pw/categories/lfi/</link>
+      <pubDate>Wed, 02 Apr 2014 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/lfi/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>command injection</title>
+      <link>https://dronesec.pw/categories/command-injection/</link>
+      <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/command-injection/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>ibm</title>
+      <link>https://dronesec.pw/categories/ibm/</link>
+      <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/ibm/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>tealeaf</title>
+      <link>https://dronesec.pw/categories/tealeaf/</link>
+      <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/tealeaf/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>metasploit</title>
+      <link>https://dronesec.pw/categories/metasploit/</link>
+      <pubDate>Mon, 10 Mar 2014 22:31:47 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/metasploit/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>ganib</title>
+      <link>https://dronesec.pw/categories/ganib/</link>
+      <pubDate>Mon, 24 Feb 2014 22:03:07 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/ganib/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>sqli</title>
+      <link>https://dronesec.pw/categories/sqli/</link>
+      <pubDate>Mon, 24 Feb 2014 22:03:07 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/sqli/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>jboss</title>
+      <link>https://dronesec.pw/categories/jboss/</link>
+      <pubDate>Sun, 26 Jan 2014 01:24:19 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/jboss/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>dolibarr</title>
+      <link>https://dronesec.pw/categories/dolibarr/</link>
+      <pubDate>Mon, 14 Oct 2013 22:13:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/dolibarr/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>vulnerabilities</title>
+      <link>https://dronesec.pw/categories/vulnerabilities/</link>
+      <pubDate>Mon, 14 Oct 2013 22:13:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/vulnerabilities/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>openemm</title>
+      <link>https://dronesec.pw/categories/openemm/</link>
+      <pubDate>Sun, 28 Jul 2013 22:24:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/openemm/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>xss</title>
+      <link>https://dronesec.pw/categories/xss/</link>
+      <pubDate>Sun, 28 Jul 2013 22:24:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/xss/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>ra1nxing</title>
+      <link>https://dronesec.pw/categories/ra1nxing/</link>
+      <pubDate>Wed, 10 Jul 2013 22:31:29 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/ra1nxing/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>vulnhub</title>
+      <link>https://dronesec.pw/categories/vulnhub/</link>
+      <pubDate>Wed, 10 Jul 2013 22:31:29 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/vulnhub/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>walkthrough</title>
+      <link>https://dronesec.pw/categories/walkthrough/</link>
+      <pubDate>Wed, 10 Jul 2013 22:31:29 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/walkthrough/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>projects</title>
+      <link>https://dronesec.pw/categories/projects/</link>
+      <pubDate>Tue, 02 Jul 2013 22:37:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/projects/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>zarp</title>
+      <link>https://dronesec.pw/categories/zarp/</link>
+      <pubDate>Tue, 02 Jul 2013 22:37:15 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/zarp/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>collabtive</title>
+      <link>https://dronesec.pw/categories/collabtive/</link>
+      <pubDate>Fri, 21 Jun 2013 22:40:53 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/collabtive/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>asus</title>
+      <link>https://dronesec.pw/categories/asus/</link>
+      <pubDate>Wed, 05 Jun 2013 22:45:20 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/asus/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>phd</title>
+      <link>https://dronesec.pw/categories/phd/</link>
+      <pubDate>Sun, 02 Jun 2013 22:55:27 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/phd/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>kimai</title>
+      <link>https://dronesec.pw/categories/kimai/</link>
+      <pubDate>Mon, 20 May 2013 23:01:44 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/kimai/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>dos</title>
+      <link>https://dronesec.pw/categories/dos/</link>
+      <pubDate>Sat, 20 Apr 2013 23:06:45 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/dos/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>modem</title>
+      <link>https://dronesec.pw/categories/modem/</link>
+      <pubDate>Sat, 20 Apr 2013 23:06:45 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/modem/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>motorola</title>
+      <link>https://dronesec.pw/categories/motorola/</link>
+      <pubDate>Sat, 20 Apr 2013 23:06:45 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/motorola/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>protostar</title>
+      <link>https://dronesec.pw/categories/protostar/</link>
+      <pubDate>Sat, 30 Mar 2013 23:21:16 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/protostar/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>stack</title>
+      <link>https://dronesec.pw/categories/stack/</link>
+      <pubDate>Sat, 30 Mar 2013 23:21:16 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/stack/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>nebula</title>
+      <link>https://dronesec.pw/categories/nebula/</link>
+      <pubDate>Sat, 30 Mar 2013 22:46:33 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/nebula/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>lshell</title>
+      <link>https://dronesec.pw/categories/lshell/</link>
+      <pubDate>Sun, 30 Dec 2012 22:43:42 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/lshell/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>pathing</title>
+      <link>https://dronesec.pw/categories/pathing/</link>
+      <pubDate>Sun, 30 Dec 2012 22:43:42 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/pathing/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>hackademic</title>
+      <link>https://dronesec.pw/categories/hackademic/</link>
+      <pubDate>Sun, 18 Nov 2012 01:24:24 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/hackademic/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>buffer overflow</title>
+      <link>https://dronesec.pw/categories/buffer-overflow/</link>
+      <pubDate>Wed, 03 Oct 2012 00:15:10 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/buffer-overflow/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>fastspy</title>
+      <link>https://dronesec.pw/categories/fastspy/</link>
+      <pubDate>Wed, 03 Oct 2012 00:15:10 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/categories/fastspy/</guid>
+      <description></description>
+    </item>
+    
+  </channel>
+</rss>

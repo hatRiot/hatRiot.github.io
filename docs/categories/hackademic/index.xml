@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>hackademic on dronesec</title>
+    <link>https://dronesec.pw/categories/hackademic/</link>
+    <description>Recent content in hackademic on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Sun, 18 Nov 2012 01:24:24 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/hackademic/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Solving Hackademic-RTB2</title>
+      <link>https://dronesec.pw/blog/solving-hackademic-rtb2/</link>
+      <pubDate>Sun, 18 Nov 2012 01:24:24 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/solving-hackademic-rtb2/</guid>
+      <description>Here&amp;rsquo;s the second distro from mr. pr0n&amp;rsquo;s realistic pentest discs. This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc. A little disappointed with the finale, but overall impressed with this disc. With that, the iconic nmap:
+# Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.</description>
+    </item>
+    
+    <item>
+      <title>Solving Hackademic-RTB1</title>
+      <link>https://dronesec.pw/blog/solving-hackademic-rtb1/</link>
+      <pubDate>Tue, 13 Nov 2012 01:24:24 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/solving-hackademic-rtb1/</guid>
+      <description>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..). With that, lets start:
+The initial scan:
+# Nmap 6.01 scan initiated Tue Nov 13 22:16:40 2012 as: nmap -sSV -F -T5 -oN hack.scan 192.168.1.168 Nmap scan report for 192.168.1.168 Host is up (0.00028s latency). Not shown: 98 filtered ports PORT STATE SERVICE VERSION 22/tcp closed ssh 80/tcp open http Apache httpd 2.</description>
+    </item>
+    
+  </channel>
+</rss>

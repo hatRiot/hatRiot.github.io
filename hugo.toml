@@ -1,0 +1,25 @@
+baseURL = 'https://dronesec.pw/'
+languageCode = 'en-us'
+title = 'dronesec'
+theme = 'smol'
+copyright = "Bryan Alexander"
+publishDir = "docs"
+
+[params]
+    date_format = "02 Jan 2006"
+
+[permalinks]
+    post = "/blog/:slug/"
+
+[menu]
+    [[menu.main]]
+        identifier = "other"
+        name = "other"
+        url = "/other/"
+        weight = 1
+
+    [[menu.main]]
+        identifier = "about"
+        name = "about"
+        url = "/about/"
+        weight = 2

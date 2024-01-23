@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>elevation of privilege on dronesec</title>
+    <link>https://dronesec.pw/categories/elevation-of-privilege/</link>
+    <description>Recent content in elevation of privilege on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 22 Aug 2018 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/elevation-of-privilege/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</title>
+      <link>https://dronesec.pw/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</link>
+      <pubDate>Wed, 22 Aug 2018 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</guid>
+      <description>Back in March or April I began reversing a slew of Dell applications installed on a laptop I had. Many of them had privileged services or processes running and seemed to perform a lot of different complex actions. I previously disclosed a LPE in SupportAssist[0], and identified another in their Digital Delivery platform. This post will detail a Digital Delivery vulnerability and how it can be exploited. This was privately discovered and disclosed, and no known active exploits are in the wild.</description>
+    </item>
+    
+  </channel>
+</rss>

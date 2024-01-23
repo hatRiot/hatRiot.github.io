@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>coldfusion on dronesec</title>
+    <link>https://dronesec.pw/categories/coldfusion/</link>
+    <description>Recent content in coldfusion on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 02 Apr 2014 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/coldfusion/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>LFI to shell in Coldfusion 6-10</title>
+      <link>https://dronesec.pw/blog/lfi-to-shell-in-coldfusion-6-10/</link>
+      <pubDate>Wed, 02 Apr 2014 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/lfi-to-shell-in-coldfusion-6-10/</guid>
+      <description>ColdFusion has several very popular LFI&amp;rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed. A lesser use of this LFI, one that I haven&amp;rsquo;t seen documented as of yet, is actually obtaining a shell. When you can&amp;rsquo;t crack or pass, what&amp;rsquo;s left?
+The less-than-obvious solution is to exploit CFML&amp;rsquo;s parser, which acts much in the same way that PHP does when used in HTML.</description>
+    </item>
+    
+  </channel>
+</rss>

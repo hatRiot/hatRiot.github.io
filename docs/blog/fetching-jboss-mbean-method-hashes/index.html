@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>Fetching JBoss MBean method hashes</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>Fetching JBoss MBean method hashes</h1>
+			<b><time>2014-01-26</time></b>
+		       
+
+			<div>
+				<p>Matasano published <a href="http://www.matasano.com/research/OWASP3011_Luca.pdf">one</a> of <a href="https://www.redteam-pentesting.de/en/publications/jboss/-bridging-the-gap-between-the-enterprise-and-you-or-whos-the-jboss-now">two</a> canonical papers on JBoss exploitation.  While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans.  This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.</p>
+<p>In this paper, Matasano provides the hash for JBoss 4.0.3SP1, but does not list any others, nor show how it derived this.  After perusing the code, however, I found it to be quite simple, and have developed a simple method for fetching hashes of not only the Invoker MBean, but any listed in the JBoss registry.</p>
+<p>To extract these values, we simply deploy a WAR file that dumps the entirety of the Registry, which is used for hash lookups when routing requests.  This can can be seen below:</p>
+<pre tabindex="0"><code>&lt;%@ page import=&#34;org.jboss.system.Registry&#34;%&gt;
+&lt;%@ page import=&#34;java.io.*&#34;%&gt;
+&lt;%@ page import=&#34;java.util.Map&#34;%&gt;
+&lt;%@ page import=&#34;java.util.Iterator&#34;%&gt;
+&lt;%
+    Iterator it = Registry.entries.entrySet().iterator();
+    while (it.hasNext()){
+        Map.Entry pairs = (Map.Entry)it.next();
+        out.println(pairs.getKey() + &#34; = &#34; + pairs.getValue() + &#34;&lt;br/&gt;&#34;);
+        it.remove();
+    }
+%&gt;
+</code></pre><p>When deployed and executed on my local 4.0.5.GA JBoss server, we get:</p>
+<figure class="center"><img src="/images/posts/2014/jb_hash.jpg"/>
+</figure>
+
+<p>With this, we&rsquo;ve fetched the hash for the Invoker MBean as well as every other invokable MBean in the registry.  This value appears to be common across all 3.x and 4.x JBoss instances.  However, when run against JBoss 5.x/6.x instances, the following is returned:</p>
+<figure class="center"><img src="/images/posts/2014/jb_hash_6x.jpg"/>
+</figure>
+
+<p>This change is due to the way look-ups are performed in 5.x; instead of the key being an Integer (hash), the key is now an Object, as shown below:</p>
+<pre tabindex="0"><code>public static Map&lt;Object, Object&gt; entries = new ConcurrentHashMap&lt;Object, Object&gt;();
+</code></pre><p>To further enumerate this, we can iterate over the class methods and pull all of their hashes and hash codes:</p>
+<pre tabindex="0"><code>&lt;%@ page import=&#34;java.io.*&#34;%&gt;
+&lt;%@ page import=&#34;java.util.Map&#34;%&gt;
+&lt;%@ page import=&#34;java.util.Iterator&#34;%&gt;
+&lt;%@ page import=&#34;java.lang.reflect.Method&#34;%&gt;
+&lt;%@ page import=&#34;org.jboss.system.Registry&#34;%&gt;
+&lt;%@ page import=&#34;javax.management.ObjectName&#34;%&gt;
+&lt;%@ page import=&#34;org.jboss.invocation.MarshalledInvocation&#34;%&gt;
+&lt;%
+    Iterator it = Registry.entries.entrySet().iterator();
+    while (it.hasNext()){
+        Map.Entry pairs = (Map.Entry)it.next();
+        out.println(pairs.getKey() + &#34; = &#34; + pairs.getValue() + &#34;&lt;br/&gt;&#34;);
+
+        // check for ObjectName
+        if (pairs.getKey() instanceof ObjectName){
+            Long hash;
+            Method[] methods = pairs.getValue().getClass().getMethods();
+            for (int m = 0; m &lt; methods.length; ++m){
+                Method method = methods[m];
+                hash = new Long(MarshalledInvocation.calculateHash(method));
+                out.println(&#34;Method: &#34; + method + &#34;  Hash: &#34; + hash + &#34; (&#34; + method.hashCode() + &#34;)&#34; + &#34;&lt;br/&gt;&#34;);
+            }
+        }
+
+        out.println(&#34;Key class: &#34; + pairs.getKey().getClass() + &#34;&lt;br/&gt;&#34;);
+        it.remove();
+    }
+%&gt;
+</code></pre><p>Which gives us:</p>
+<figure class="center"><img src="/images/posts/2014/jb_6x_methods.jpg"/>
+</figure>
+
+<p>Judging by this information, it doesn&rsquo;t appear that we can remotely invoke the same way we did with 3.x/4.x.  This is the fundamental issue with several of the available open source JBoss tools (Metasploit); none of them take into account the changes between different versions of JBoss.</p>
+<p>Although I have yet to discover a way to map requests to the invoker (I&rsquo;m not entirely sure its possible) in these later versions, I have a suspicion that we may be able to map these requests by serializing objects out.  More on this, and my exploitation tool, soon.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

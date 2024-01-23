@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>command injection on dronesec</title>
+    <link>https://dronesec.pw/categories/command-injection/</link>
+    <description>Recent content in command injection on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 26 Mar 2014 22:51:11 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/command-injection/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</title>
+      <link>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</link>
+      <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</guid>
+      <description>Tealeaf Technologies was purchased by IBM in May of 2012, and is a customer buying analytics application. Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data. Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion. This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</description>
+    </item>
+    
+    <item>
+      <title>Asus RT56U Remote Command Injection</title>
+      <link>https://dronesec.pw/blog/asus-rt56u-remote-command-injection/</link>
+      <pubDate>Wed, 05 Jun 2013 22:45:20 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/asus-rt56u-remote-command-injection/</guid>
+      <description>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.
+I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both. I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp. This page hosts a slew of diagnostic tools, including the ability to ping network systems.</description>
+    </item>
+    
+  </channel>
+</rss>

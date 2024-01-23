@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>tealeaf on dronesec</title>
+    <link>https://dronesec.pw/categories/tealeaf/</link>
+    <description>Recent content in tealeaf on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 26 Mar 2014 22:51:11 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/tealeaf/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</title>
+      <link>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</link>
+      <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</guid>
+      <description>Tealeaf Technologies was purchased by IBM in May of 2012, and is a customer buying analytics application. Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data. Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion. This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>clusterd on dronesec</title>
+    <link>https://dronesec.pw/categories/clusterd/</link>
+    <description>Recent content in clusterd on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 27 Aug 2014 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/clusterd/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>railo security - part four - pre-auth remote code execution</title>
+      <link>https://dronesec.pw/blog/railo-security-part-four-pre-auth-remote-code-execution/</link>
+      <pubDate>Wed, 27 Aug 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/railo-security-part-four-pre-auth-remote-code-execution/</guid>
+      <description>Part one - intro
+Part two - post-auth rce
+Part three - pre-auth password retrieval
+Part four - pre-auth remote code execution
+This post concludes our deep dive into the Railo application server by detailing not only one, but two pre-auth remote code execution vulnerabilities. If you&amp;rsquo;ve skipped the first three parts of this blog post to get to the juicy stuff, I don&amp;rsquo;t blame you, but I do recommend going back and reading them; there&amp;rsquo;s some important information and details back there.</description>
+    </item>
+    
+    <item>
+      <title>railo security - part three - pre-authentication LFI</title>
+      <link>https://dronesec.pw/blog/railo-security-part-three-pre-authentication-lfi/</link>
+      <pubDate>Sat, 23 Aug 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/railo-security-part-three-pre-authentication-lfi/</guid>
+      <description>Part one - intro
+Part two - post-authentication rce
+Part three - pre-authentication LFI
+Part four - pre-authentication rce
+This post continues our four part Railo security analysis with three pre-authentication LFI vulnerabilities. These allow anonymous users access to retrieve the administrative plaintext password and login to the server&amp;rsquo;s administrative interfaces. If you&amp;rsquo;re unfamiliar with Railo, I recommend at the very least reading part one of this series. The most significant LFI discussed has been implemented as auxiliary modules in clusterd, though they&amp;rsquo;re pretty trivial to exploit on their own.</description>
+    </item>
+    
+    <item>
+      <title>railo security - part two - post-authentication rce</title>
+      <link>https://dronesec.pw/blog/railo-security-part-two-post-authentication-rce/</link>
+      <pubDate>Thu, 24 Jul 2014 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/railo-security-part-two-post-authentication-rce/</guid>
+      <description>Part one - intro
+Part two - post-authentication rce
+Part three - pre-authentication lfi
+Part four - pre-authentication rce
+This post continues our dive into Railo security, this time introducing several post-authentication RCE vulnerabilities discovered in the platform. As stated in part one of this series, like ColdFusion, there is a task scheduler that allows authenticated users the ability to write local files. Whilst the existence of this feature sets it as the standard way to shell a Railo box, sometimes this may not work.</description>
+    </item>
+    
+    <item>
+      <title>railo security - part one - intro</title>
+      <link>https://dronesec.pw/blog/railo-security-part-one-intro/</link>
+      <pubDate>Wed, 25 Jun 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/railo-security-part-one-intro/</guid>
+      <description>Part one - intro
+Part two - post-authentication rce
+Part three - pre-authentication lfi
+Part four - pre-authentication rce
+Railo is an open-source alternative to the popular Coldfusion application server, implementing a FOSSy CFML engine and application server. It emulates Coldfusion in a variety of ways, mainly features coming straight from the CF world, along with several of it&amp;rsquo;s own unique features (clustered servers, a plugin architecture, etc). In this four-part series, we&amp;rsquo;ll touch on how Railo, much like Coldfusion, can be used to gain access to a system or network of systems.</description>
+    </item>
+    
+    <item>
+      <title>LFI to shell in Coldfusion 6-10</title>
+      <link>https://dronesec.pw/blog/lfi-to-shell-in-coldfusion-6-10/</link>
+      <pubDate>Wed, 02 Apr 2014 15:10:04 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/lfi-to-shell-in-coldfusion-6-10/</guid>
+      <description>ColdFusion has several very popular LFI&amp;rsquo;s that are often used to fetch CF hashes, which can then be passed or cracked/reversed. A lesser use of this LFI, one that I haven&amp;rsquo;t seen documented as of yet, is actually obtaining a shell. When you can&amp;rsquo;t crack or pass, what&amp;rsquo;s left?
+The less-than-obvious solution is to exploit CFML&amp;rsquo;s parser, which acts much in the same way that PHP does when used in HTML.</description>
+    </item>
+    
+    <item>
+      <title>Fetching JBoss MBean method hashes</title>
+      <link>https://dronesec.pw/blog/fetching-jboss-mbean-method-hashes/</link>
+      <pubDate>Sun, 26 Jan 2014 01:24:19 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/fetching-jboss-mbean-method-hashes/</guid>
+      <description>Matasano published one of two canonical papers on JBoss exploitation. While working on a fresh new tool, I came across the JMXInvokerServlet technique, which uses serialized Java requests to deploy to remote MBeans. This uses a specific object hash to route the JMX request to the correct MBean; in our case, the gold is jboss.jmx:name=Invoker.
+In this paper, Matasano provides the hash for JBoss 4.0.3SP1, but does not list any others, nor show how it derived this.</description>
+    </item>
+    
+  </channel>
+</rss>

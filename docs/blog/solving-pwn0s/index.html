@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>solving pwn0s</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>solving pwn0s</h1>
+			<b><time>2012-06-07</time></b>
+		       
+
+			<div>
+				<p>pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment.  I thought this one was pretty fun, so I&rsquo;ve decided to do a little write up in the various ways it can be attacked.  The VM for it can be found on forums.hackingdojo.com; you need an account to access the forums, but it&rsquo;s worth it.</p>
+<p>The VM comes packaged as a split vmdk, so just loading up the vmx sets everything up.  Booting it up and flipping over to BackTrack, a quick nmap scan gives us a few immediate vectors of attack:</p>
+<figure><img src="/images/posts/2012/scan.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>So there&rsquo;s a few notable things here; the OpenSSH version, specifically that Debian build, is known to generate weak, predictable SSH keys.  This vulnerability is due to a side-effect of removing a bit of code that effected the initial seeding for the PRNG; instead of seeding it with true, random data, it instead only used a process ID. There are a total of 32,768 process ID&rsquo;s available, meaning, only 32,768 potential seeds to the PRNG.  We can attack this by generating a 2048 bit key (that&rsquo;s the bit size of the RSA key, according to nmap) 32,768 times with the number as a seed.  We&rsquo;ll set this aside, for now, and come back to it.</p>
+<p>There&rsquo;s an HTTP server up with some plaintext HTML on it, but nothing worthy of any web-side exploits.  That version of Apache has some DoS vulnerabilities, but that doesn&rsquo;t do much for us.</p>
+<p>The next interesting port is actually on 10000; MiniServ is a fairly obscure, hyperminimal web server written in C.  It&rsquo;s barely supported and has a very low exposure level.  On the frontend runs WebMin, a PHP interface for HTTP servers.  As it happens to turn out, there&rsquo;s a vulnerability allowing an attacker to retrieve unauthorized remote files.  This will work harmoniously with our OpenSSH vulnerability above!  I pulled some perl code from <a href="http://www.exploit-db.com/exploits/2017/">here</a> and dumped a few things:</p>
+<figure><img src="/images/posts/2012/webmin.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>Oh boy users!  Lets back up for a minute and take a look at this exploit.  If we pop open the perl code, we see a little bit of this:</p>
+<pre tabindex="0"><code> $temp=&#34;/..%01&#34; x 40;
+
+        if ($tar == &#39;0&#39;)
+           { my $url= &#34;http://&#34;. $target. &#34;:&#34; . $port .&#34;/unauthenticated/&#34;.$temp . $filename;
+            $content=get $url;
+
+            print(&#34;\n FILE CONTENT STARTED&#34;);
+            print(&#34;\n -----------------------------------\n&#34;);
+
+            print(&#34;$content&#34;);
+            print(&#34;\n -------------------------------------\n&#34;);
+            }
+</code></pre><p>That&rsquo;s about as easy as it gets when it comes to exploits; we&rsquo;re filling up the url with /..%01.  It does this 40 times until the buffer is full, then appends the filename onto the end.    I dug into the Webmin source code to see exactly what was going on; diffing 1.28 and 1.29, I found this:</p>
+<figure><img src="/images/posts/2012/diff.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>Essentially it was checking for a directory traversal in the path, but only checking &ldquo;..&rdquo;.  In our exploit, we&rsquo;re appending a %01, which is the ASCII Start of Header.  This final, encoded ASCII code can be any control code; that&rsquo;s %00 - %1F (<a href="http://www.w3schools.com/tags/ref_urlencode.asp">codes</a>).  This works because these codes have no purpose in the URL and do not decode to anything useful; they merely throw off the $b eq &ldquo;..&rdquo; check by doing nothing.  The remainder of the code is left as an exercise for the reader.</p>
+<p>Now that we&rsquo;ve got a few names, we can run through RSA keys and see if we get a match.  HD Moore of Metasploit has already generated and distributed the keys, and can be retrieved <a href="http://metasploit.com/users/hdm/tools/debian-openssl/">here</a>.  Got &rsquo;em?  Cool; now we can test keys against the usernames in the file.  I used <a href="http://www.exploit-db.com/exploits/5632/">this</a> to iterate through them, but it shouldn&rsquo;t be too hard to code it up yourself.  Essentially we just want to connect to the server with one of the usernames with the generated keys; when we pop a shell, we know we&rsquo;re in:</p>
+<figure><img src="/images/posts/2012/brute.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>So now we&rsquo;ve got ourselves a private RSA key for account &lsquo;obama&rsquo;.  Testing it out, and&hellip;</p>
+<figure><img src="/images/posts/2012/ssh.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>Success!  So now we&rsquo;ve got a valid account on the box.  We see it&rsquo;s an x86 Ubuntu machine on the 2.6.22 kernel.  What can we do?  Well, immediately I recognize a major vulnerability in the kernel version.  A bit of googling will turn up the vmsplice exploit.  The exploit itself is in fact a chaining of three separate, now patched, vulnerabilities in the fs/splice.c module.  I will let the fantastic article at <a href="https://lwn.net/Articles/268783/">lwn</a> describe the vulnerability in more detail, and instead put it to some use here:</p>
+<figure><img src="/images/posts/2012/vmsplice_root.jpg"
+         alt="images"/><figcaption>
+            <h4>image</h4>
+        </figcaption>
+</figure>
+
+<p>And just like that we&rsquo;ve got root on the box.</p>
+<p>Other avenues of attack could be sticking Medusa/Hydra on the SSH port and letting it brute force the accounts, exploiting remote uploads to MiniServ, or the local ftruncate root exploit.  Though fairly easy and straightforward (I didn&rsquo;t have to write a line of code), this VM was fun to toy around with.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

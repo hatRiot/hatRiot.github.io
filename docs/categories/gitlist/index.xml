@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>gitlist on dronesec</title>
+    <link>https://dronesec.pw/categories/gitlist/</link>
+    <description>Recent content in gitlist on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Sun, 29 Jun 2014 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/gitlist/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>gitlist - commit to rce</title>
+      <link>https://dronesec.pw/blog/gitlist-commit-to-rce/</link>
+      <pubDate>Sun, 29 Jun 2014 15:00:00 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/gitlist-commit-to-rce/</guid>
+      <description>Gitlist is a fantastic repository viewer for Git; it&amp;rsquo;s essentially your own private Github without all the social networking and glitzy features of it. I&amp;rsquo;ve got a private Gitlist that I run locally, as well as a professional instance for hosting internal projects. Last year I noticed a bug listed on their Github page that looked a lot like an exploitable hole:
+Oops! sh: 1: Syntax error: EOF in backquote substitution I commented on its exploitability at the time, and though the hole appears to be closed, the issue still remains.</description>
+    </item>
+    
+  </channel>
+</rss>

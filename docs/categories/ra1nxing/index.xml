@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>ra1nxing on dronesec</title>
+    <link>https://dronesec.pw/categories/ra1nxing/</link>
+    <description>Recent content in ra1nxing on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Wed, 10 Jul 2013 22:31:29 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/ra1nxing/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>solving RA1NXing Bots</title>
+      <link>https://dronesec.pw/blog/solving-ra1nxing-bots/</link>
+      <pubDate>Wed, 10 Jul 2013 22:31:29 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/solving-ra1nxing-bots/</guid>
+      <description>RA1NXing Bots is a vulnerable image intended to jump start security researches&amp;rsquo; interest in botnets and their exploitability. This vulnerable image was brought to us by Brian Wallace (@botnet_hunter), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder). This was a pretty interesting vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.
+As such, the iconic nmap:
+# Nmap 6.25 scan initiated Mon Jul 8 02:08:29 2013 as: nmap -sS -A -T5 -p- -oN bot.</description>
+    </item>
+    
+  </channel>
+</rss>

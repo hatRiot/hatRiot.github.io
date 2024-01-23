@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>ganib on dronesec</title>
+    <link>https://dronesec.pw/categories/ganib/</link>
+    <description>Recent content in ganib on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Mon, 24 Feb 2014 22:03:07 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/ganib/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>ganib project management 2.3 SQLi</title>
+      <link>https://dronesec.pw/blog/ganib-project-management-2.3-sqli/</link>
+      <pubDate>Mon, 24 Feb 2014 22:03:07 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/ganib-project-management-2.3-sqli/</guid>
+      <description>Ganib is a project management tool supporting all the glorious project management utilities. The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.
+The first SQL injection vector is a post-auth UPDATE injection in changetheme.jsp:
+String theme = request.getParameter(&amp;#34;theme&amp;#34;); User user = (User) pageContext.getAttribute(&amp;#34;user&amp;#34;, PageContext.SESSION_SCOPE); if( user != null &amp;amp;&amp;amp; user.getID() != null ) { DBBean db = new DBBean(); try { String query = &amp;#34;UPDATE PN_PERSON SET THEME_ID = &amp;#39;&amp;#34; + theme + &amp;#34;&amp;#39; WHERE PERSON_ID = &amp;#34; + user.</description>
+    </item>
+    
+  </channel>
+</rss>

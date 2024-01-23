@@ -1,0 +1,14 @@
+---
+layout: page
+title: "about"
+date: 2014-03-02 23:03
+comments: false
+sharing: true
+footer: true
+---
+
+researcher. exploit dev. @[FusionX](http://fusionx.com)
+
++ [Github](https://github.com/hatRiot/)
++ [Keybase](https://keybase.io/droner)
++ @dronesec on Twitter

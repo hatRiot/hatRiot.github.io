@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>the fanciful allure and utility of syscalls</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>the fanciful allure and utility of syscalls</h1>
+			<b><time>2021-05-12</time></b>
+		       
+
+			<div>
+				<p>So over the years I&rsquo;ve had a number of conversations about the utility of using syscalls in shellcode, C2s, or loaders in offsec tooling and red team ops. For reasons likely related to the increasing maturity of EDRs and their totalitarian grip in enterprise environments, I&rsquo;ve seen an uptick in projects and blogs championing &ldquo;raw syscalls&rdquo; as a technique for evading AV/SIEM technologies. This post is an attempt to describe why I think the technique&rsquo;s efficacy has been overstated and its utility stretched thin.</p>
+<p>This diatribe is not meant to denigrate any one project or its utility; if your tool or payload uses syscalls instead of ntdll, great. The technique is useful under certain circumstances and can be valuable in attempts at evading EDR, particularly when combined with other strategies. What it&rsquo;s not, however, is a silver bullet. It is not going to grant you any particularly interesting capability by virtue of evading a vendor data sink. Determining its efficacy in context of the execution chain is difficult, ambiguous at best. Your C2 is not advanced in EDR evasion by including a few ntdll stubs.</p>
+<p>Note that when I&rsquo;m talking about EDRs, I&rsquo;m speaking specifically to modern samples with online and cloud-based machine learning capabilities, both attended and unattended. Crowdstrike Falcon, Cylance, CybeReason, Endgame, Carbon Black, and others have a wide array of ML strategies of varying quality. This post is not an analysis of these vendors&rsquo; user mode hooking capabilities.</p>
+<p>Finally, this discussion&rsquo;s perspective is that of post-exploitation, necessary for an attacker to issue a syscall anyway. User mode hooks can provide useful telemetry on user behavior prior to code execution (phishing stages), but once that&rsquo;s achieved, all bets of process integrity are off.</p>
+<h2 id="syscalling">syscalling</h2>
+<p>Very briefly, using raw syscalls is an old technique that obviates the need to use sanctioned APIs and instead uses assembly to execute certain functions exposed to user mode from the kernel. For example, if you wanted to read memory of another process, you might use <code>NtReadVirtualMemory</code>:</p>
+<pre tabindex="0"><code>NtReadVirtualMemory(ProcessHandle, BaseAddress, Buffer, NumberOfBytesToRead, NumberOfBytesReaded);
+</code></pre><p>This function is exported by NTDLL; at runtime, the PE loader loads every DLL in its import directory table, then resolves all of the import address table (IAT) function pointers. When we call <code>NtReadVirtualMemory</code> our pointers are fixed up based on the resolved address of the function, bringing us to execute:</p>
+<pre tabindex="0"><code>00007ffb`1676d4f0 4c8bd1           mov     r10, rcx
+00007ffb`1676d4f3 b83f000000       mov     eax, 3Fh
+00007ffb`1676d4f8 f604250803fe7f01 test    byte ptr [SharedUserData+0x308 (00000000`7ffe0308)], 1
+00007ffb`1676d500 7503             jne     ntdll!NtReadVirtualMemory+0x15 (00007ffb`1676d505)
+00007ffb`1676d502 0f05             syscall 
+00007ffb`1676d504 c3               ret     
+00007ffb`1676d505 cd2e             int     2Eh
+00007ffb`1676d507 c3               ret 
+</code></pre><p>This stub, implemented in NTDLL, moves the syscall number (0x3f) into EAX and uses <code>syscall</code> or <code>int 2e</code>, depending on the system bitness, to transition to the kernel. At this point the kernel begins executing the routine tied to code <code>0x3f</code>. There are plenty of resources on how the process works and what happens on the way back, so <a href="https://www.geoffchappell.com/studies/windows/km/cpu/sep.htm">please</a> <a href="https://www.ired.team/miscellaneous-reversing-forensics/windows-kernel-internals/glimpse-into-ssdt-in-windows-x64-kernel">refer</a> <a href="https://scorpiosoftware.net/2019/11/">elsewhere</a>.</p>
+<p>Modern EDRs will typically inject hooks, or detours, into the implementation of the function. This allows them to capture additional information about the context of the call for further analysis. In some cases the call can be outright blocked. As a red team, we obviously want to stymie this.</p>
+<p>With that, I want to detail a few shortcomings with this technique that I&rsquo;ve seen in many of the public implementations. Let me once again stress here that I&rsquo;m not trying to denigrate these tools; they provide utility and have their use cases that cannot be ignored, which I hope to highlight below.</p>
+<h3 id="syscall-values-are-not-consistent">syscall values are not consistent</h3>
+<p>j00ru maintains the go-to source for both <a href="https://j00ru.vexillium.org/syscalls/nt/64/">nt</a> and <a href="https://j00ru.vexillium.org/syscalls/win32k/64/">win32k</a>, and by blindly searching around on here you can see the shift in values between functions. Windows 10 alone currently has <em>eleven</em> columns for the different major builds of Win10, some functions shifting 4 or 5 times. This means that we either need to know ahead of time what build the victim is running and tailor the syscall stubs specifically (at worst cumbersome in a post-exp environment), or we need to dynamically generate the syscall number at runtime.</p>
+<p>There are several proposed solutions to discovering the syscall at runtime: sorting Zw exports, reading the stubs directly out of the mapped NTDLL, querying j00ru&rsquo;s <a href="https://github.com/j00ru/windows-syscalls">Github repository</a> (lol), or actually baking every potential code into the payload and selecting the correct one at runtime. These are all usable options, but everything here is either cumbersome or an unnecessary risk in raising our threat profile with the EDRs ML model.</p>
+<p>Let&rsquo;s say you attempt to read NTDLL off disk to discover the stubs; that requires issuing <code>CreateFile</code> and <code>ReadFile</code> calls, both triggering minifilter and ETW events, and potentially executing already established EDR hooks. Maybe that raises your threat profile a few percentage points, but you&rsquo;re still golden. You then need to copy that stub out into an executable section, setup the stack/registers, and invoke. Optionally, you could use the already mapped NTDLL; that requires either <code>GetProcAddress</code>, walking PEB, or parsing out the IAT. Are these events surrounding the resolution of the stub more or less likely to increase the threat profile than just calling the NTDLL function itself?</p>
+<p>The least-bad option of these is baking the codes into your payload and switching at runtime based on the detection of the system version. In memory this is going to look like an s-box switch, but there are no extraneous calls to in-memory or on-disk files or stumbles up or down the PEB. This is great, but cumbersome if you need to support a range of languages and execution environments, particularly those with on-demand or dynamic requirements.</p>
+<h3 id="syscalls-miss-usefulcritical-functionality">syscall&rsquo;s miss useful/critical functionality</h3>
+<p>In addition to ease of use in C/C++, user mode APIs provide additional functionality prior to hitting the kernel. This could be setting up/formatting arguments, exception or edge-case handling, SxS/activation contexts, etc. Without using these APIs and instead syscalling yourself, you&rsquo;re missing out on this, for better or for worse. In some cases it means porting that behavior directly to your assembler stub or setting up the environment pre/post execution.</p>
+<p>In some cases, like <a href="http://theevilbit.blogspot.com/2018/08/about-writeprocessmemory.html"><code>WriteProcessMemory</code></a> or <code>CreateRemoteThreadEx</code>, it&rsquo;s more &ldquo;helpful&rdquo; than actually necessary. In others, like <code>CreateEnclave</code> or <code>CallEnclave</code>, it&rsquo;s virtually a requirement. If you&rsquo;re angling to use only a specific set of functions (<code>NtReadVirtualMemory/NtWriteVirtualMemory/etc</code>) this might not be much of an issue, but expanding beyond that comes with great caveat.</p>
+<h3 id="the-spooky-functions-are-probably-being-called-anyway">the spooky functions are probably being called anyway</h3>
+<p>In general, syscalling is used to evade the use of some function known or suspected to be hooked in user mode. In certain scenarios we can guarantee that the syscall is the only way that hooked function is going to execute. In others, however, such as a more feature rich stage 0 or C2, we can&rsquo;t guarantee this. Consider the following (pseudo-code):</p>
+<pre tabindex="0"><code>UseSysCall(NtOpenProcess, ...)
+UseSysCall(NtAllocateVirtualMemory, ...)
+UseSysCall(NtWriteVirtualMemory, ...)
+UseSysCall(NtCreateThreadEx, ...)
+</code></pre><p>In the above we&rsquo;ve opened a writable process handle, created a blob of memory, written into it, and started a thread to execute it. A very common process injection strategy. Setting aside the tsunami of information this feeds into the kernel, only dynamic instrumentation of the runtime would detect something like this. Any IAT or inline hooks are evaded.</p>
+<p>But say your loader does a few other things, makes a few other calls to user32, dnsapi, kernel32, etc. Do you know that those functions don&rsquo;t make calls into the very functions you&rsquo;re attempting to avoid using? Now you could argue that by evading the hooks for more sensitive functionality (process injection), you&rsquo;ve lowered your threat score with the EDR. This isn&rsquo;t entirely true though because EDR isn&rsquo;t blind to your remote thread (<code>PsSetCreateThreadNotifyRoutine</code>) or your writable process handle (<code>ObRegisterCallbacks</code>) or even your cross process memory write. So what you&rsquo;ve really done is avoided sending contextualized telemetry to the kernel of the cross process injection &ndash; is that enough to avoid heightened scrutiny? Maybe.</p>
+<p>Additionally, modern EDRs hook a ton of stuff (or at least some do). Most syscall projects and research focus on NTDLL; what about kernel32, user32, advapi32, wininet, etc? None of the syscall evasion is going to work here because, naturally, a majority of those don&rsquo;t need to syscall into the kernel (or do via other ntdll functions&hellip;). For evasion coverage, then, you may need to both bolt on raw syscall support as well as a generic unhooking strategy for the other modules.</p>
+<h3 id="syscalls-are-partially-effective-at-escaping-um-data-sinks">syscall&rsquo;s are partially effective at escaping UM data sinks</h3>
+<p>Many user mode hooks themselves do not have proactive defense capabilities baked in. By and large they are used to gather telemetry on the call context to provide to the kernel driver or system service for additional analysis. This analysis, paired with what it&rsquo;s gathered via ETW, kernel mode hooks, and other data sinks, forms a composite picture of the process since birth.</p>
+<p>Let&rsquo;s take the example of cross process code injection referenced above. Let&rsquo;s also give your loader the benefit of the doubt and assume it&rsquo;s triggered nothing and emitted little telemetry on its way to execution. When the following is run:</p>
+<pre tabindex="0"><code>UseSysCall(NtOpenProcess, ...)
+UseSysCall(NtAllocateVirtualMemory, ...)
+UseSysCall(NtWriteVirtualMemory, ...)
+UseSysCall(NtCreateThreadEx, ...)
+</code></pre><p>We are firing off a <em>ton</em> of telemetry to the kernel and any listening drivers. Without a single user mode hook we would know:</p>
+<ol>
+<li>Process A opened a handle to Process B with X permissions (<code>ObRegisterCallbacks</code>)</li>
+<li>Process A allocated memory in Process B with X permissions (<code>EtwTi</code>)</li>
+<li>Process A wrote data into Process B VAS (<code>EtwTi</code>)</li>
+<li>Process A created a remote thread in Process B (<code>PsSetCreateThreadNotifyRoutine</code>, <code>Etw</code>)</li>
+</ol>
+<p>It is true that <code>EtwTi</code> is newish and doesn&rsquo;t capture everything, hence the partial effectiveness. But that argument grows thin overtime as adoption of the feed grows and the API matures.</p>
+<p>A strong argument for syscalls here is that it evades custom data sinks. Up until now we&rsquo;ve only considered what Microsoft provides, not what the vendor themselves might include in their hook routine, and how that telemetry might influence their agent&rsquo;s model. Some vendors, for performance reasons, prefer to extract thread information at call time. Some capture all parameters and pack them into more consumable binary blobs for consumption in the kernel. Depending on what exactly the hook does, and its criticality to the bayesian model, this might be a great reason to use them.</p>
+<h3 id="your-testing-isnt-comprehensive-or-indicative-of-the-general-case">your testing isn&rsquo;t comprehensive or indicative of the general case</h3>
+<p>This is a more general gripe with some of the conversation on modern EDR evasion. Modern EDRs use a variety of learning heuristics to determine if an unknown binary is malicious or not; sometimes successfully, sometimes not. This model is initially trained on some set of data (depending on the vendor), but continues to grow based on its observations of the environment and data shared amongst nodes. This is generally known as online learning. On large deploys of new EDRs there is typically a learning or passive phase; that allows the model to collect baseline metrics of what is normal and, hopefully, identify anomalies or deviations thereafter.</p>
+<p>Effectively then, given a long enough timeline, one enterprise&rsquo;s agent model might be <em>significantly</em> different from another. This has a few implications. The first being, of course, that your lab environment is not an accurate representation of the client. While your syscall stub might work fine in the lab, unless it&rsquo;s particularly novel, it&rsquo;s entirely possible it&rsquo;s been observed elsewhere.</p>
+<p>This also means that pinpointing the reason why your payload works or doesn&rsquo;t work is a bit of dark art. If your payload with the syscall evasion ends up working in a client environment, does that mean the evasion is successful, or would it have worked regardless of whether you used ntdll or not? If on the other hand your payload was blocked, can you identify the syscalls as the problem? Furthermore, if you add in evasion stubs and successfully execute, can we definitively point to the syscall evasion as the threat score culprit?</p>
+<p>At this point, then, it&rsquo;s a game of risk. You risk allowing the agent&rsquo;s model to continue aggregating telemetry and improving its heuristic, and thereby the entire network&rsquo;s model. Repeated testing taints the analysis chain as it grows to identify portions of your code as malicious or not; a fuzzy match, regardless of the function or assembler changes made. You also risk exposing the increased telemetry and details to the cloud which is then in the hands of both automated and manual tooling and analysis. If you disabled this portion, then, you also lack an accurate representation of detection capabilities.</p>
+<p>In short, much of the testing we do against these new EDR solutions is rather unscientific. That&rsquo;s largely a result of our inability to both peer into the state of an agent&rsquo;s model while also deterministically assessing its capabilities. Testing in a limped state (ie. offline, with cloud connectivity blackholed, etc.) and restarting VMs after every test provides some basic insight but we lose a significant chunk of EDR capability. Isolation is difficult.</p>
+<h2 id="anyway">anyway</h2>
+<p>These things, when taken together, motivate my reluctance to embrace the strategy in much of my tooling. I&rsquo;ve found scant cases in which a raw syscall was preferable to some other technique and I&rsquo;ve become <em>exhausted</em> by the veracity of some tooling claims. The EDRs today are not the EDRs of our red teaming forefathers; testing is complicated, telemetry insight is improving, and data sets and enterprise security budgets are growing. We&rsquo;ve got to get better at quantifying and substantiating our tool testing/analysis, and we need to improve the conversation surrounding the technologies.</p>
+<p>I have a few brief, unsolicited thoughts for both red teams and EDR vendors based on my years of experience in this space. I&rsquo;d love to hear others.</p>
+<h3 id="for-edr">for EDR</h3>
+<p>Do not rely on user mode hooks and, more importantly, do not implicitly <em>trust</em> it. Seriously. Even if you&rsquo;re monitoring hook integrity from the kernel, there are too many variables and too many opportunities for malicious code to tamper with or otherwise corrupt the hook or the integrity of the incoming data. Consider this from a performance perspective if you need to. I know you think you&rsquo;re being cute by:</p>
+<ol>
+<li>Monitoring your hot patches for modification</li>
+<li>Encrypting telemetry</li>
+<li>Transmitting telemetry via clandestine/obscure methods (I see you <code>NtQuerySystemInformation</code>)</li>
+<li>&ldquo;Validating&rdquo; client processes</li>
+</ol>
+<p>The fact is anything emitted from an unsigned, untrusted, user mode process can be corrupted. Put your efforts into consuming ETW and registering callbacks on all important routines, PPL&rsquo;ing your user mode services, and locking down your IPC and general communication channels. Consume AMSI if you must, with the same caveat as user mode hooks: it is a data sink, and not necessarily one of truth.</p>
+<p>The more you can consume in the kernel (maybe a trustlet some day?), the more difficult you are to tamper with. There is of course the ability for red team to wormhole into the kernel and attack your driver, but this is another hurdle for an attacker to leap, and yet another opportunity to catch them.</p>
+<h3 id="for-red-team">for red team</h3>
+<p>Using raw syscalls is but a small component of a greater system &ndash; evasion is less a set of techniques and more a system of behaviors. Consider that the <em>hooks</em> themselves are not the problem, but rather what the hooks do. I had to edit myself several times here to not reference the spoon quote from the Matrix, but it&rsquo;s apt, if cliche.</p>
+<p>There are also more effective methods of evading user mode hooks than raw syscalling. I&rsquo;ve discussed some of them publicly <a href="https://twitter.com/dronesec/status/1355587781825683457">in the past</a>, but urge you to investigate the machinations of the EDR hooks themselves. I&rsquo;d argue even IAT/inline unhooking is more effective, in some cases.</p>
+<p>Cloud capabilities are the truly scary expansion. Sample submission, cloud telemetry aggregation and analysis, and manual/automatic hunting services change the landscape of threat analysis. Not only can your telemetry be correlated or bolstered amongst nodes, it can be retroactively hunted and analyzed. This retroactive capability, often provided by backend automation or threat hunting teams (hi Overwatch!) can be quite effective at improving an enterprises agent models. And not only one enterprises model; consider the fact that these data points are shared amongst <em>all</em> vendor subscribers, used to subsequently improve those agent models. Burning a technique is no longer isolated to a technology or a client.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

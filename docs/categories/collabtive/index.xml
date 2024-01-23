@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>collabtive on dronesec</title>
+    <link>https://dronesec.pw/categories/collabtive/</link>
+    <description>Recent content in collabtive on dronesec</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <copyright>Bryan Alexander</copyright>
+    <lastBuildDate>Fri, 21 Jun 2013 22:40:53 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/collabtive/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Collabtive 1.0 - SQLi</title>
+      <link>https://dronesec.pw/blog/collabtive-1.0-sqli/</link>
+      <pubDate>Fri, 21 Jun 2013 22:40:53 +0000</pubDate>
+      
+      <guid>https://dronesec.pw/blog/collabtive-1.0-sqli/</guid>
+      <description>Collabtive is a web-based collaboration tool for project management, developed in PHP. The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection. Sourceforge page can be found here, which appears to be clocking in just over 1000 downloads a week. This issue was reported privately to the developers, and fixed in their Github repository.
+User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</description>
+    </item>
+    
+  </channel>
+</rss>
