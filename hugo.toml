@@ -1,4 +1,4 @@
-baseURL = 'https://dronesec.pw/'
+baseURL = 'https://dronesec.net/'
 languageCode = 'en-us'
 title = 'dronesec'
 theme = 'smol'
