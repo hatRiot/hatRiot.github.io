@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>ibm on dronesec</title>
-    <link>https://dronesec.pw/categories/ibm/</link>
+    <link>https://dronesec.net/categories/ibm/</link>
     <description>Recent content in ibm on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 26 Mar 2014 22:51:11 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/ibm/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 26 Mar 2014 22:51:11 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/ibm/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>IBM Tealeaf CX (v8 Release 8) Remote OS Command Injection / LFI</title>
-      <link>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</link>
+      <link>https://dronesec.net/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</link>
       <pubDate>Wed, 26 Mar 2014 22:51:11 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</guid>
+      <guid>https://dronesec.net/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</guid>
       <description>Tealeaf Technologies was purchased by IBM in May of 2012, and is a customer buying analytics application. Essentially, an administrator will configure a Tealeaf server that accepts analytic data from remote servers, which it then generates various models, graphs, reports, etc based on the aggregate of data. Their analytics status/server monitoring application is vulnerable to a fairly trivial OS command injection vulnerability, as well as local file inclusion. This vulnerability was discovered on a PCI engagement against a large retailer; the LFI was used to pull PHP files and hunt for RCE.</description>
     </item>
     

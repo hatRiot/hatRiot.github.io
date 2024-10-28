@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>lshell on dronesec</title>
-    <link>https://dronesec.pw/categories/lshell/</link>
+    <link>https://dronesec.net/categories/lshell/</link>
     <description>Recent content in lshell on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Sun, 30 Dec 2012 22:43:42 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/lshell/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 30 Dec 2012 22:43:42 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/lshell/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>lshell 0.9.15 pathing vulnerability</title>
-      <link>https://dronesec.pw/blog/lshell-0.9.15-pathing-vulnerability/</link>
+      <link>https://dronesec.net/blog/lshell-0.9.15-pathing-vulnerability/</link>
       <pubDate>Sun, 30 Dec 2012 22:43:42 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/lshell-0.9.15-pathing-vulnerability/</guid>
+      <guid>https://dronesec.net/blog/lshell-0.9.15-pathing-vulnerability/</guid>
       <description>While working through Kioptrix level 4, I stumbled into lshell, a limited shell environment developed in Python. I don&amp;rsquo;t want to walk through the vulnerability again, but at a high level versions &amp;lt;= 0.9.15 are vulnerable to an unsanitized eval() call with user supplied input. I couldn&amp;rsquo;t find a working PoC, so I wrote one.
 This will verify the install and spawn a pseudo-shell for running commands on the remote host.</description>
     </item>

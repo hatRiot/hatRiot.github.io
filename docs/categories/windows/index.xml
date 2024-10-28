@@ -2,83 +2,83 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>windows on dronesec</title>
-    <link>https://dronesec.pw/categories/windows/</link>
+    <link>https://dronesec.net/categories/windows/</link>
     <description>Recent content in windows on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 12 May 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/windows/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 12 May 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/windows/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>the fanciful allure and utility of syscalls</title>
-      <link>https://dronesec.pw/blog/the-fanciful-allure-and-utility-of-syscalls/</link>
+      <link>https://dronesec.net/blog/the-fanciful-allure-and-utility-of-syscalls/</link>
       <pubDate>Wed, 12 May 2021 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/the-fanciful-allure-and-utility-of-syscalls/</guid>
+      <guid>https://dronesec.net/blog/the-fanciful-allure-and-utility-of-syscalls/</guid>
       <description>So over the years I&amp;rsquo;ve had a number of conversations about the utility of using syscalls in shellcode, C2s, or loaders in offsec tooling and red team ops. For reasons likely related to the increasing maturity of EDRs and their totalitarian grip in enterprise environments, I&amp;rsquo;ve seen an uptick in projects and blogs championing &amp;ldquo;raw syscalls&amp;rdquo; as a technique for evading AV/SIEM technologies. This post is an attempt to describe why I think the technique&amp;rsquo;s efficacy has been overstated and its utility stretched thin.</description>
     </item>
     
     <item>
       <title>On Exploiting CVE-2021-1648 (splwow64 LPE)</title>
-      <link>https://dronesec.pw/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</link>
+      <link>https://dronesec.net/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</link>
       <pubDate>Wed, 10 Mar 2021 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</guid>
+      <guid>https://dronesec.net/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</guid>
       <description>In this post we&amp;rsquo;ll examine the exploitability of CVE-2021-1648, a privilege escalation bug in splwow64. I actually started writing this post to organize my notes on the bug and subsystem, and was initially skeptical of its exploitability. I went back and forth on the notion, ultimately ditching the bug. Regardless, organizing notes and writing blogs can be a valuable exercise! The vector is useful, seems to have a lot of attack surface, and will likely crop up again unless Microsoft performs a serious exorcism on the entire spooler architecture.</description>
     </item>
     
     <item>
       <title>Exploiting Leaked Process and Thread Handles</title>
-      <link>https://dronesec.pw/blog/exploiting-leaked-process-and-thread-handles/</link>
+      <link>https://dronesec.net/blog/exploiting-leaked-process-and-thread-handles/</link>
       <pubDate>Thu, 22 Aug 2019 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/exploiting-leaked-process-and-thread-handles/</guid>
+      <guid>https://dronesec.net/blog/exploiting-leaked-process-and-thread-handles/</guid>
       <description>Over the years I&amp;rsquo;ve seen and exploited the occasional leaked handle bug. These can be particularly fun to toy with, as the handles aren&amp;rsquo;t always granted PROCESS_ALL_ACCESS or THREAD_ALL_ACCESS, requiring a bit more ingenuity. This post will address the various access rights assignable to handles and what we can do to exploit them to gain elevated code execution. I&amp;rsquo;ve chosen to focus specifically on process and thread handles as this seems to be the most common, but surely other objects can be exploited in similar manner.</description>
     </item>
     
     <item>
       <title>Code Execution via Fiber Local Storage</title>
-      <link>https://dronesec.pw/blog/code-execution-via-fiber-local-storage/</link>
+      <link>https://dronesec.net/blog/code-execution-via-fiber-local-storage/</link>
       <pubDate>Mon, 12 Aug 2019 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/code-execution-via-fiber-local-storage/</guid>
+      <guid>https://dronesec.net/blog/code-execution-via-fiber-local-storage/</guid>
       <description>While working on another research project (post to be released soon, will update here), I stumbled onto a very Hexacorn[0] inspired type of code injection technique that fit my situation perfectly. Instead of tainting the other post with its description and code, I figured I&amp;rsquo;d release a separate post describing it here.
 When I say that it&amp;rsquo;s Hexacorn inspired, I mean that the bulk of the strategy is similar to everything else you&amp;rsquo;ve probably seen; we open a handle to the remote process, allocate some memory, and copy our shellcode into it.</description>
     </item>
     
     <item>
       <title>Dell Digital Delivery - CVE-2018-11072 - Local Privilege Escalation</title>
-      <link>https://dronesec.pw/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</link>
+      <link>https://dronesec.net/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</link>
       <pubDate>Wed, 22 Aug 2018 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</guid>
+      <guid>https://dronesec.net/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</guid>
       <description>Back in March or April I began reversing a slew of Dell applications installed on a laptop I had. Many of them had privileged services or processes running and seemed to perform a lot of different complex actions. I previously disclosed a LPE in SupportAssist[0], and identified another in their Digital Delivery platform. This post will detail a Digital Delivery vulnerability and how it can be exploited. This was privately discovered and disclosed, and no known active exploits are in the wild.</description>
     </item>
     
     <item>
       <title>Dell SupportAssist Driver - Local Privilege Escalation</title>
-      <link>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</link>
+      <link>https://dronesec.net/blog/dell-supportassist-driver-local-privilege-escalation/</link>
       <pubDate>Tue, 01 May 2018 22:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</guid>
+      <guid>https://dronesec.net/blog/dell-supportassist-driver-local-privilege-escalation/</guid>
       <description>This post details a local privilege escalation (LPE) vulnerability I found in Dell&amp;rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by the tool, and is pretty similar to bugs found by ReWolf in ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2]. These bugs are pretty interesting because they can be used to bypass driver signature enforcement (DSE) ad infinitum, or at least until they&amp;rsquo;re no longer compatible with newer operating systems.</description>
     </item>
     
     <item>
       <title>Abusing delay load DLLs for remote code injection</title>
-      <link>https://dronesec.pw/blog/abusing-delay-load-dlls-for-remote-code-injection/</link>
+      <link>https://dronesec.net/blog/abusing-delay-load-dlls-for-remote-code-injection/</link>
       <pubDate>Sun, 17 Sep 2017 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/abusing-delay-load-dlls-for-remote-code-injection/</guid>
+      <guid>https://dronesec.net/blog/abusing-delay-load-dlls-for-remote-code-injection/</guid>
       <description>I always tell myself that I&amp;rsquo;ll try posting more frequently on my blog, and yet here I am, two years later. Perhaps this post will provide the necessary motiviation to conduct more public research. I do love it.
 This post details a novel remote code injection technique I discovered while playing around with delay loading DLLs. It allows for the injection of arbitrary code into arbitrary remote, running processes, provided that they implement the abused functionality.</description>
     </item>
     
     <item>
       <title>Abusing Token Privileges for EoP</title>
-      <link>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</link>
+      <link>https://dronesec.net/blog/abusing-token-privileges-for-eop/</link>
       <pubDate>Fri, 01 Sep 2017 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</guid>
+      <guid>https://dronesec.net/blog/abusing-token-privileges-for-eop/</guid>
       <description>This is just a placeholder post to link off to Stephen Breen and I&amp;rsquo;s paper on abusing token privileges. You can read the entire paper here[0]. I also recommend checking out the blogpost he posted on Foxglove here[1].
 [0] https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt
 [1] https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</description>

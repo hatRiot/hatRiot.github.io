@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>vulnhub on dronesec</title>
-    <link>https://dronesec.pw/categories/vulnhub/</link>
+    <link>https://dronesec.net/categories/vulnhub/</link>
     <description>Recent content in vulnhub on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 10 Jul 2013 22:31:29 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/vulnhub/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 10 Jul 2013 22:31:29 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/vulnhub/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>solving RA1NXing Bots</title>
-      <link>https://dronesec.pw/blog/solving-ra1nxing-bots/</link>
+      <link>https://dronesec.net/blog/solving-ra1nxing-bots/</link>
       <pubDate>Wed, 10 Jul 2013 22:31:29 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-ra1nxing-bots/</guid>
+      <guid>https://dronesec.net/blog/solving-ra1nxing-bots/</guid>
       <description>RA1NXing Bots is a vulnerable image intended to jump start security researches&amp;rsquo; interest in botnets and their exploitability. This vulnerable image was brought to us by Brian Wallace (@botnet_hunter), a botnet security researcher at Cylance and good friend (and Ballast Security co-founder). This was a pretty interesting vulnerable image, and good exposure into the sometimes seedy and malevolent world of botnets.
 As such, the iconic nmap:
 # Nmap 6.25 scan initiated Mon Jul 8 02:08:29 2013 as: nmap -sS -A -T5 -p- -oN bot.</description>
@@ -21,40 +21,40 @@ As such, the iconic nmap:
     
     <item>
       <title>solving brainpan</title>
-      <link>https://dronesec.pw/blog/solving-brainpan/</link>
+      <link>https://dronesec.net/blog/solving-brainpan/</link>
       <pubDate>Tue, 02 Apr 2013 23:09:43 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-brainpan/</guid>
+      <guid>https://dronesec.net/blog/solving-brainpan/</guid>
       <description>Brainpan is the brainchild of superkojiman over at vulnhub, and has some pretty interesting (and frustrating) twists and turns. This boot2root is more focused on exploitation of 0days in custom written software, with no metasploit modules or google hunting necessary. With that, the nmap:
 root@127:~# nmap -sS -A -p- -T5 192.168.1.110 Starting Nmap 6.25 ( http://nmap.org ) at 2013-03-27 22:06 CDT Nmap scan report for brainpan (192.168.1.110) Host is up (0.</description>
     </item>
     
     <item>
       <title>Nebula Solutions - All Levels</title>
-      <link>https://dronesec.pw/blog/nebula-solutions-all-levels/</link>
+      <link>https://dronesec.net/blog/nebula-solutions-all-levels/</link>
       <pubDate>Sat, 30 Mar 2013 22:46:33 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/nebula-solutions-all-levels/</guid>
+      <guid>https://dronesec.net/blog/nebula-solutions-all-levels/</guid>
       <description>Nebula is the first of three exploit discs provided by exploit exercises. I&amp;rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&amp;rsquo;ve cleaned my notes up a bit and am posting them here. I will also post my notes for the other two systems sometime after. This post includes a walkthrough of all 20 levels.
 #!/bin/bash gcc /tmp/shell.c -o /home/flag03/shell chmod +s /home/flag03/shell You&amp;rsquo;ll just need to create shell.</description>
     </item>
     
     <item>
       <title>Solving Hackademic-RTB2</title>
-      <link>https://dronesec.pw/blog/solving-hackademic-rtb2/</link>
+      <link>https://dronesec.net/blog/solving-hackademic-rtb2/</link>
       <pubDate>Sun, 18 Nov 2012 01:24:24 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-hackademic-rtb2/</guid>
+      <guid>https://dronesec.net/blog/solving-hackademic-rtb2/</guid>
       <description>Here&amp;rsquo;s the second distro from mr. pr0n&amp;rsquo;s realistic pentest discs. This one was quite fun as I had almost zero experience with Joomla front ends, which so happens to be the entry point on this disc. A little disappointed with the finale, but overall impressed with this disc. With that, the iconic nmap:
 # Nmap 6.01 scan initiated Wed Nov 14 16:45:09 2012 as: nmap -sS -p- -T5 -A -oN r2.</description>
     </item>
     
     <item>
       <title>Solving Hackademic-RTB1</title>
-      <link>https://dronesec.pw/blog/solving-hackademic-rtb1/</link>
+      <link>https://dronesec.net/blog/solving-hackademic-rtb1/</link>
       <pubDate>Tue, 13 Nov 2012 01:24:24 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-hackademic-rtb1/</guid>
+      <guid>https://dronesec.net/blog/solving-hackademic-rtb1/</guid>
       <description>Hackademic is a pseudo-realistic boot2root box that aims for realism over puzzles or steganography (or obscurity like pwn0s2..). With that, lets start:
 The initial scan:
 # Nmap 6.01 scan initiated Tue Nov 13 22:16:40 2012 as: nmap -sSV -F -T5 -oN hack.scan 192.168.1.168 Nmap scan report for 192.168.1.168 Host is up (0.00028s latency). Not shown: 98 filtered ports PORT STATE SERVICE VERSION 22/tcp closed ssh 80/tcp open http Apache httpd 2.</description>
@@ -62,20 +62,20 @@ The initial scan:
     
     <item>
       <title>solving pwn0s v2</title>
-      <link>https://dronesec.pw/blog/solving-pwn0s-v2/</link>
+      <link>https://dronesec.net/blog/solving-pwn0s-v2/</link>
       <pubDate>Thu, 09 Aug 2012 00:56:45 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-pwn0s-v2/</guid>
+      <guid>https://dronesec.net/blog/solving-pwn0s-v2/</guid>
       <description>pwn0sv2 is version two in the pwn0s series (?), and can be found here at our good friend g0tmi1k&amp;rsquo;s pentest page. I previously did a write up on the first version of pwn0s and enjoyed it, so I was excited to see there was another version available. Forewarning: obvious spoilers.
 The zip comes packaged with a README with your standard disclaimer/info affair, along with the static IP. 10.10.10.100 is the set IP address.</description>
     </item>
     
     <item>
       <title>solving pwn0s</title>
-      <link>https://dronesec.pw/blog/solving-pwn0s/</link>
+      <link>https://dronesec.net/blog/solving-pwn0s/</link>
       <pubDate>Thu, 07 Jun 2012 00:15:10 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/solving-pwn0s/</guid>
+      <guid>https://dronesec.net/blog/solving-pwn0s/</guid>
       <description>pwnOS is a vulnerable VM used in penetration testing and vulnerability assessment. I thought this one was pretty fun, so I&amp;rsquo;ve decided to do a little write up in the various ways it can be attacked. The VM for it can be found on forums.hackingdojo.com; you need an account to access the forums, but it&amp;rsquo;s worth it.
 The VM comes packaged as a split vmdk, so just loading up the vmx sets everything up.</description>
     </item>

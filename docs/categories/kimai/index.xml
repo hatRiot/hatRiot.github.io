@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>kimai on dronesec</title>
-    <link>https://dronesec.pw/categories/kimai/</link>
+    <link>https://dronesec.net/categories/kimai/</link>
     <description>Recent content in kimai on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Mon, 20 May 2013 23:01:44 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/kimai/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 20 May 2013 23:01:44 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/kimai/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Kimai v0.9.2 - SQLi</title>
-      <link>https://dronesec.pw/blog/kimai-v0.9.2-sqli/</link>
+      <link>https://dronesec.net/blog/kimai-v0.9.2-sqli/</link>
       <pubDate>Mon, 20 May 2013 23:01:44 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/kimai-v0.9.2-sqli/</guid>
+      <guid>https://dronesec.net/blog/kimai-v0.9.2-sqli/</guid>
       <description>Kimai is a time tracking solution built on the typical LAMP stack. Multiple vulnerabilities were discovered that could allow remote code execution on the remote server. These appear to be fixed in their source repository (here), but none of the distribution packages (v0.9.2.1306-3) have the patched version.
 On installation, a default administrative account is generated with the following credentials: admin:changeme. The /install/ folder is not automatically deleted, but instead a pop-up is shown each time the administrator logs in, alerting them that they should delete this folder in order to protect their system from malicious modifications.</description>
     </item>

@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>ntpdc on dronesec</title>
-    <link>https://dronesec.pw/categories/ntpdc/</link>
+    <link>https://dronesec.net/categories/ntpdc/</link>
     <description>Recent content in ntpdc on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Tue, 06 Jan 2015 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/ntpdc/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 06 Jan 2015 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/ntpdc/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>ntpdc local buffer overflow</title>
-      <link>https://dronesec.pw/blog/ntpdc-local-buffer-overflow/</link>
+      <link>https://dronesec.net/blog/ntpdc-local-buffer-overflow/</link>
       <pubDate>Tue, 06 Jan 2015 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/ntpdc-local-buffer-overflow/</guid>
+      <guid>https://dronesec.net/blog/ntpdc-local-buffer-overflow/</guid>
       <description>Alejandro Hdez (@nitr0usmx) recently tweeted about a trivial buffer overflow in ntpdc, a deprecated NTP query tool still available and packaged with any NTP install. He posted a screenshot of the crash as the result of a large buffer passed into a vulnerable gets call. After digging into it a bit, I decided it&amp;rsquo;d be a fun exploit to write, and it was. There are a few quarks to it that make it of particular interest, of which I&amp;rsquo;ve detailed below.</description>
     </item>
     

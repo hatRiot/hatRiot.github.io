@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>openemm on dronesec</title>
-    <link>https://dronesec.pw/categories/openemm/</link>
+    <link>https://dronesec.net/categories/openemm/</link>
     <description>Recent content in openemm on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Sun, 28 Jul 2013 22:24:15 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/openemm/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 28 Jul 2013 22:24:15 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/openemm/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>OpenEMM-2013 SOAP SQLi/Stored XSS</title>
-      <link>https://dronesec.pw/blog/openemm-2013-soap-sqli/stored-xss/</link>
+      <link>https://dronesec.net/blog/openemm-2013-soap-sqli/stored-xss/</link>
       <pubDate>Sun, 28 Jul 2013 22:24:15 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/openemm-2013-soap-sqli/stored-xss/</guid>
+      <guid>https://dronesec.net/blog/openemm-2013-soap-sqli/stored-xss/</guid>
       <description>OpenEMM is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&amp;rsquo;s free and open source. The entire stack is java, with some random shell/Python scripts for configuration. On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation. This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</description>
     </item>
     

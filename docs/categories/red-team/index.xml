@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>red team on dronesec</title>
-    <link>https://dronesec.pw/categories/red-team/</link>
+    <link>https://dronesec.net/categories/red-team/</link>
     <description>Recent content in red team on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 12 May 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/red-team/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 12 May 2021 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/red-team/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>the fanciful allure and utility of syscalls</title>
-      <link>https://dronesec.pw/blog/the-fanciful-allure-and-utility-of-syscalls/</link>
+      <link>https://dronesec.net/blog/the-fanciful-allure-and-utility-of-syscalls/</link>
       <pubDate>Wed, 12 May 2021 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/the-fanciful-allure-and-utility-of-syscalls/</guid>
+      <guid>https://dronesec.net/blog/the-fanciful-allure-and-utility-of-syscalls/</guid>
       <description>So over the years I&amp;rsquo;ve had a number of conversations about the utility of using syscalls in shellcode, C2s, or loaders in offsec tooling and red team ops. For reasons likely related to the increasing maturity of EDRs and their totalitarian grip in enterprise environments, I&amp;rsquo;ve seen an uptick in projects and blogs championing &amp;ldquo;raw syscalls&amp;rdquo; as a technique for evading AV/SIEM technologies. This post is an attempt to describe why I think the technique&amp;rsquo;s efficacy has been overstated and its utility stretched thin.</description>
     </item>
     

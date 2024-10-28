@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>tokens on dronesec</title>
-    <link>https://dronesec.pw/categories/tokens/</link>
+    <link>https://dronesec.net/categories/tokens/</link>
     <description>Recent content in tokens on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Fri, 01 Sep 2017 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/tokens/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Fri, 01 Sep 2017 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/tokens/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Abusing Token Privileges for EoP</title>
-      <link>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</link>
+      <link>https://dronesec.net/blog/abusing-token-privileges-for-eop/</link>
       <pubDate>Fri, 01 Sep 2017 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</guid>
+      <guid>https://dronesec.net/blog/abusing-token-privileges-for-eop/</guid>
       <description>This is just a placeholder post to link off to Stephen Breen and I&amp;rsquo;s paper on abusing token privileges. You can read the entire paper here[0]. I also recommend checking out the blogpost he posted on Foxglove here[1].
 [0] https://raw.githubusercontent.com/hatRiot/token-priv/master/abusing_token_eop_1.0.txt
 [1] https://foxglovesecurity.com/2017/08/25/abusing-token-privileges-for-windows-local-privilege-escalation/</description>

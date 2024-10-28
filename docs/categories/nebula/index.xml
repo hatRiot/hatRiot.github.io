@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>nebula on dronesec</title>
-    <link>https://dronesec.pw/categories/nebula/</link>
+    <link>https://dronesec.net/categories/nebula/</link>
     <description>Recent content in nebula on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Sat, 30 Mar 2013 22:46:33 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/nebula/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 30 Mar 2013 22:46:33 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/nebula/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Nebula Solutions - All Levels</title>
-      <link>https://dronesec.pw/blog/nebula-solutions-all-levels/</link>
+      <link>https://dronesec.net/blog/nebula-solutions-all-levels/</link>
       <pubDate>Sat, 30 Mar 2013 22:46:33 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/nebula-solutions-all-levels/</guid>
+      <guid>https://dronesec.net/blog/nebula-solutions-all-levels/</guid>
       <description>Nebula is the first of three exploit discs provided by exploit exercises. I&amp;rsquo;ve seen a couple walkthroughs of these levels around, but as a completionist, and for future reference, I&amp;rsquo;ve cleaned my notes up a bit and am posting them here. I will also post my notes for the other two systems sometime after. This post includes a walkthrough of all 20 levels.
 #!/bin/bash gcc /tmp/shell.c -o /home/flag03/shell chmod +s /home/flag03/shell You&amp;rsquo;ll just need to create shell.</description>
     </item>

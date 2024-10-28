@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>asus on dronesec</title>
-    <link>https://dronesec.pw/categories/asus/</link>
+    <link>https://dronesec.net/categories/asus/</link>
     <description>Recent content in asus on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 05 Jun 2013 22:45:20 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/asus/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 05 Jun 2013 22:45:20 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/asus/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Asus RT56U Remote Command Injection</title>
-      <link>https://dronesec.pw/blog/asus-rt56u-remote-command-injection/</link>
+      <link>https://dronesec.net/blog/asus-rt56u-remote-command-injection/</link>
       <pubDate>Wed, 05 Jun 2013 22:45:20 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/asus-rt56u-remote-command-injection/</guid>
+      <guid>https://dronesec.net/blog/asus-rt56u-remote-command-injection/</guid>
       <description>After discovering a couple vulnerabilities in the Asus RT56U prior, I decided to check out the latest firmware and hunt around for a few more.
 I was running 3.0.0.4.342, which happens to be one version behind the latest (3.0.0.4.360), so I did a sweep of both. I enabled telnet on the router and hunted around, which led me to an unlinked page, Main_Analysis_Content.asp. This page hosts a slew of diagnostic tools, including the ability to ping network systems.</description>
     </item>

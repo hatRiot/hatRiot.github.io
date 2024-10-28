@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>modem on dronesec</title>
-    <link>https://dronesec.pw/categories/modem/</link>
+    <link>https://dronesec.net/categories/modem/</link>
     <description>Recent content in modem on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Sat, 20 Apr 2013 23:06:45 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/modem/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 20 Apr 2013 23:06:45 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/modem/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Motorola Surfboard - Multiple Vulnerabilities</title>
-      <link>https://dronesec.pw/blog/motorola-surfboard-multiple-vulnerabilities/</link>
+      <link>https://dronesec.net/blog/motorola-surfboard-multiple-vulnerabilities/</link>
       <pubDate>Sat, 20 Apr 2013 23:06:45 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/motorola-surfboard-multiple-vulnerabilities/</guid>
+      <guid>https://dronesec.net/blog/motorola-surfboard-multiple-vulnerabilities/</guid>
       <description>It would appear that these vulnerabilities were disclosed a few years ago (CVE-2008-2002 and CVE-2006-5196), but my relatively new (1-2 years) Motorola Surfboard SB5101U (verified against both the 101 and 101U), loaded with SB5101NU-2.1.7.0-GA-00-388-NOSH, appears to be vulnerable to the same CSRF&amp;rsquo;s exposed prior. With no authentication system in place at all, it would appear that a local DoS is not much of a concern to them. It&amp;rsquo;s interesting that, despite the sudden flood of discovered vulnerabilities in routers, nobody is really taking a look at the other piece of hardware between you and the ISP.</description>
     </item>
     

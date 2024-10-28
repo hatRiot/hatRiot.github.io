@@ -2,306 +2,306 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://dronesec.pw/</loc>
+    <loc>https://dronesec.net/</loc>
     <lastmod>2024-08-29T22:54:02-07:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/leveraging-lua-to-sniff-memcached-proxies/</loc>
+    <loc>https://dronesec.net/blog/leveraging-lua-to-sniff-memcached-proxies/</loc>
     <lastmod>2024-08-29T22:54:02-07:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/post/</loc>
+    <loc>https://dronesec.net/post/</loc>
     <lastmod>2024-08-29T22:54:02-07:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/about/</loc>
+    <loc>https://dronesec.net/about/</loc>
     <lastmod>2024-01-02T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/other/</loc>
+    <loc>https://dronesec.net/other/</loc>
     <lastmod>2024-01-02T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/</loc>
+    <loc>https://dronesec.net/categories/</loc>
     <lastmod>2021-05-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/code-injection/</loc>
+    <loc>https://dronesec.net/categories/code-injection/</loc>
     <lastmod>2021-05-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/red-team/</loc>
+    <loc>https://dronesec.net/categories/red-team/</loc>
     <lastmod>2021-05-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/the-fanciful-allure-and-utility-of-syscalls/</loc>
+    <loc>https://dronesec.net/blog/the-fanciful-allure-and-utility-of-syscalls/</loc>
     <lastmod>2021-05-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/windows/</loc>
+    <loc>https://dronesec.net/categories/windows/</loc>
     <lastmod>2021-05-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/exploitation/</loc>
+    <loc>https://dronesec.net/categories/exploitation/</loc>
     <lastmod>2021-03-10T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</loc>
+    <loc>https://dronesec.net/blog/on-exploiting-cve-2021-1648-splwow64-lpe/</loc>
     <lastmod>2021-03-10T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/privilege-escalation/</loc>
+    <loc>https://dronesec.net/categories/privilege-escalation/</loc>
     <lastmod>2021-03-10T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/adobe-reader/</loc>
+    <loc>https://dronesec.net/categories/adobe-reader/</loc>
     <lastmod>2020-08-08T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/digging-the-adobe-sandbox-ipc-internals/</loc>
+    <loc>https://dronesec.net/blog/digging-the-adobe-sandbox-ipc-internals/</loc>
     <lastmod>2020-08-08T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/fuzzing/</loc>
+    <loc>https://dronesec.net/categories/fuzzing/</loc>
     <lastmod>2020-08-08T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/reversing/</loc>
+    <loc>https://dronesec.net/categories/reversing/</loc>
     <lastmod>2020-08-08T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/other/adobe-reader-tags/</loc>
+    <loc>https://dronesec.net/other/adobe-reader-tags/</loc>
     <lastmod>2020-08-07T15:00:00-06:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/other/top-20-films/</loc>
+    <loc>https://dronesec.net/other/top-20-films/</loc>
     <lastmod>2020-07-02T15:00:00-06:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/exploit/</loc>
+    <loc>https://dronesec.net/categories/exploit/</loc>
     <lastmod>2019-08-22T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/exploiting-leaked-process-and-thread-handles/</loc>
+    <loc>https://dronesec.net/blog/exploiting-leaked-process-and-thread-handles/</loc>
     <lastmod>2019-08-22T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/code-execution-via-fiber-local-storage/</loc>
+    <loc>https://dronesec.net/blog/code-execution-via-fiber-local-storage/</loc>
     <lastmod>2019-08-12T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</loc>
+    <loc>https://dronesec.net/blog/dell-digital-delivery-cve-2018-11072-local-privilege-escalation/</loc>
     <lastmod>2018-08-22T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/elevation-of-privilege/</loc>
+    <loc>https://dronesec.net/categories/elevation-of-privilege/</loc>
     <lastmod>2018-08-22T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</loc>
+    <loc>https://dronesec.net/blog/dell-supportassist-driver-local-privilege-escalation/</loc>
     <lastmod>2018-05-01T22:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/kernel/</loc>
+    <loc>https://dronesec.net/categories/kernel/</loc>
     <lastmod>2018-05-01T22:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/abusing-delay-load-dlls-for-remote-code-injection/</loc>
+    <loc>https://dronesec.net/blog/abusing-delay-load-dlls-for-remote-code-injection/</loc>
     <lastmod>2017-09-17T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/abusing-token-privileges-for-eop/</loc>
+    <loc>https://dronesec.net/blog/abusing-token-privileges-for-eop/</loc>
     <lastmod>2017-09-01T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/tokens/</loc>
+    <loc>https://dronesec.net/categories/tokens/</loc>
     <lastmod>2017-09-01T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/ntpdc/</loc>
+    <loc>https://dronesec.net/categories/ntpdc/</loc>
     <lastmod>2015-01-06T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/ntpdc-local-buffer-overflow/</loc>
+    <loc>https://dronesec.net/blog/ntpdc-local-buffer-overflow/</loc>
     <lastmod>2015-01-06T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/clusterd/</loc>
+    <loc>https://dronesec.net/categories/clusterd/</loc>
     <lastmod>2014-08-27T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/railo/</loc>
+    <loc>https://dronesec.net/categories/railo/</loc>
     <lastmod>2014-08-27T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/railo-security-part-four-pre-auth-remote-code-execution/</loc>
+    <loc>https://dronesec.net/blog/railo-security-part-four-pre-auth-remote-code-execution/</loc>
     <lastmod>2014-08-27T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/railo-security-part-three-pre-authentication-lfi/</loc>
+    <loc>https://dronesec.net/blog/railo-security-part-three-pre-authentication-lfi/</loc>
     <lastmod>2014-08-23T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/railo-security-part-two-post-authentication-rce/</loc>
+    <loc>https://dronesec.net/blog/railo-security-part-two-post-authentication-rce/</loc>
     <lastmod>2014-07-24T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/gitlist/</loc>
+    <loc>https://dronesec.net/categories/gitlist/</loc>
     <lastmod>2014-06-29T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/gitlist-commit-to-rce/</loc>
+    <loc>https://dronesec.net/blog/gitlist-commit-to-rce/</loc>
     <lastmod>2014-06-29T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/rce/</loc>
+    <loc>https://dronesec.net/categories/rce/</loc>
     <lastmod>2014-06-29T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/railo-security-part-one-intro/</loc>
+    <loc>https://dronesec.net/blog/railo-security-part-one-intro/</loc>
     <lastmod>2014-06-25T15:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/beef/</loc>
+    <loc>https://dronesec.net/categories/beef/</loc>
     <lastmod>2014-05-13T20:57:53+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/rce-in-browser-exploitation-framework-beef/</loc>
+    <loc>https://dronesec.net/blog/rce-in-browser-exploitation-framework-beef/</loc>
     <lastmod>2014-05-13T20:57:53+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/vulnerability/</loc>
+    <loc>https://dronesec.net/categories/vulnerability/</loc>
     <lastmod>2014-05-13T20:57:53+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/coldfusion/</loc>
+    <loc>https://dronesec.net/categories/coldfusion/</loc>
     <lastmod>2014-04-02T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/lfi/</loc>
+    <loc>https://dronesec.net/categories/lfi/</loc>
     <lastmod>2014-04-02T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/lfi-to-shell-in-coldfusion-6-10/</loc>
+    <loc>https://dronesec.net/blog/lfi-to-shell-in-coldfusion-6-10/</loc>
     <lastmod>2014-04-02T15:10:04+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/command-injection/</loc>
+    <loc>https://dronesec.net/categories/command-injection/</loc>
     <lastmod>2014-03-26T22:51:11+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/ibm/</loc>
+    <loc>https://dronesec.net/categories/ibm/</loc>
     <lastmod>2014-03-26T22:51:11+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</loc>
+    <loc>https://dronesec.net/blog/ibm-tealeaf-cx-v8-release-8-remote-os-command-injection-/-lfi/</loc>
     <lastmod>2014-03-26T22:51:11+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/tealeaf/</loc>
+    <loc>https://dronesec.net/categories/tealeaf/</loc>
     <lastmod>2014-03-26T22:51:11+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/metasploit/</loc>
+    <loc>https://dronesec.net/categories/metasploit/</loc>
     <lastmod>2014-03-10T22:31:47+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/meterpreter-shell-upgrades-using-powershell/</loc>
+    <loc>https://dronesec.net/blog/meterpreter-shell-upgrades-using-powershell/</loc>
     <lastmod>2014-03-10T22:31:47+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/introduction/</loc>
+    <loc>https://dronesec.net/blog/introduction/</loc>
     <lastmod>2014-03-02T22:51:11+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/ganib/</loc>
+    <loc>https://dronesec.net/categories/ganib/</loc>
     <lastmod>2014-02-24T22:03:07+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/ganib-project-management-2.3-sqli/</loc>
+    <loc>https://dronesec.net/blog/ganib-project-management-2.3-sqli/</loc>
     <lastmod>2014-02-24T22:03:07+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/sqli/</loc>
+    <loc>https://dronesec.net/categories/sqli/</loc>
     <lastmod>2014-02-24T22:03:07+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/fetching-jboss-mbean-method-hashes/</loc>
+    <loc>https://dronesec.net/blog/fetching-jboss-mbean-method-hashes/</loc>
     <lastmod>2014-01-26T01:24:19+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/jboss/</loc>
+    <loc>https://dronesec.net/categories/jboss/</loc>
     <lastmod>2014-01-26T01:24:19+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/dolibarr/</loc>
+    <loc>https://dronesec.net/categories/dolibarr/</loc>
     <lastmod>2013-10-14T22:13:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/dolibarr-3.4.0-multiple-vulnerabilities/</loc>
+    <loc>https://dronesec.net/blog/dolibarr-3.4.0-multiple-vulnerabilities/</loc>
     <lastmod>2013-10-14T22:13:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/vulnerabilities/</loc>
+    <loc>https://dronesec.net/categories/vulnerabilities/</loc>
     <lastmod>2013-10-14T22:13:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/openemm/</loc>
+    <loc>https://dronesec.net/categories/openemm/</loc>
     <lastmod>2013-07-28T22:24:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/openemm-2013-soap-sqli/stored-xss/</loc>
+    <loc>https://dronesec.net/blog/openemm-2013-soap-sqli/stored-xss/</loc>
     <lastmod>2013-07-28T22:24:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/xss/</loc>
+    <loc>https://dronesec.net/categories/xss/</loc>
     <lastmod>2013-07-28T22:24:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/ra1nxing/</loc>
+    <loc>https://dronesec.net/categories/ra1nxing/</loc>
     <lastmod>2013-07-10T22:31:29+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-ra1nxing-bots/</loc>
+    <loc>https://dronesec.net/blog/solving-ra1nxing-bots/</loc>
     <lastmod>2013-07-10T22:31:29+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/vulnhub/</loc>
+    <loc>https://dronesec.net/categories/vulnhub/</loc>
     <lastmod>2013-07-10T22:31:29+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/walkthrough/</loc>
+    <loc>https://dronesec.net/categories/walkthrough/</loc>
     <lastmod>2013-07-10T22:31:29+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/introducing-zarp/</loc>
+    <loc>https://dronesec.net/blog/introducing-zarp/</loc>
     <lastmod>2013-07-02T22:37:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/projects/</loc>
+    <loc>https://dronesec.net/categories/projects/</loc>
     <lastmod>2013-07-02T22:37:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/zarp/</loc>
+    <loc>https://dronesec.net/categories/zarp/</loc>
     <lastmod>2013-07-02T22:37:15+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/collabtive/</loc>
+    <loc>https://dronesec.net/categories/collabtive/</loc>
     <lastmod>2013-06-21T22:40:53+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/collabtive-1.0-sqli/</loc>
+    <loc>https://dronesec.net/blog/collabtive-1.0-sqli/</loc>
     <lastmod>2013-06-21T22:40:53+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/asus/</loc>
+    <loc>https://dronesec.net/categories/asus/</loc>
     <lastmod>2013-06-05T22:45:20+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/asus-rt56u-remote-command-injection/</loc>
+    <loc>https://dronesec.net/blog/asus-rt56u-remote-command-injection/</loc>
     <lastmod>2013-06-05T22:45:20+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/phd/</loc>
+    <loc>https://dronesec.net/categories/phd/</loc>
     <lastmod>2013-06-02T22:55:27+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/phd-help-desk-2.12-sqli/xss/</loc>
+    <loc>https://dronesec.net/blog/phd-help-desk-2.12-sqli/xss/</loc>
     <lastmod>2013-06-02T22:55:27+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/kimai/</loc>
+    <loc>https://dronesec.net/categories/kimai/</loc>
     <lastmod>2013-05-20T23:01:44+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/kimai-v0.9.2-sqli/</loc>
+    <loc>https://dronesec.net/blog/kimai-v0.9.2-sqli/</loc>
     <lastmod>2013-05-20T23:01:44+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/dos/</loc>
+    <loc>https://dronesec.net/categories/dos/</loc>
     <lastmod>2013-04-20T23:06:45+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/modem/</loc>
+    <loc>https://dronesec.net/categories/modem/</loc>
     <lastmod>2013-04-20T23:06:45+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/motorola/</loc>
+    <loc>https://dronesec.net/categories/motorola/</loc>
     <lastmod>2013-04-20T23:06:45+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/motorola-surfboard-multiple-vulnerabilities/</loc>
+    <loc>https://dronesec.net/blog/motorola-surfboard-multiple-vulnerabilities/</loc>
     <lastmod>2013-04-20T23:06:45+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-brainpan/</loc>
+    <loc>https://dronesec.net/blog/solving-brainpan/</loc>
     <lastmod>2013-04-02T23:09:43+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/protostar/</loc>
+    <loc>https://dronesec.net/categories/protostar/</loc>
     <lastmod>2013-03-30T23:21:16+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/protostar-solutions-stack-levels/</loc>
+    <loc>https://dronesec.net/blog/protostar-solutions-stack-levels/</loc>
     <lastmod>2013-03-30T23:21:16+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/stack/</loc>
+    <loc>https://dronesec.net/categories/stack/</loc>
     <lastmod>2013-03-30T23:21:16+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/nebula/</loc>
+    <loc>https://dronesec.net/categories/nebula/</loc>
     <lastmod>2013-03-30T22:46:33+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/nebula-solutions-all-levels/</loc>
+    <loc>https://dronesec.net/blog/nebula-solutions-all-levels/</loc>
     <lastmod>2013-03-30T22:46:33+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/lshell/</loc>
+    <loc>https://dronesec.net/categories/lshell/</loc>
     <lastmod>2012-12-30T22:43:42+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/lshell-0.9.15-pathing-vulnerability/</loc>
+    <loc>https://dronesec.net/blog/lshell-0.9.15-pathing-vulnerability/</loc>
     <lastmod>2012-12-30T22:43:42+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/pathing/</loc>
+    <loc>https://dronesec.net/categories/pathing/</loc>
     <lastmod>2012-12-30T22:43:42+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/hackademic/</loc>
+    <loc>https://dronesec.net/categories/hackademic/</loc>
     <lastmod>2012-11-18T01:24:24+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-hackademic-rtb2/</loc>
+    <loc>https://dronesec.net/blog/solving-hackademic-rtb2/</loc>
     <lastmod>2012-11-18T01:24:24+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-hackademic-rtb1/</loc>
+    <loc>https://dronesec.net/blog/solving-hackademic-rtb1/</loc>
     <lastmod>2012-11-13T01:24:24+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/buffer-overflow/</loc>
+    <loc>https://dronesec.net/categories/buffer-overflow/</loc>
     <lastmod>2012-10-03T00:15:10+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/categories/fastspy/</loc>
+    <loc>https://dronesec.net/categories/fastspy/</loc>
     <lastmod>2012-10-03T00:15:10+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/fastspy-2.1.1-buffer-overflow/</loc>
+    <loc>https://dronesec.net/blog/fastspy-2.1.1-buffer-overflow/</loc>
     <lastmod>2012-10-03T00:15:10+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-pwn0s-v2/</loc>
+    <loc>https://dronesec.net/blog/solving-pwn0s-v2/</loc>
     <lastmod>2012-08-09T00:56:45+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/blog/solving-pwn0s/</loc>
+    <loc>https://dronesec.net/blog/solving-pwn0s/</loc>
     <lastmod>2012-06-07T00:15:10+00:00</lastmod>
   </url><url>
-    <loc>https://dronesec.pw/tags/</loc>
+    <loc>https://dronesec.net/tags/</loc>
   </url>
 </urlset>

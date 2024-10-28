@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>adobe reader on dronesec</title>
-    <link>https://dronesec.pw/categories/adobe-reader/</link>
+    <link>https://dronesec.net/categories/adobe-reader/</link>
     <description>Recent content in adobe reader on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Sat, 08 Aug 2020 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/adobe-reader/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 08 Aug 2020 15:10:04 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/adobe-reader/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Digging the Adobe Sandbox - IPC Internals</title>
-      <link>https://dronesec.pw/blog/digging-the-adobe-sandbox-ipc-internals/</link>
+      <link>https://dronesec.net/blog/digging-the-adobe-sandbox-ipc-internals/</link>
       <pubDate>Sat, 08 Aug 2020 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/digging-the-adobe-sandbox-ipc-internals/</guid>
+      <guid>https://dronesec.net/blog/digging-the-adobe-sandbox-ipc-internals/</guid>
       <description>This post kicks off a short series into reversing the Adobe Reader sandbox. I initially started this research early last year and have been working on it off and on since. This series will document the Reader sandbox internals, present a few tools for reversing/interacting with it, and a description of the results of this research. There may be quite a bit of content here, but I&amp;rsquo;ll be doing a lot of braindumping.</description>
     </item>
     

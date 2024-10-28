@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>kernel on dronesec</title>
-    <link>https://dronesec.pw/categories/kernel/</link>
+    <link>https://dronesec.net/categories/kernel/</link>
     <description>Recent content in kernel on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Tue, 01 May 2018 22:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/kernel/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 01 May 2018 22:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/kernel/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Dell SupportAssist Driver - Local Privilege Escalation</title>
-      <link>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</link>
+      <link>https://dronesec.net/blog/dell-supportassist-driver-local-privilege-escalation/</link>
       <pubDate>Tue, 01 May 2018 22:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/dell-supportassist-driver-local-privilege-escalation/</guid>
+      <guid>https://dronesec.net/blog/dell-supportassist-driver-local-privilege-escalation/</guid>
       <description>This post details a local privilege escalation (LPE) vulnerability I found in Dell&amp;rsquo;s SupportAssist[0] tool. The bug is in a kernel driver loaded by the tool, and is pretty similar to bugs found by ReWolf in ntiolib.sys/winio.sys[1], and those found by others in ASMMAP/ASMMAP64[2]. These bugs are pretty interesting because they can be used to bypass driver signature enforcement (DSE) ad infinitum, or at least until they&amp;rsquo;re no longer compatible with newer operating systems.</description>
     </item>
     

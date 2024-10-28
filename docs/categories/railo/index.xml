@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>railo on dronesec</title>
-    <link>https://dronesec.pw/categories/railo/</link>
+    <link>https://dronesec.net/categories/railo/</link>
     <description>Recent content in railo on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 27 Aug 2014 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/railo/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 27 Aug 2014 15:00:00 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/railo/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>railo security - part four - pre-auth remote code execution</title>
-      <link>https://dronesec.pw/blog/railo-security-part-four-pre-auth-remote-code-execution/</link>
+      <link>https://dronesec.net/blog/railo-security-part-four-pre-auth-remote-code-execution/</link>
       <pubDate>Wed, 27 Aug 2014 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/railo-security-part-four-pre-auth-remote-code-execution/</guid>
+      <guid>https://dronesec.net/blog/railo-security-part-four-pre-auth-remote-code-execution/</guid>
       <description>Part one - intro
 Part two - post-auth rce
 Part three - pre-auth password retrieval
@@ -23,10 +23,10 @@ This post concludes our deep dive into the Railo application server by detailing
     
     <item>
       <title>railo security - part three - pre-authentication LFI</title>
-      <link>https://dronesec.pw/blog/railo-security-part-three-pre-authentication-lfi/</link>
+      <link>https://dronesec.net/blog/railo-security-part-three-pre-authentication-lfi/</link>
       <pubDate>Sat, 23 Aug 2014 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/railo-security-part-three-pre-authentication-lfi/</guid>
+      <guid>https://dronesec.net/blog/railo-security-part-three-pre-authentication-lfi/</guid>
       <description>Part one - intro
 Part two - post-authentication rce
 Part three - pre-authentication LFI
@@ -36,10 +36,10 @@ This post continues our four part Railo security analysis with three pre-authent
     
     <item>
       <title>railo security - part two - post-authentication rce</title>
-      <link>https://dronesec.pw/blog/railo-security-part-two-post-authentication-rce/</link>
+      <link>https://dronesec.net/blog/railo-security-part-two-post-authentication-rce/</link>
       <pubDate>Thu, 24 Jul 2014 15:10:04 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/railo-security-part-two-post-authentication-rce/</guid>
+      <guid>https://dronesec.net/blog/railo-security-part-two-post-authentication-rce/</guid>
       <description>Part one - intro
 Part two - post-authentication rce
 Part three - pre-authentication lfi
@@ -49,10 +49,10 @@ This post continues our dive into Railo security, this time introducing several 
     
     <item>
       <title>railo security - part one - intro</title>
-      <link>https://dronesec.pw/blog/railo-security-part-one-intro/</link>
+      <link>https://dronesec.net/blog/railo-security-part-one-intro/</link>
       <pubDate>Wed, 25 Jun 2014 15:00:00 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/railo-security-part-one-intro/</guid>
+      <guid>https://dronesec.net/blog/railo-security-part-one-intro/</guid>
       <description>Part one - intro
 Part two - post-authentication rce
 Part three - pre-authentication lfi

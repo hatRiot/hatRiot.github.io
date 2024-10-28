@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>projects on dronesec</title>
-    <link>https://dronesec.pw/categories/projects/</link>
+    <link>https://dronesec.net/categories/projects/</link>
     <description>Recent content in projects on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Tue, 02 Jul 2013 22:37:15 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/projects/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 02 Jul 2013 22:37:15 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/projects/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>introducing zarp</title>
-      <link>https://dronesec.pw/blog/introducing-zarp/</link>
+      <link>https://dronesec.net/blog/introducing-zarp/</link>
       <pubDate>Tue, 02 Jul 2013 22:37:15 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/introducing-zarp/</guid>
+      <guid>https://dronesec.net/blog/introducing-zarp/</guid>
       <description>I&amp;rsquo;ve been quietly developing a local network attack tool for quite a while now, and it&amp;rsquo;s approaching a state I deem &amp;lsquo;presentable&amp;rsquo;. Bugs are still being ironed out, and tons of features are still planned, but I&amp;rsquo;ve gotten some great feedback over the past few months and decided it was time for an official introductory post. This post serves as an introduction into the current capabilities of the framework, as well as a timeline for future development and goals.</description>
     </item>
     

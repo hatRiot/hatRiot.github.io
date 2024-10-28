@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>beef on dronesec</title>
-    <link>https://dronesec.pw/categories/beef/</link>
+    <link>https://dronesec.net/categories/beef/</link>
     <description>Recent content in beef on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Tue, 13 May 2014 20:57:53 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/beef/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 13 May 2014 20:57:53 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/beef/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>rce in browser exploitation framework (BeEF)</title>
-      <link>https://dronesec.pw/blog/rce-in-browser-exploitation-framework-beef/</link>
+      <link>https://dronesec.net/blog/rce-in-browser-exploitation-framework-beef/</link>
       <pubDate>Tue, 13 May 2014 20:57:53 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/rce-in-browser-exploitation-framework-beef/</guid>
+      <guid>https://dronesec.net/blog/rce-in-browser-exploitation-framework-beef/</guid>
       <description>Let me preface this post by saying that this vulnerability is already fixed, and was caught pretty early during the development process. The vulnerability was originally introduced during a merge for the new DNS extension, and was promptly patched by antisnatchor on 03022014. Although this vulnerability was caught fairly quickly, it still made it into the master branch. I post this only because I&amp;rsquo;ve seen too many penetration testers leaving their tools externally exposed, often with default credentials.</description>
     </item>
     

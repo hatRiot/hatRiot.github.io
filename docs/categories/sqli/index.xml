@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>sqli on dronesec</title>
-    <link>https://dronesec.pw/categories/sqli/</link>
+    <link>https://dronesec.net/categories/sqli/</link>
     <description>Recent content in sqli on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Mon, 24 Feb 2014 22:03:07 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/sqli/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 24 Feb 2014 22:03:07 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/sqli/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>ganib project management 2.3 SQLi</title>
-      <link>https://dronesec.pw/blog/ganib-project-management-2.3-sqli/</link>
+      <link>https://dronesec.net/blog/ganib-project-management-2.3-sqli/</link>
       <pubDate>Mon, 24 Feb 2014 22:03:07 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/ganib-project-management-2.3-sqli/</guid>
+      <guid>https://dronesec.net/blog/ganib-project-management-2.3-sqli/</guid>
       <description>Ganib is a project management tool supporting all the glorious project management utilities. The latest version, 2.3 and below, is vulnerable to multiple SQL injection vectors.
 The first SQL injection vector is a post-auth UPDATE injection in changetheme.jsp:
 String theme = request.getParameter(&amp;#34;theme&amp;#34;); User user = (User) pageContext.getAttribute(&amp;#34;user&amp;#34;, PageContext.SESSION_SCOPE); if( user != null &amp;amp;&amp;amp; user.getID() != null ) { DBBean db = new DBBean(); try { String query = &amp;#34;UPDATE PN_PERSON SET THEME_ID = &amp;#39;&amp;#34; + theme + &amp;#34;&amp;#39; WHERE PERSON_ID = &amp;#34; + user.</description>
@@ -21,47 +21,47 @@ String theme = request.getParameter(&amp;#34;theme&amp;#34;); User user = (User)
     
     <item>
       <title>Dolibarr 3.4.0 - Multiple Vulnerabilities</title>
-      <link>https://dronesec.pw/blog/dolibarr-3.4.0-multiple-vulnerabilities/</link>
+      <link>https://dronesec.net/blog/dolibarr-3.4.0-multiple-vulnerabilities/</link>
       <pubDate>Mon, 14 Oct 2013 22:13:15 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/dolibarr-3.4.0-multiple-vulnerabilities/</guid>
+      <guid>https://dronesec.net/blog/dolibarr-3.4.0-multiple-vulnerabilities/</guid>
       <description>Dolibarr is an open source, enterprise-grade ERP/CRM application developed in PHP. The latest stable release, 3.4.0, is vulnerable to a host of remotely exploitable post and pre auth vulnerabilities, along with several seriously mind-bending security/architecture choices. These vulnerabilities and issues were privately disclosed to the vendor, and the SQLi was patched in version 3.4.1. However, their sanitization methods were not fixed, and no mention was made on a future patch. Other SQLi vectors are likely.</description>
     </item>
     
     <item>
       <title>OpenEMM-2013 SOAP SQLi/Stored XSS</title>
-      <link>https://dronesec.pw/blog/openemm-2013-soap-sqli/stored-xss/</link>
+      <link>https://dronesec.net/blog/openemm-2013-soap-sqli/stored-xss/</link>
       <pubDate>Sun, 28 Jul 2013 22:24:15 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/openemm-2013-soap-sqli/stored-xss/</guid>
+      <guid>https://dronesec.net/blog/openemm-2013-soap-sqli/stored-xss/</guid>
       <description>OpenEMM is one of the most popular enterprise-grade email marketing software currently on the market; the best part of it, too, is that it&amp;rsquo;s free and open source. The entire stack is java, with some random shell/Python scripts for configuration. On inspection of the software, it appeared there were several SQL injection vulnerabilities due in part to a lack of input sanitation. This vulnerability was privately disclosed to the vendor, and a patch will be released shortly and backported to OpenEMM 2013 and 2011.</description>
     </item>
     
     <item>
       <title>Collabtive 1.0 - SQLi</title>
-      <link>https://dronesec.pw/blog/collabtive-1.0-sqli/</link>
+      <link>https://dronesec.net/blog/collabtive-1.0-sqli/</link>
       <pubDate>Fri, 21 Jun 2013 22:40:53 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/collabtive-1.0-sqli/</guid>
+      <guid>https://dronesec.net/blog/collabtive-1.0-sqli/</guid>
       <description>Collabtive is a web-based collaboration tool for project management, developed in PHP. The latest version, Collabtive 1.0, is vulnerable to remote authenticated SQL injection. Sourceforge page can be found here, which appears to be clocking in just over 1000 downloads a week. This issue was reported privately to the developers, and fixed in their Github repository.
 User profiles are viewed/managed by manageuser.php, and upon loading a profile, runs the following:</description>
     </item>
     
     <item>
       <title>PHD Help Desk 2.12 - SQLi/XSS</title>
-      <link>https://dronesec.pw/blog/phd-help-desk-2.12-sqli/xss/</link>
+      <link>https://dronesec.net/blog/phd-help-desk-2.12-sqli/xss/</link>
       <pubDate>Sun, 02 Jun 2013 22:55:27 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/phd-help-desk-2.12-sqli/xss/</guid>
+      <guid>https://dronesec.net/blog/phd-help-desk-2.12-sqli/xss/</guid>
       <description>PHD Help Desk is a help desk application used for managing help tickets in corporate/enterprise environments. The latest version (2.12) is vulnerable to, well, quite a few instances of SQLi and XSS. I&amp;rsquo;ll try and go through a couple, but there are so many it&amp;rsquo;s sort of embarrassing, and none of them are at all complex. The software is clocking ~200 downloads/week on Sourceforge, and no telling how many off their website, so it&amp;rsquo;s definitely still out there somewhere.</description>
     </item>
     
     <item>
       <title>Kimai v0.9.2 - SQLi</title>
-      <link>https://dronesec.pw/blog/kimai-v0.9.2-sqli/</link>
+      <link>https://dronesec.net/blog/kimai-v0.9.2-sqli/</link>
       <pubDate>Mon, 20 May 2013 23:01:44 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/kimai-v0.9.2-sqli/</guid>
+      <guid>https://dronesec.net/blog/kimai-v0.9.2-sqli/</guid>
       <description>Kimai is a time tracking solution built on the typical LAMP stack. Multiple vulnerabilities were discovered that could allow remote code execution on the remote server. These appear to be fixed in their source repository (here), but none of the distribution packages (v0.9.2.1306-3) have the patched version.
 On installation, a default administrative account is generated with the following credentials: admin:changeme. The /install/ folder is not automatically deleted, but instead a pop-up is shown each time the administrator logs in, alerting them that they should delete this folder in order to protect their system from malicious modifications.</description>
     </item>

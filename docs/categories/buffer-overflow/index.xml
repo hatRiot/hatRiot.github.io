@@ -2,18 +2,18 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>buffer overflow on dronesec</title>
-    <link>https://dronesec.pw/categories/buffer-overflow/</link>
+    <link>https://dronesec.net/categories/buffer-overflow/</link>
     <description>Recent content in buffer overflow on dronesec</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <copyright>Bryan Alexander</copyright>
-    <lastBuildDate>Wed, 03 Oct 2012 00:15:10 +0000</lastBuildDate><atom:link href="https://dronesec.pw/categories/buffer-overflow/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Wed, 03 Oct 2012 00:15:10 +0000</lastBuildDate><atom:link href="https://dronesec.net/categories/buffer-overflow/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>FastSpy 2.1.1 Buffer Overflow</title>
-      <link>https://dronesec.pw/blog/fastspy-2.1.1-buffer-overflow/</link>
+      <link>https://dronesec.net/blog/fastspy-2.1.1-buffer-overflow/</link>
       <pubDate>Wed, 03 Oct 2012 00:15:10 +0000</pubDate>
       
-      <guid>https://dronesec.pw/blog/fastspy-2.1.1-buffer-overflow/</guid>
+      <guid>https://dronesec.net/blog/fastspy-2.1.1-buffer-overflow/</guid>
       <description>FastSpy is an oooooooooooooooooooold multithreaded network scanner, circa 1999, that doesn&amp;rsquo;t really see any use nowadays. I started using Koders to dig around projects and find potential exploits, and ran across this one. It&amp;rsquo;s drop-dead simple in practice (deceptively so), and there were a few interesting parts to it so I figured I&amp;rsquo;d throw this up. At the time of writing, I don&amp;rsquo;t think the original developer is even around, and I haven&amp;rsquo;t seen this posted anywhere else.</description>
     </item>
     
