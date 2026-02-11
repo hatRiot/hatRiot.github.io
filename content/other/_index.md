@@ -8,6 +8,8 @@ date: "2024-01-02"
 * [Adobe Reader Tag Table](/other/adobe-reader-tags/)
 
 ### writing in other places
+* [Jan 2026] [General Graboids: Worms and Remote Code Execution in Command & Conquer](https://www.atredis.com/blog/2026/1/26/generals)
+* [Jul 2025] [Uncovering Privilege Escalation Bugs in Lenovo Advantage](https://www.atredis.com/blog/2025/7/7/uncovering-privilege-escalation-bugs-in-lenovo-vantage)
 * [Jan. 2024] [[ShmooCon 2024] Cache Crashers: Exploiting and Detecting Vulnerabilities in Memcached](https://github.com/hatRiot/shmoo24-memcached)
 * [May 2021] [Red teaming Jenkins with the Jenkins Attack Framework](https://web.archive.org/web/20210620192655/https://www.accenture.com/us-en/blogs/cyber-defense/red-teaming-jenkins-attack-framework)
 * [June 2020] [Exploiting an arbitrary file move in Symantec Endpoint Protection (CVE-2020-5825)](https://web.archive.org/web/20210621094826/https://www.accenture.com/us-en/blogs/cyber-defense/exploiting-arbitrary-file-move-in-symantec-endpoint-protection)
