@@ -8,6 +8,7 @@ date: "2024-01-02"
 * [Adobe Reader Tag Table](/other/adobe-reader-tags/)
 
 ### writing in other places
+* [Oct 2026] [Turning the Valve - Exploiting RCE and LPE in the Steam Platform](https://www.atredis.com/blog/2026/10/28/turning-the-valve/)
 * [Jan 2026] [General Graboids: Worms and Remote Code Execution in Command & Conquer](https://www.atredis.com/blog/2026/1/26/generals)
 * [Jul 2025] [Uncovering Privilege Escalation Bugs in Lenovo Advantage](https://www.atredis.com/blog/2025/7/7/uncovering-privilege-escalation-bugs-in-lenovo-vantage)
 * [Jan. 2024] [[ShmooCon 2024] Cache Crashers: Exploiting and Detecting Vulnerabilities in Memcached](https://github.com/hatRiot/shmoo24-memcached)
